@@ -272,7 +272,6 @@ Stub the new case so the package compiles, then wire it up for real.
 - **Not notarized.** Ad-hoc signed only, so recipients need the right-click → Open dance.
 - **Apple Silicon only.** A universal binary would need `--arch` work in `bundle.sh`.
 - **Main display only.** He lives on `NSScreen.main` and does not roam to a second monitor.
-- **Version strings lag.** `Scripts/Info.plist` still says 1.0 while the release tag is v3.0.
 
 ## License
 
