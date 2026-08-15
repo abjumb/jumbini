@@ -213,21 +213,15 @@ final class SpriteLibrary {
     /// and equal-sized); the whole sequence is rejected if any file is missing,
     /// so a caller's `?? fallback` sees an incomplete sequence as no sequence.
     func propSequence(named name: String, frames: Int, fps: Double) -> Animation? {
-        propSequence(named: name, indices: Array(0..<frames), fps: fps)
-    }
-
-    /// `propSequence` over an explicit frame list, for art whose usable frames
-    /// aren't a 0..<n prefix.
-    func propSequence(named name: String, indices: [Int], fps: Double) -> Animation? {
         // Namespaced so a sequence can't collide with `prop`/`singleProp` art
         // of the same base name (there is a `frisbee_mouth` single AND a
         // `frisbee` sequence).
-        let key = "seq:\(name):\(indices.map(String.init).joined(separator: ","))"
+        let key = "seq:\(name):\(frames)"
         if let cached = propCache[key] { return cached }
-        guard !indices.isEmpty else { return nil }
+        guard frames > 0 else { return nil }
         var textures: [SKTexture] = []
         var frameSize: CGSize = .zero
-        for index in indices {
+        for index in 0..<frames {
             guard
                 let url = Bundle.module.url(
                     forResource: "\(name)_\(index)", withExtension: "png", subdirectory: "sprites"
