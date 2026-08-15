@@ -53,14 +53,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Overlay
 
+    /// ONE overlay over the union of every display, rather than one per
+    /// screen. The dog then has a single continuous world to live in: walking
+    /// off the right edge of one monitor and onto the next is just walking,
+    /// with no hand-off of him, his hat, or whatever is in his mouth. What it
+    /// costs is dead zones — the corners of that bounding box that belong to
+    /// no display — and `ScreenLayout` is what keeps him out of those.
     private func setUpOverlay() {
-        guard let screen = NSScreen.main else { return }
-        let window = OverlayWindow(screen: screen)
-        let skView = SKView(frame: NSRect(origin: .zero, size: screen.frame.size))
+        let layout = ScreenLayout.current()
+        guard layout.size.width > 0, layout.size.height > 0 else { return }
+        let window = OverlayWindow(frame: layout.unionFrame)
+        let skView = SKView(frame: NSRect(origin: .zero, size: layout.size))
         skView.allowsTransparency = true
         skView.preferredFramesPerSecond = 60
 
-        let scene = PetScene(size: screen.frame.size)
+        let scene = PetScene(layout: layout)
         scene.overlayWindow = window
         window.contentView = skView
         skView.presentScene(scene)
@@ -71,12 +78,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.scene = scene
     }
 
+    /// A display was plugged in, unplugged, rearranged or had its resolution
+    /// changed. Rebuild the world around the dog rather than around the app:
+    /// the overlay is resized to the new union, and the scene translates and
+    /// rescues everything living in it. Order matters — the window and view
+    /// have to be the new size before the scene starts clamping into it.
     @objc private func screenParametersChanged() {
-        guard let screen = NSScreen.main, let window, let skView, let scene else { return }
-        window.setFrame(screen.frame, display: true)
-        skView.frame = NSRect(origin: .zero, size: screen.frame.size)
-        scene.size = screen.frame.size
-        scene.clampEntitiesOnScreen()
+        guard let window, let skView, let scene else { return }
+        let layout = ScreenLayout.current()
+        guard layout.size.width > 0, layout.size.height > 0 else { return }
+        window.setFrame(layout.unionFrame, display: true)
+        skView.frame = NSRect(origin: .zero, size: layout.size)
+        scene.size = layout.size
+        scene.apply(layout: layout)
     }
 
     // MARK: - Status item

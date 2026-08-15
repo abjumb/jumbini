@@ -7,6 +7,13 @@ import SpriteKit
 final class PetScene: SKScene {
     weak var overlayWindow: NSWindow?
 
+    /// The shape of the desk. The scene spans the BOUNDING BOX of every
+    /// display, so `size` is not the same thing as "where the user can see" —
+    /// on an uneven arrangement parts of the scene are on no display at all.
+    /// Anything that picks a spot for something goes through here.
+    /// Kept current by `apply(layout:)` when displays come and go.
+    private(set) var layout: ScreenLayout
+
     private let dog = Dog()
     private var ball: Ball?
 
@@ -89,8 +96,9 @@ final class PetScene: SKScene {
     /// Keeps the grab point under the cursor while carrying (no center-snap).
     private var carryGrabOffset: CGPoint = .zero
 
-    override init(size: CGSize) {
-        super.init(size: size)
+    init(layout: ScreenLayout) {
+        self.layout = layout
+        super.init(size: layout.size)
         backgroundColor = .clear
         scaleMode = .resizeFill
         anchorPoint = .zero
@@ -100,9 +108,14 @@ final class PetScene: SKScene {
     required init?(coder: NSCoder) { fatalError("not used") }
 
     override func didMove(to view: SKView) {
+        // Furniture goes in the bottom-right of the PRIMARY display, not of the
+        // whole desk: on a three-monitor setup the union's bottom-right corner
+        // is off in someone's peripheral vision, and a fresh install should
+        // look the way it always did — bed and jar by the Dock.
+        let home = layout.primarySceneFrame
         bed = Self.propNode(named: "bed", frameWidth: 52, fallbackColor: .systemBlue,
                             fallbackSize: CGSize(width: 156, height: 96))
-        bed.position = CGPoint(x: size.width - 240, y: 150)
+        bed.position = CGPoint(x: home.maxX - 240, y: home.minY + 150)
         bed.zPosition = 2
         addChild(bed)
         if let stored = UserDefaults.standard.object(forKey: Self.bedVariantKey) as? Int,
@@ -112,11 +125,11 @@ final class PetScene: SKScene {
 
         jar = Self.propNode(named: "jar", frameWidth: 22, fallbackColor: .systemGray,
                             fallbackSize: CGSize(width: 66, height: 78))
-        jar.position = CGPoint(x: size.width - 70, y: 145)
+        jar.position = CGPoint(x: home.maxX - 70, y: home.minY + 145)
         jar.zPosition = 6
         addChild(jar)
 
-        dog.position = CGPoint(x: size.width / 2, y: size.height / 2)
+        dog.position = CGPoint(x: home.midX, y: home.midY)
         dog.zPosition = 10
         addChild(dog)
         dog.onArrived = { [weak self] in self?.dogArrived() }
@@ -324,6 +337,9 @@ final class PetScene: SKScene {
         let dt = lastTime == 0 ? 0 : min(currentTime - lastTime, 0.1)
         lastTime = currentTime
         brain.bounds = size
+        // Empty on any desk whose displays tile their own bounding box, which
+        // is every single-monitor Mac and most two-monitor ones.
+        brain.roamableRects = layout.roamableRects
         stepZoomies(dt: dt)
         stepFalling(dt: dt)
         stepSniffing(dt: dt)
@@ -486,10 +502,10 @@ final class PetScene: SKScene {
         armedToy = nil
         pendingChaseArrival = false
         let margin: CGFloat = 30
-        let clamped = CGPoint(
+        let clamped = layout.clamp(CGPoint(
             x: min(max(landing.x, margin), size.width - margin),
             y: min(max(landing.y, margin), size.height - margin)
-        )
+        ), inset: margin)
 
         ball?.removeFromParent()
         let ball = Ball()
@@ -546,10 +562,10 @@ final class PetScene: SKScene {
         armedToy = nil
         pendingChaseArrival = false
         let margin: CGFloat = 30
-        let clamped = CGPoint(
+        let clamped = layout.clamp(CGPoint(
             x: min(max(landing.x, margin), size.width - margin),
             y: min(max(landing.y, margin), size.height - margin)
-        )
+        ), inset: margin)
 
         frisbee?.removeFromParent()
         let disc = Frisbee()
@@ -607,14 +623,15 @@ final class PetScene: SKScene {
                 y: dog.position.y + sin(angle) * distance
             )
             if (margin...(size.width - margin)).contains(point.x),
-               (margin...(size.height - margin)).contains(point.y) {
+               (margin...(size.height - margin)).contains(point.y),
+               layout.contains(point, inset: margin) {
                 return point
             }
         }
-        return CGPoint(
+        return layout.clamp(CGPoint(
             x: min(max(dog.position.x + Self.squeakyHopRange.lowerBound, margin), size.width - margin),
             y: min(max(dog.position.y, margin), size.height - margin)
-        )
+        ), inset: margin)
     }
 
     private func tossSqueaky() {
@@ -683,10 +700,10 @@ final class PetScene: SKScene {
         let anchor = ropeAnchor()
         let v = dog.facing.unitVector
         let margin: CGFloat = 30
-        ropeEnd = CGPoint(
+        ropeEnd = layout.clamp(CGPoint(
             x: min(max(anchor.x + v.x * Self.ropeRestLength, margin), size.width - margin),
             y: min(max(anchor.y + v.y * Self.ropeRestLength, margin), size.height - margin)
-        )
+        ), inset: margin)
         ropePull = ropeEnd
         rope.layout(from: anchor, to: ropeEnd)
         settleRope()
@@ -929,12 +946,33 @@ final class PetScene: SKScene {
         guard var v = zoomiesVelocity, dt > 0 else { return }
         var p = CGPoint(x: dog.position.x + v.x * CGFloat(dt), y: dog.position.y + v.y * CGFloat(dt))
         // Reflect off the walls, inset by his half-size so the art stays on screen.
+        // The walls are the UNION's edges: crossing from one display to the
+        // next mid-zoomies is not a wall, it's the best part.
         let halfW = dog.size.width / 2
         let halfH = dog.size.height / 2
         if p.x < halfW { p.x = halfW; v.x = abs(v.x) }
         if p.x > size.width - halfW { p.x = size.width - halfW; v.x = -abs(v.x) }
         if p.y < halfH { p.y = halfH; v.y = abs(v.y) }
         if p.y > size.height - halfH { p.y = size.height - halfH; v.y = -abs(v.y) }
+        // A dead zone is an interior wall. Slide along whichever axis is still
+        // on a display and bounce off the other — the same reflection the
+        // outer walls get, so it reads as a bounce and not as a stutter. If
+        // neither axis works (a corner) he reverses out the way he came.
+        if layout.hasDeadZones, !layout.contains(p) {
+            let alongX = CGPoint(x: p.x, y: dog.position.y)
+            let alongY = CGPoint(x: dog.position.x, y: p.y)
+            if layout.contains(alongX) {
+                p = alongX
+                v.y = -v.y
+            } else if layout.contains(alongY) {
+                p = alongY
+                v.x = -v.x
+            } else {
+                p = dog.position
+                v.x = -v.x
+                v.y = -v.y
+            }
+        }
         zoomiesVelocity = v
         dog.position = p
         dog.face(towards: CGPoint(x: p.x + v.x, y: p.y + v.y))
@@ -953,11 +991,12 @@ final class PetScene: SKScene {
     private func startWatchingWindows() {
         let watcher = WindowSurfaces(geometry: { [weak self] in
             guard let self else { return SurfaceGeometry(flipHeight: 0, sceneOrigin: .zero, sceneSize: .zero) }
-            // The overlay covers exactly one screen, and the scene is 1:1
-            // with it (resizeFill, anchor at the origin), so the window's
-            // frame IS the scene's frame in global AppKit coordinates.
-            let frame = self.overlayWindow?.frame ?? CGRect(origin: .zero, size: self.size)
-            return SurfaceGeometry.forOverlay(sceneFrame: frame)
+            // The overlay covers the union of every display, and the scene is
+            // 1:1 with it (resizeFill, anchor at the origin), so the layout's
+            // union frame IS the scene's frame in global AppKit coordinates —
+            // and its per-display rectangles are what tell the parser which
+            // title bars are somewhere a user can actually see.
+            return SurfaceGeometry.forOverlay(layout: self.layout)
         })
         watcher.onUpdate = { [weak self] surfaces in self?.windowsChanged(to: surfaces) }
         watcher.start()
@@ -1080,12 +1119,11 @@ final class PetScene: SKScene {
         let distance = hypot(dx, dy)
         if distance > 60 {
             // Manual stepping (not an SKAction move) so he tracks a moving
-            // target; clamped in case the cursor is on another display.
+            // target. The cursor may well be on another display — that is fine
+            // now, he simply walks there — but the straight line to it can
+            // cross a dead zone, so every step lands on solid ground.
             let step = min(brain.tuning.walkSpeed * 1.5 * CGFloat(dt), distance)
-            dog.position = CGPoint(
-                x: min(max(dog.position.x + dx / distance * step, 0), size.width),
-                y: min(max(dog.position.y + dy / distance * step, 0), size.height)
-            )
+            dog.position = huntStep(by: dx / distance * step, dy / distance * step)
             dog.face(towards: cursor)
             if sniffingClose {
                 sniffingClose = false
@@ -1115,10 +1153,7 @@ final class PetScene: SKScene {
         guard distance > Self.stalkStandoff else { return }
         let creep = brain.tuning.walkSpeed * 0.75 // 0.5× the sniff approach (walkSpeed * 1.5)
         let step = min(creep * CGFloat(dt), distance - Self.stalkStandoff)
-        dog.position = CGPoint(
-            x: min(max(dog.position.x + dx / distance * step, 0), size.width),
-            y: min(max(dog.position.y + dy / distance * step, 0), size.height)
-        )
+        dog.position = huntStep(by: dx / distance * step, dy / distance * step)
     }
 
     /// The pounce: a fast manual leap re-aimed at the cursor's *current*
@@ -1132,10 +1167,21 @@ final class PetScene: SKScene {
         guard distance > 1 else { return }
         dog.face(towards: cursor)
         let step = min(brain.tuning.runSpeed * CGFloat(dt), distance)
-        dog.position = CGPoint(
-            x: min(max(dog.position.x + dx / distance * step, 0), size.width),
-            y: min(max(dog.position.y + dy / distance * step, 0), size.height)
-        )
+        dog.position = huntStep(by: dx / distance * step, dy / distance * step)
+    }
+
+    /// One step of a cursor hunt: inside the scene, and on a real display.
+    ///
+    /// The clamp is what keeps a chase across an uneven multi-display desk
+    /// honest — pushed against a dead zone he slides along its boundary rather
+    /// than walking into a region that is drawn nowhere. He can end up parked
+    /// at an inside corner if the cursor sits directly across the void from
+    /// him, which is the right amount of stupid for a dog.
+    private func huntStep(by dx: CGFloat, _ dy: CGFloat) -> CGPoint {
+        layout.clamp(CGPoint(
+            x: min(max(dog.position.x + dx, 0), size.width),
+            y: min(max(dog.position.y + dy, 0), size.height)
+        ))
     }
 
     // MARK: - The catch
@@ -1247,10 +1293,10 @@ final class PetScene: SKScene {
     private func spawnPile() {
         let pile = Self.pileNode()
         let v = dog.facing.unitVector
-        pile.position = CGPoint(
+        pile.position = layout.clamp(CGPoint(
             x: min(max(dog.position.x - v.x * 34, 18), size.width - 18),
             y: min(max(dog.position.y - v.y * 34 - 10, 15), size.height - 15)
-        )
+        ), inset: 15)
         pile.zPosition = 4 // above furniture (2), below the dog (10)
         addChild(pile)
         piles.append(pile)
@@ -1266,9 +1312,16 @@ final class PetScene: SKScene {
 
     /// "The trash": the Dock strip along the bottom, or Trash-can territory
     /// near the bottom-right corner.
+    ///
+    /// Of the PRIMARY display. There is one Dock and one Trash, and they are
+    /// on the menu bar screen — the bottom-right of a three-monitor bounding
+    /// box is just some spot on a monitor, and dragging a pile there should
+    /// leave it sitting there like every other patch of desktop.
     private func isTrashZone(_ point: CGPoint) -> Bool {
-        if point.y < 90 { return true }
-        return hypot(point.x - size.width, point.y) < 120
+        let home = layout.primarySceneFrame
+        guard point.x >= home.minX, point.x <= home.maxX, point.y >= home.minY else { return false }
+        if point.y < home.minY + 90 { return true }
+        return hypot(point.x - home.maxX, point.y - home.minY) < 120
     }
 
     /// Dropped in the trash: a little scale-down flourish and it's gone.
@@ -1350,12 +1403,70 @@ final class PetScene: SKScene {
         return view.convert(inWindow, to: self)
     }
 
-    /// Clamp entities back on screen after a resolution change.
-    func clampEntitiesOnScreen() {
-        for node in ([dog, bed, jar] as [SKSpriteNode]) + piles {
-            node.position.x = min(max(node.position.x, 0), size.width)
-            node.position.y = min(max(node.position.y, 0), size.height)
+    // MARK: - Displays coming and going
+
+    /// A display was plugged in, unplugged, moved or resized.
+    ///
+    /// The subtle part is the ORIGIN. Scene coordinates are measured from the
+    /// bottom-left of the union frame, so unplugging a monitor that sat to the
+    /// left of the primary moves that corner — and every entity would appear
+    /// to leap sideways even though nothing about where they are in the world
+    /// changed. Translating by the difference first keeps the dog, the bed and
+    /// the jar exactly where the user left them, on the display they left them
+    /// on; only then does anything get clamped, and only if it now has nowhere
+    /// to be.
+    func apply(layout newLayout: ScreenLayout) {
+        let shift = CGPoint(
+            x: layout.unionFrame.minX - newLayout.unionFrame.minX,
+            y: layout.unionFrame.minY - newLayout.unionFrame.minY
+        )
+        layout = newLayout
+        if shift != .zero { translateWorld(by: shift) }
+        clampEntitiesOnScreen()
+    }
+
+    /// Everything that lives at a fixed spot in the world.
+    ///
+    /// Not here, deliberately: transient flourishes (hearts, the cam flash),
+    /// anything parented to the dog (his hat, whatever is in his mouth), which
+    /// travels with him for free, the perch shadow, which is repositioned from
+    /// scratch every frame — and the tug rope, whose own node sits at the
+    /// origin while its segments hold scene coordinates, so moving it would
+    /// shift the rope twice. The rope is handled through `ropeEnd` below.
+    private func worldNodes() -> [SKNode] {
+        var nodes: [SKNode] = [dog, bed, jar]
+        nodes += piles
+        for node in [ball, frisbee, squeaky, groundTreat, treatInHand] {
+            if let node, node.parent === self { nodes.append(node) }
         }
+        return nodes
+    }
+
+    /// Slide the whole world so a change of union origin doesn't teleport it.
+    private func translateWorld(by shift: CGPoint) {
+        for node in worldNodes() {
+            node.position = CGPoint(x: node.position.x + shift.x, y: node.position.y + shift.y)
+        }
+        // Loose scene coordinates that aren't a node's position.
+        ropeEnd = CGPoint(x: ropeEnd.x + shift.x, y: ropeEnd.y + shift.y)
+        ropePull = CGPoint(x: ropePull.x + shift.x, y: ropePull.y + shift.y)
+        fallFloorY += shift.y
+    }
+
+    /// Put everything back somewhere real after a resolution or arrangement
+    /// change. `ScreenLayout.clamp` returns a point untouched when it is
+    /// already on a display, so an entity happily sitting on the second
+    /// monitor is never nudged — only the ones now hanging in a dead zone, or
+    /// off the end of a display that has just been unplugged, move at all.
+    func clampEntitiesOnScreen() {
+        for node in worldNodes() {
+            node.position = layout.clamp(node.position)
+        }
+        ropeEnd = layout.clamp(ropeEnd)
+        ropePull = layout.clamp(ropePull)
+        rope?.layout(from: ropeAnchor(), to: ropeEnd)
+        // A fall in progress was aimed at a floor that may no longer exist.
+        fallFloorY = layout.clamp(CGPoint(x: dog.position.x, y: fallFloorY)).y
         // Through the event (not a direct assignment) so a dog mid-walk to the
         // bed retargets instead of finishing his walk off-screen.
         send(.bedMoved(to: bedLieSpot()))
@@ -1453,7 +1564,11 @@ final class PetScene: SKScene {
         }
         if mouseDownOnDog {
             if isCarryingDog {
-                send(.dropped(at: CGPoint(x: location.x + carryGrabOffset.x, y: location.y + carryGrabOffset.y)))
+                // The overlay spans every display, so a determined drag can let
+                // go of him over a dead zone. Put him down somewhere real.
+                send(.dropped(at: layout.clamp(
+                    CGPoint(x: location.x + carryGrabOffset.x, y: location.y + carryGrabOffset.y)
+                )))
             } else {
                 send(.petted)
             }
