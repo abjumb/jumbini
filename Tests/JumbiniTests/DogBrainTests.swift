@@ -415,6 +415,7 @@ private func moveTarget(in effects: [DogEffect]) -> (point: CGPoint, speed: CGFl
     let done = brain.handle(.tick, at: 2 + brain.tuning.hunchDuration)
     #expect(brain.state == .idle)
     #expect(done.contains(.play(.idle)))
+    #expect(done.contains(.leaveDeposit), "digestion ends in an actual deposit")
 }
 
 @Test func treatWakesSleepingDog() {
@@ -650,6 +651,7 @@ private func moveTarget(in effects: [DogEffect]) -> (point: CGPoint, speed: CGFl
     let end = brain.handle(.tick, at: 3 + brain.tuning.hunchDuration)
     #expect(brain.state == .idle)
     #expect(end.contains(.play(.idle)))
+    #expect(end.contains(.leaveDeposit), "a finished hunch leaves a pile behind")
 }
 
 @Test func commandInterruptsHunch() {
@@ -669,4 +671,70 @@ private func moveTarget(in effects: [DogEffect]) -> (point: CGPoint, speed: CGFl
     let effects = brain.handle(.treatDropped(at: CGPoint(x: 100, y: 100)), at: 4)
     #expect(brain.state == .chasingTreat)
     #expect(effects.contains(.play(.run)))
+}
+
+// MARK: - Deposits (the payoff for the bottomless hunger)
+
+@Test func depositEmittedExactlyAtAutonomousHunchEnd() {
+    let brain = makeBrain { $0.hunchChance = 1 }
+    _ = brain.handle(.tick, at: 0) // arm idle timer (3s)
+    let start = brain.handle(.tick, at: 3)
+    #expect(brain.state == .hunching)
+    #expect(!start.contains(.leaveDeposit), "no deposit at hunch start")
+    #expect(brain.handle(.tick, at: 4) == [], "no deposit mid-hunch")
+    let end = brain.handle(.tick, at: 3 + brain.tuning.hunchDuration)
+    #expect(brain.state == .idle)
+    #expect(end.filter { $0 == .leaveDeposit }.count == 1, "exactly one deposit, exactly at hunch end")
+}
+
+@Test func depositEmittedExactlyAtDigestionHunchEnd() {
+    let brain = makeBrain { $0.eatDuration = 1 }
+    _ = brain.handle(.treatDropped(at: CGPoint(x: 640, y: 200)), at: 0)
+    _ = brain.handle(.arrived, at: 1)
+    let hunchStart = brain.handle(.tick, at: 2)
+    #expect(brain.state == .hunching)
+    #expect(!hunchStart.contains(.leaveDeposit), "eating→hunching transition itself deposits nothing")
+    let end = brain.handle(.tick, at: 2 + brain.tuning.hunchDuration)
+    #expect(brain.state == .idle)
+    #expect(end.filter { $0 == .leaveDeposit }.count == 1, "exactly one deposit when digestion completes")
+}
+
+@Test func commandInterruptedHunchDoesNotDeposit() {
+    let brain = makeBrain { $0.hunchChance = 1 }
+    _ = brain.handle(.tick, at: 0)
+    _ = brain.handle(.tick, at: 3)
+    #expect(brain.state == .hunching)
+    let effects = brain.handle(.command(.sit), at: 4)
+    #expect(brain.state == .sitting)
+    #expect(!effects.contains(.leaveDeposit), "an interrupted hunch leaves nothing behind")
+    // The stale hunch deadline must not sneak a deposit in later either.
+    let later = brain.handle(.tick, at: 4 + brain.tuning.sitTimeout + 0.1)
+    #expect(brain.state == .idle)
+    #expect(!later.contains(.leaveDeposit))
+}
+
+@Test func pettingInterruptedHunchDoesNotDeposit() {
+    let brain = makeBrain { $0.hunchChance = 1; $0.petDuration = 1.2 }
+    _ = brain.handle(.tick, at: 0)
+    _ = brain.handle(.tick, at: 3)
+    #expect(brain.state == .hunching)
+    let effects = brain.handle(.petted, at: 4)
+    #expect(brain.state == .beingPetted)
+    #expect(!effects.contains(.leaveDeposit))
+    let done = brain.handle(.tick, at: 5.3)
+    #expect(brain.state == .idle)
+    #expect(!done.contains(.leaveDeposit), "ending the petting session is not a hunch end")
+}
+
+@Test func pickupInterruptedHunchDoesNotDeposit() {
+    let brain = makeBrain { $0.hunchChance = 1 }
+    _ = brain.handle(.tick, at: 0)
+    _ = brain.handle(.tick, at: 3)
+    #expect(brain.state == .hunching)
+    let up = brain.handle(.pickedUp, at: 4)
+    #expect(brain.state == .carried)
+    #expect(!up.contains(.leaveDeposit))
+    let down = brain.handle(.dropped(at: CGPoint(x: 100, y: 100)), at: 5)
+    #expect(brain.state == .idle)
+    #expect(!down.contains(.leaveDeposit), "being put down is not a hunch end")
 }

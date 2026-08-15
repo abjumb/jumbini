@@ -19,6 +19,10 @@ final class PetScene: SKScene {
     private var treatInHand: SKSpriteNode?
     private var groundTreat: SKSpriteNode?
 
+    // Deposits (oldest first). He is a machine: treats in, piles out.
+    private var piles: [SKSpriteNode] = []
+    private var draggedPile: SKSpriteNode?
+
     // Zoomies: manual bounce integration; nil while he isn't zooming.
     private var zoomiesVelocity: CGPoint?
     /// The fur rabbit he carries during zoomies (a child of the dog).
@@ -237,7 +241,9 @@ final class PetScene: SKScene {
                 sniffingClose = false
             case .removeTreat:
                 removeGroundTreat()
-            case .playSound, .leaveDeposit, .nudgeCursor,
+            case .leaveDeposit:
+                spawnPile()
+            case .playSound, .nudgeCursor,
                  .pickUpToy, .dropToy, .removeToy, .startTug, .stopTug:
                 break // vocabulary stubs — wired by feature branches
             }
@@ -433,6 +439,64 @@ final class PetScene: SKScene {
         treat.run(.sequence([.fadeOut(withDuration: 0.2), .removeFromParent()]))
     }
 
+    // MARK: - Deposits
+
+    /// On-screen pile cap: when a 6th appears the oldest fades away.
+    private static let maxPiles = 5
+
+    /// Pile art: the roadmap's hand-made piles (deposit_1..3) win when they
+    /// exist; the generated two-variant strip is the stand-in. Same
+    /// drop-the-file-in upgrade path as the bed catalog.
+    private static func pileNode() -> SKSpriteNode {
+        if let real = SpriteLibrary.shared.singleProp(named: "deposit_\(Int.random(in: 1...3))") {
+            let node = SKSpriteNode(texture: real.textures[0])
+            node.size = real.nodeSize
+            return node
+        }
+        if let anim = SpriteLibrary.shared.prop(named: "deposit", frameWidth: 12, fps: 1),
+           let texture = anim.textures.randomElement() {
+            let node = SKSpriteNode(texture: texture)
+            node.size = anim.nodeSize
+            return node
+        }
+        return SKSpriteNode(color: .systemBrown, size: CGSize(width: 36, height: 30))
+    }
+
+    /// The hunch finished: a pile lands just behind him, on the ground line.
+    private func spawnPile() {
+        let pile = Self.pileNode()
+        let v = dog.facing.unitVector
+        pile.position = CGPoint(
+            x: min(max(dog.position.x - v.x * 34, 18), size.width - 18),
+            y: min(max(dog.position.y - v.y * 34 - 10, 15), size.height - 15)
+        )
+        pile.zPosition = 4 // above furniture (2), below the dog (10)
+        addChild(pile)
+        piles.append(pile)
+        if piles.count > Self.maxPiles {
+            let oldest = piles.removeFirst()
+            oldest.run(.sequence([.fadeOut(withDuration: 0.4), .removeFromParent()]))
+        }
+    }
+
+    /// "The trash": the Dock strip along the bottom, or Trash-can territory
+    /// near the bottom-right corner.
+    private func isTrashZone(_ point: CGPoint) -> Bool {
+        if point.y < 90 { return true }
+        return hypot(point.x - size.width, point.y) < 120
+    }
+
+    /// Dropped in the trash: a little scale-down flourish and it's gone.
+    /// Dropped anywhere else: it just sits there. He's not sorry.
+    private func dropPile(_ pile: SKSpriteNode, at location: CGPoint) {
+        guard isTrashZone(location) else { return }
+        piles.removeAll { $0 === pile }
+        pile.run(.sequence([
+            .group([.scale(to: 0.1, duration: 0.25), .fadeOut(withDuration: 0.25)]),
+            .removeFromParent(),
+        ]))
+    }
+
     // MARK: - Petting feedback
 
     private func showHearts() {
@@ -474,7 +538,7 @@ final class PetScene: SKScene {
         // A held press counts too: the dog can walk out from under a stationary
         // cursor, and the window must keep the mouseUp.
         let dragging = mouseDownOnDog || isCarryingDog || pressedJar
-            || treatInHand != nil || draggedFurniture != nil
+            || treatInHand != nil || draggedFurniture != nil || draggedPile != nil
         let shouldAcceptClicks = armedForThrow || dragging
             || interactiveFrames().contains { $0.contains(mouseLocationInScene()) }
         if window.ignoresMouseEvents == shouldAcceptClicks {
@@ -484,6 +548,7 @@ final class PetScene: SKScene {
 
     private func interactiveFrames() -> [CGRect] {
         [dogHoverFrame(), jar.frame.insetBy(dx: -6, dy: -6), bed.frame.insetBy(dx: -6, dy: -6)]
+            + piles.map { $0.frame.insetBy(dx: -6, dy: -6) }
     }
 
     private func dogHoverFrame() -> CGRect {
@@ -499,7 +564,7 @@ final class PetScene: SKScene {
 
     /// Clamp entities back on screen after a resolution change.
     func clampEntitiesOnScreen() {
-        for node in [dog, bed, jar] as [SKSpriteNode] {
+        for node in ([dog, bed, jar] as [SKSpriteNode]) + piles {
             node.position.x = min(max(node.position.x, 0), size.width)
             node.position.y = min(max(node.position.y, 0), size.height)
         }
@@ -526,6 +591,8 @@ final class PetScene: SKScene {
             }
         } else if bed.frame.insetBy(dx: -6, dy: -6).contains(location) {
             draggedFurniture = bed
+        } else if let pile = piles.last(where: { $0.frame.insetBy(dx: -6, dy: -6).contains(location) }) {
+            draggedPile = pile // newest first when piles overlap
         } else if armedForThrow {
             throwBall(to: location)
         }
@@ -558,6 +625,8 @@ final class PetScene: SKScene {
             if furniture === bed {
                 send(.bedMoved(to: bedLieSpot()))
             }
+        } else if let pile = draggedPile {
+            pile.position = location
         }
     }
 
@@ -567,6 +636,7 @@ final class PetScene: SKScene {
             mouseDownOnDog = false
             isCarryingDog = false
             draggedFurniture = nil
+            draggedPile = nil
             pressedJar = false
         }
         if mouseDownOnDog {
@@ -580,13 +650,16 @@ final class PetScene: SKScene {
             treatInHand = makeTreat(at: location)
         } else if treatInHand != nil {
             dropTreat(at: location)
+        } else if let pile = draggedPile {
+            dropPile(pile, at: location)
         }
     }
 
     override func rightMouseDown(with event: NSEvent) {
         // Never open the menu mid-drag: its tracking session would swallow the
         // mouseUp and wedge the drag state (stuck carry, leaked treat).
-        guard !mouseDownOnDog, !pressedJar, treatInHand == nil, draggedFurniture == nil else { return }
+        guard !mouseDownOnDog, !pressedJar, treatInHand == nil,
+              draggedFurniture == nil, draggedPile == nil else { return }
         let location = event.location(in: self)
         if armedForThrow, !dogHoverFrame().contains(location) {
             // Right-click while waiting for a throw = change your mind.

@@ -38,10 +38,12 @@ PAL = {
     "j": (150, 170, 185, 220),   # jar glass edge
     "U": (178, 170, 158, 255),   # rabbit toy plush fur (warm grey-tan)
     "u": (132, 124, 114, 255),   # rabbit toy fur shadow / floppy ear
+    "M": (110, 74, 42, 255),     # deposit brown
+    "m": (74, 48, 27, 255),      # deposit shadow
     ".": (0, 0, 0, 0),           # transparent
 }
 
-LIGHTS = set("WwtTPpVU")  # colors that get a dark rim where they meet transparency
+LIGHTS = set("WwtTPpVUMm")  # colors that get a dark rim where they meet transparency
 
 
 class Grid:
@@ -379,6 +381,32 @@ def rabbit_frame():
     return g
 
 
+def deposit_frame(variant=0):
+    """He is a machine: treats in, piles out. A small brown coil with a
+    glossy highlight — placeholder until the roadmap's hand-made pile art
+    (deposit_1..3) lands. Two variants shipped as a 2-frame strip."""
+    g = Grid(12, 10)
+    if variant == 0:
+        g.ellipse(5.5, 7.4, 4.9, 2.1, "M")              # base mound
+        g.ellipse(5.5, 5.2, 3.5, 1.8, "M")              # middle tier
+        g.ellipse(5.5, 3.2, 2.2, 1.4, "M")              # top tier
+        g.px(6, 1, "M"); g.px(7, 1, "M")                # tip curls right
+        g.px(4, 4, "m"); g.px(7, 4, "m")                # tier creases
+        g.px(2, 6, "m"); g.px(9, 6, "m")
+        g.rect(3, 9, 8, 9, "m")                         # ground contact
+        g.px(5, 2, "t"); g.px(4, 3, "t")                # glossy highlight
+        g.px(3, 5, "t"); g.px(2, 7, "t")
+    else:
+        g.ellipse(5.5, 7.6, 5.2, 2.0, "M")              # squat wide base
+        g.ellipse(5.5, 5.4, 3.2, 1.7, "M")              # single top coil
+        g.px(4, 3, "M"); g.px(3, 3, "M")                # tip flops left
+        g.px(3, 6, "m"); g.px(8, 6, "m")                # crease
+        g.rect(3, 9, 8, 9, "m")
+        g.px(4, 4, "t"); g.px(6, 4, "t"); g.px(2, 7, "t")
+    g.rim()
+    return g
+
+
 def heart_frame():
     g = Grid(8, 8)
     for x, y in ((1, 1), (2, 1), (5, 1), (6, 1)):
@@ -444,6 +472,7 @@ def main():
         "jar": [jar_frame()],
         "treat": [treat_frame()],
         "rabbit": [rabbit_frame()],
+        "deposit": [deposit_frame(0), deposit_frame(1)],
     }
     if "--all" in sys.argv:
         sheets.update({
