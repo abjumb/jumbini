@@ -399,7 +399,7 @@ final class SpriteLibrary {
     private func coated(_ file: String) -> String {
         let state = file.prefix { $0 != "_" }
         let substituted = Self.coatSubstitutes[coat.id]?[String(state)] ?? String(state)
-        return coat.prefix + substituted + file.dropFirst(state.count)
+        return coat.prefix + substituted + String(file.dropFirst(state.count))
     }
 
     private func build(
