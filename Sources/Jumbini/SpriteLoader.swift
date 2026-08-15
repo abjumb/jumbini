@@ -204,6 +204,49 @@ final class SpriteLibrary {
         return animation
     }
 
+    /// Multi-frame prop assembled from individually numbered files —
+    /// `dust_0.png`, `dust_1.png`, … — rather than sliced out of one strip
+    /// sheet. Alex's art arrives one PNG per frame, and this keeps it that way:
+    /// redrawing a single frame is a file drop, with no sheet to recompose.
+    ///
+    /// Frame size comes from the first file (the kit's frames are all square
+    /// and equal-sized); the whole sequence is rejected if any file is missing,
+    /// so a caller's `?? fallback` sees an incomplete sequence as no sequence.
+    func propSequence(named name: String, frames: Int, fps: Double) -> Animation? {
+        propSequence(named: name, indices: Array(0..<frames), fps: fps)
+    }
+
+    /// `propSequence` over an explicit frame list, for art whose usable frames
+    /// aren't a 0..<n prefix.
+    func propSequence(named name: String, indices: [Int], fps: Double) -> Animation? {
+        // Namespaced so a sequence can't collide with `prop`/`singleProp` art
+        // of the same base name (there is a `frisbee_mouth` single AND a
+        // `frisbee` sequence).
+        let key = "seq:\(name):\(indices.map(String.init).joined(separator: ","))"
+        if let cached = propCache[key] { return cached }
+        guard !indices.isEmpty else { return nil }
+        var textures: [SKTexture] = []
+        var frameSize: CGSize = .zero
+        for index in indices {
+            guard
+                let url = Bundle.module.url(
+                    forResource: "\(name)_\(index)", withExtension: "png", subdirectory: "sprites"
+                ),
+                let image = NSImage(contentsOf: url),
+                let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
+            else { return nil }
+            let texture = SKTexture(cgImage: cg)
+            texture.filteringMode = .nearest
+            if textures.isEmpty {
+                frameSize = CGSize(width: CGFloat(cg.width) * 3, height: CGFloat(cg.height) * 3)
+            }
+            textures.append(texture)
+        }
+        let animation = Animation(textures: textures, fps: fps, nodeSize: frameSize, flipX: false)
+        propCache[key] = animation
+        return animation
+    }
+
     private func make(_ files: [String], fps: Double, scale: CGFloat, flipX: Bool = false) -> Animation? {
         let textures = files.compactMap(texture(named:))
         guard textures.count == files.count, let first = textures.first else { return nil }
