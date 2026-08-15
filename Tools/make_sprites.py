@@ -41,6 +41,12 @@ PAL = {
     "M": (110, 74, 42, 255),     # deposit brown
     "m": (74, 48, 27, 255),      # deposit shadow
     "Y": (247, 205, 70, 255),    # party-hat yellow
+    "y": (206, 158, 40, 255),    # rubber-chicken shadow
+    "S": (238, 92, 64, 255),     # frisbee plastic
+    "s": (172, 56, 38, 255),     # frisbee shadow / underside
+    "N": (226, 204, 162, 255),   # rope hemp light
+    "n": (178, 150, 106, 255),   # rope hemp mid
+    "q": (112, 90, 60, 255),     # rope hemp dark / edge
     ".": (0, 0, 0, 0),           # transparent
 }
 
@@ -89,6 +95,33 @@ class Grid:
                             break
         for x, y in edges:
             self.g[y][x] = "O"
+
+    def outline(self, c="O"):
+        """Halo the silhouette from the OUTSIDE (rim() recolors the shape's own
+        edge pixels, which eats details thinner than 3px — a chicken's comb,
+        a frisbee's rim). Needs a 1px transparent margin to draw into."""
+        edges = []
+        for y in range(self.h):
+            for x in range(self.w):
+                if self.g[y][x] != ".":
+                    continue
+                for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                    nx, ny = x + dx, y + dy
+                    if (0 <= nx < self.w and 0 <= ny < self.h
+                            and self.g[ny][nx] not in (".", c)):
+                        edges.append((x, y))
+                        break
+        for x, y in edges:
+            self.g[y][x] = c
+
+
+def from_art(art):
+    """Grid from a list of equal-length palette-character rows (top row first)."""
+    g = Grid(len(art[0]), len(art))
+    for y, line in enumerate(art):
+        for x, ch in enumerate(line):
+            g.g[y][x] = ch
+    return g
 
 
 # ---------------------------------------------------------------- dog parts
@@ -422,6 +455,139 @@ def heart_frame():
     return g
 
 
+# ---------------------------------------------------------------- toy box
+# The three toys beyond the fetch ball. All drawn with outline() (not rim())
+# so the small details survive; the app owns every offset, same as wardrobe.
+
+def frisbee_frame(rot):
+    """Flying disc mid-spin. The 4 frames squash the ellipse from face-on
+    (rot 0) through edge-on (rot 2) and back, which reads as a fast spin
+    while it floats."""
+    g = Grid(16, 16)
+    ry = [4.4, 3.0, 1.2, 3.0][rot]
+    g.ellipse(7.5, 8, 6.4, ry, "S")                     # disc body
+    if ry >= 2:
+        g.ellipse(7.5, 8 - ry * 0.4, 4.4, ry * 0.42, "s")   # concave well
+        g.px(4, 8 - int(ry) + 1, "V")                   # plastic glint
+        g.px(5, 8 - int(ry) + 1, "V")
+    for x in range(3, 13):                              # underside lip
+        g.px(x, 8 + int(ry), "s")
+    g.outline()
+    return g
+
+
+def frisbee_mouth_frame():
+    """The disc clamped edge-on in his jaws — no spin, just a thin slab."""
+    g = Grid(16, 8)
+    g.ellipse(7.5, 4, 6.4, 1.4, "S")
+    for x in range(2, 14):
+        g.px(x, 5, "s")
+    g.px(5, 3, "V"); g.px(6, 3, "V")
+    g.outline()
+    return g
+
+
+# Rubber chicken, side view facing right: yellow body, red comb and beak,
+# two wiry legs. Frame 0 is at rest; 1 and 2 are squeeze frames (his jaws
+# flatten it, so the body spreads sideways as it loses height).
+SQUEAKY_ART = [
+    [
+        "................",
+        ".........RR.....",
+        "........RRRR....",
+        ".......YYYYY....",
+        ".......YOYYYR...",
+        ".......YYYYYR...",
+        "........YYY.....",
+        "......YYYYY.....",
+        ".....YYYYYYY....",
+        "....YYYYYYYYY...",
+        "....YYyyYYYYY...",
+        "....YYyyYYYYY...",
+        ".....YYYYYYY....",
+        "......Y...Y.....",
+        ".....RRR.RRR....",
+        "................",
+    ],
+    [
+        "................",
+        "................",
+        "................",
+        ".........RR.....",
+        "........RRRR....",
+        ".......YYYYY....",
+        ".......YOYYYR...",
+        ".......YYYYYR...",
+        "......YYYYY.....",
+        "...YYYYYYYYYY...",
+        "..YYYYYYYYYYYY..",
+        "..YYyyYYYYYYYY..",
+        "...YYYYYYYYYY...",
+        "......Y...Y.....",
+        ".....RRR.RRR....",
+        "................",
+    ],
+    [
+        "................",
+        "................",
+        ".........RR.....",
+        "........RRRR....",
+        ".......YYYYY....",
+        ".......YOYYYR...",
+        ".......YYYYYR...",
+        "........YYY.....",
+        "......YYYYY.....",
+        "....YYYYYYYYY...",
+        "...YYYYYYYYYYY..",
+        "...YYyyYYYYYY...",
+        "....YYYYYYYYY...",
+        "......Y...Y.....",
+        ".....RRR.RRR....",
+        "................",
+    ],
+]
+
+
+def squeaky_frame(squash=0):
+    g = from_art(SQUEAKY_ART[squash])
+    g.outline()
+    return g
+
+
+def rope_strand(g, x0, x1):
+    """Braided hemp band across columns x0..x1 on rows 3..6, with dark edge
+    rows above and below. The twist pattern keys off (x + y) % 4, whose
+    period divides the 8px tile width — so rope_mid butts against itself
+    with no visible seam."""
+    for x in range(x0, x1 + 1):
+        for y in range(3, 7):
+            g.px(x, y, "N" if (x + y) % 4 in (0, 1) else "n")
+        g.px(x, 2, "q")
+        g.px(x, 7, "q")
+
+
+def rope_mid_frame():
+    """The tiling middle section: strand edge to edge, no caps."""
+    g = Grid(8, 10)
+    rope_strand(g, 0, 7)
+    return g
+
+
+def rope_cap_frame():
+    """One end of the rope: a fat overhand knot with the strand running off
+    the right edge. rope_left is this; rope_right is its mirror, so both
+    ends match and the free end reads as a handle."""
+    g = Grid(8, 10)
+    rope_strand(g, 3, 7)
+    g.ellipse(2, 4.5, 2.6, 3.4, "n")                    # knot bulge
+    for y in range(2, 8):                               # knot wrap highlights
+        if y % 2 == 0:
+            g.px(1, y, "N"); g.px(2, y, "N")
+    g.px(0, 3, "q"); g.px(0, 6, "q")                    # frayed tail
+    g.px(3, 1, "q"); g.px(3, 8, "q")                    # knot shoulder
+    return g
+
+
 # ---------------------------------------------------------------- wardrobe
 # Placeholder accessories (single frame each). Drawn front-facing and roughly
 # symmetric; the app owns ALL positioning (anchor code in PetScene/Dog), so
@@ -552,6 +718,12 @@ def main():
         "treat": [treat_frame()],
         "rabbit": [rabbit_frame()],
         "deposit": [deposit_frame(0), deposit_frame(1)],
+        "frisbee": [frisbee_frame(r) for r in range(4)],
+        "frisbee_mouth": [frisbee_mouth_frame()],
+        "squeaky": [squeaky_frame(i) for i in range(3)],
+        "rope_left": [rope_cap_frame()],
+        "rope_mid": [rope_mid_frame()],
+        "rope_right": [rope_cap_frame().hflip()],
         "wardrobe_partyhat": [partyhat_frame()],
         "wardrobe_tophat": [tophat_frame()],
         "wardrobe_cowboyhat": [cowboyhat_frame()],
