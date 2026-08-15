@@ -12,6 +12,7 @@ final class PetScene: SKScene {
 
     // The toy box: one node per toy, nil when that toy isn't out.
     private var frisbee: Frisbee?
+    private var squeaky: SKSpriteNode?
     private var brain: DogBrain!
     private var lastTime: TimeInterval = 0
 
@@ -537,10 +538,75 @@ final class PetScene: SKScene {
         send(.arrived)
     }
 
+    // The squeaky: no aiming, just a short hop to somewhere nearby.
+    private static let squeakyHopRange: ClosedRange<CGFloat> = 130...240
+
+    private func makeSqueakyNode() -> SKSpriteNode {
+        if let anim = SpriteLibrary.shared.prop(named: "squeaky", frameWidth: 16, fps: 9) {
+            let node = SKSpriteNode(texture: anim.textures[0])
+            node.size = CGSize(width: 36, height: 36)
+            return node
+        }
+        return SKSpriteNode(color: .systemYellow, size: CGSize(width: 36, height: 36))
+    }
+
+    /// Somewhere near him and on screen. A few tries, then just clamp — a dog
+    /// wedged in a corner still gets a toy, it's simply closer than usual.
+    private func squeakyHopTarget() -> CGPoint {
+        let margin: CGFloat = 40
+        for _ in 0..<8 {
+            let angle = CGFloat.random(in: 0..<(2 * .pi))
+            let distance = CGFloat.random(in: Self.squeakyHopRange)
+            let point = CGPoint(
+                x: dog.position.x + cos(angle) * distance,
+                y: dog.position.y + sin(angle) * distance
+            )
+            if (margin...(size.width - margin)).contains(point.x),
+               (margin...(size.height - margin)).contains(point.y) {
+                return point
+            }
+        }
+        return CGPoint(
+            x: min(max(dog.position.x + Self.squeakyHopRange.lowerBound, margin), size.width - margin),
+            y: min(max(dog.position.y, margin), size.height - margin)
+        )
+    }
+
+    private func tossSqueaky() {
+        squeaky?.removeFromParent()
+        let toy = makeSqueakyNode()
+        toy.zPosition = 5
+        let origin = dog.position
+        let start = CGPoint(x: origin.x, y: origin.y + 20)
+        toy.position = start
+        addChild(toy)
+        squeaky = toy
+
+        let landing = squeakyHopTarget()
+        // Same "flight" key as the disc, so attachToyToDog kills the hop if he
+        // gets there before it lands.
+        toy.run(Self.hopArc(from: start, to: landing, height: 70, duration: 0.5), withKey: "flight")
+        send(.toyThrown(kind: .squeaky, landing: landing, origin: origin))
+    }
+
+    /// Ball.swift's parabola, for toys that don't need a node class of their own.
+    private static func hopArc(
+        from start: CGPoint, to end: CGPoint, height: CGFloat, duration: TimeInterval
+    ) -> SKAction {
+        SKAction.customAction(withDuration: duration) { node, elapsed in
+            let u = CGFloat(min(1, TimeInterval(elapsed) / duration))
+            node.position = CGPoint(
+                x: start.x + (end.x - start.x) * u,
+                y: start.y + (end.y - start.y) * u + height * 4 * u * (1 - u)
+            )
+        }
+    }
+
     private func toyNode(_ kind: ToyKind) -> SKSpriteNode? {
         switch kind {
         case .frisbee: return frisbee
-        case .squeaky, .rope: return nil
+        case .squeaky: return squeaky
+        case .rope: return nil
         }
     }
 
@@ -551,12 +617,25 @@ final class PetScene: SKScene {
         toy.removeFromParent()
         dog.addChild(toy)
         reseatCarriedToy()
+        if kind == .squeaky { startSqueakySqueezing() }
+    }
+
+    /// The 3-frame strip is a rest pose plus two squeeze frames — looping it
+    /// only while he has it in his jaws makes the toy look worried.
+    private func startSqueakySqueezing() {
+        guard let squeaky,
+              let anim = SpriteLibrary.shared.prop(named: "squeaky", frameWidth: 16, fps: 9)
+        else { return }
+        squeaky.run(
+            .repeatForever(.animate(with: anim.textures, timePerFrame: 1 / anim.fps)),
+            withKey: "squeeze"
+        )
     }
 
     /// Keep a carried toy at the dog's mouth as he turns. The dog's own
     /// xScale (±1, mirrored bark art) is divided back out, same as the rabbit.
     private func reseatCarriedToy() {
-        for kind in [ToyKind.frisbee] {
+        for kind in [ToyKind.frisbee, .squeaky] {
             guard let toy = toyNode(kind), toy.parent === dog else { continue }
             let parentFlip: CGFloat = dog.xScale < 0 ? -1 : 1
             toy.position = CGPoint(x: dog.mouthOffset.x * parentFlip, y: dog.mouthOffset.y)
@@ -567,6 +646,7 @@ final class PetScene: SKScene {
 
     private func dropToyAtDog(_ kind: ToyKind) {
         guard let toy = toyNode(kind) else { return }
+        toy.removeAction(forKey: "squeeze") // back to the rest frame
         toy.removeFromParent()
         let v = dog.facing.unitVector
         toy.position = CGPoint(x: dog.position.x + v.x * 34, y: dog.position.y + v.y * 34 - 10)
@@ -593,7 +673,8 @@ final class PetScene: SKScene {
     private func forgetToy(_ kind: ToyKind) {
         switch kind {
         case .frisbee: frisbee = nil
-        case .squeaky, .rope: break
+        case .squeaky: squeaky = nil
+        case .rope: break
         }
     }
 
@@ -1134,7 +1215,10 @@ final class PetScene: SKScene {
         init(kind: ToyKind) { self.kind = kind }
     }
 
-    private static let toyMenuEntries: [(String, ToyKind)] = [("Frisbee", .frisbee)]
+    private static let toyMenuEntries: [(String, ToyKind)] = [
+        ("Frisbee", .frisbee),
+        ("Squeaky Toy", .squeaky),
+    ]
 
     @objc private func toyChosen(_ sender: NSMenuItem) {
         guard let choice = sender.representedObject as? ToyChoice else { return }
@@ -1143,7 +1227,10 @@ final class PetScene: SKScene {
             // Arms the throw: the next left-click anywhere sails the disc there.
             armedToy = .frisbee
             send(.command(.toy(.frisbee)))
-        case .squeaky, .rope:
+        case .squeaky:
+            // No aiming — it just goes somewhere near him and he goes after it.
+            tossSqueaky()
+        case .rope:
             break // later slices of the toy box
         }
     }

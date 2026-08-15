@@ -289,6 +289,10 @@ final class DogBrain {
         case .awaitingThrow:
             armedToy = nil
             return [.disarmThrow] + enterIdle(at: now)
+        case .shakingToy:
+            // Squeaker exhausted: spit it out and wander off.
+            chasedToy = nil
+            return [.dropToy(.squeaky)] + enterIdle(at: now)
         case .beingPetted:
             return endPetting(at: now)
         case .barking:
@@ -361,10 +365,19 @@ final class DogBrain {
     /// to send `.arrived`; the brain treats both the same).
     private func reachedThrownToy(at now: TimeInterval) -> [DogEffect] {
         let kind = chasedToy ?? .frisbee
-        state = .returningToy(kind)
-        deadline = nil
-        let home = toyReturnPoint ?? position
-        return [.pickUpToy(kind), .play(.carryWalk), .moveTo(home, speed: tuning.carrySpeed)]
+        switch kind {
+        case .squeaky:
+            // The squeaky isn't retrieved, it's MURDERED. He shakes it where
+            // it landed until the novelty wears off.
+            state = .shakingToy
+            deadline = now + tuning.shakeToyDuration
+            return [.pickUpToy(.squeaky), .play(.shakeToy), .playSound("squeak")]
+        case .frisbee, .rope:
+            state = .returningToy(kind)
+            deadline = nil
+            let home = toyReturnPoint ?? position
+            return [.pickUpToy(kind), .play(.carryWalk), .moveTo(home, speed: tuning.carrySpeed)]
+        }
     }
 
     private func handleCommand(_ command: DogCommand, at now: TimeInterval) -> [DogEffect] {
@@ -444,9 +457,17 @@ final class DogBrain {
             guard state == .awaitingThrow, armedToy == .frisbee else { return [] }
             armedToy = nil
             return startToyChase(kind: kind, landing: landing, origin: origin)
-        case .squeaky, .rope:
-            // The squeaky lands in the next feature slice; the rope is never
-            // thrown at all — it's dropped and tugged.
+        case .squeaky:
+            // No aiming and no armed state: the scene lobs it nearby, so the
+            // toss interrupts whatever he was doing (like a dropped treat).
+            guard state != .carried, state != .eating else { return [] }
+            let cleanup = interruptionCleanup()
+            armedToy = nil
+            petReturn = nil
+            return [.stopMoving] + cleanup
+                + startToyChase(kind: kind, landing: landing, origin: origin)
+        case .rope:
+            // The rope is never thrown — it's dropped and tugged.
             return []
         }
     }
@@ -740,6 +761,9 @@ final class DogBrain {
             chasedToy = nil
             toyReturnPoint = nil
             return [.removeToy(kind)]
+        case .shakingToy:
+            chasedToy = nil
+            return [.removeToy(.squeaky)]
         case .zoomies:
             return [.stopZoomies]
         case .sniffingMouse, .stalkingMouse, .pouncing:
