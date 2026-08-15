@@ -52,10 +52,46 @@ enum Facing: CaseIterable {
     }
 }
 
+/// Which coat Jumba is wearing. The raw value is the sprite-file prefix the
+/// importer writes (classic art is unprefixed) and the value persisted under
+/// the "coat" default.
+enum Coat: String, CaseIterable {
+    case classic
+    case shaggy
+
+    var title: String {
+        switch self {
+        case .classic: "Classic"
+        case .shaggy: "Shaggy"
+        }
+    }
+
+    /// Prefix applied to every sprite name in this coat, "" for classic.
+    var filePrefix: String { self == .classic ? "" : "\(rawValue)_" }
+}
+
 /// Loads Jumba's hand-made 8-directional sprites (imported by Tools/import_jumba.py)
 /// plus the generated props (ball, heart). Nearest-neighbor keeps pixels crisp.
 final class SpriteLibrary {
     static let shared = SpriteLibrary()
+
+    /// The active coat. Every dog animation is resolved through this first and
+    /// falls back to the classic art when the coat can't cover a pose. Nothing
+    /// to invalidate on a change: `textureCache` is keyed by the full filename,
+    /// so the two coats simply occupy different keys. The scene still has to
+    /// re-`play` the current animation to put the new textures on screen.
+    var coat: Coat = .classic
+
+    /// Poses the shaggy art doesn't include, and what it borrows instead.
+    /// The kit ships one shaggy sprint pose where classic has two, so the
+    /// second run frame uses the shaggy pounce (legs gathered, body compressed)
+    /// — together they read as a gallop. Letting run2 fall through to the
+    /// classic art instead would swap his coat on every other frame at 13fps,
+    /// and dropping the whole run cycle to classic would un-shag him for most
+    /// of his waking life.
+    private static let coatSubstitutes: [Coat: [String: String]] = [
+        .shaggy: ["run2": "pounce"],
+    ]
 
     struct Animation {
         let textures: [SKTexture]
@@ -95,9 +131,7 @@ final class SpriteLibrary {
                          .north, .northEast, .east, .southEast]
             return make(cycle.map { "idle_\($0.fileSuffix)" }, fps: 24, scale: Self.baseScale)
         case .happy:
-            // Bark exists facing east only; mirror it for west-ish facings.
-            let flip = facing == .west || facing == .northWest || facing == .southWest
-            return make((0..<6).map { "bark_\($0)" }, fps: 10, scale: Self.baseScale, flipX: flip)
+            return yap(facing: facing, fps: 8)
         case .dangle:
             // Held in the air: the sitting pose, facing the user.
             return make(["sit_south"], fps: 1, scale: Self.sitScale)
@@ -105,12 +139,12 @@ final class SpriteLibrary {
             return make(["sniff_\(d)"], fps: 1, scale: Self.baseScale)
         case .hunch:
             return make(["hunch_\(d)"], fps: 1, scale: Self.baseScale)
-        // v4 states: real art first (imported via Tools/import_jumba.py when it
-        // arrives), existing art as the stand-in until then. Keeping the real
-        // filename in the lookup means dropping the art in requires no code.
+        // v4 states: the real filename first, an older pose as the stand-in
+        // behind it — which is what let the hand-made art light these up with
+        // no code change at all. All of them are real now except rollOver and
+        // shakeToy, which nobody has drawn yet; leave the fallbacks in place.
         case .bark:
-            let flip = facing == .west || facing == .northWest || facing == .southWest
-            return make((0..<6).map { "bark_\($0)" }, fps: 10, scale: Self.baseScale, flipX: flip)
+            return yap(facing: facing, fps: 8)
         case .stalk:
             return make(["stalk_\(d)"], fps: 1, scale: Self.baseScale)
                 ?? make(["sniff_\(d)"], fps: 1, scale: Self.baseScale)
@@ -133,8 +167,7 @@ final class SpriteLibrary {
             return make(cycle.map { "idle_\($0.fileSuffix)" }, fps: 8, scale: Self.baseScale)
         case .shakeToy:
             if let real = make(["shaketoy_\(d)"], fps: 8, scale: Self.baseScale) { return real }
-            let flip = facing == .west || facing == .northWest || facing == .southWest
-            return make((0..<6).map { "bark_\($0)" }, fps: 12, scale: Self.baseScale, flipX: flip)
+            return yap(facing: facing, fps: 12)
         case .tug:
             return make(["brace_\(d)"], fps: 1, scale: Self.baseScale)
                 ?? make(["sit_\(d)"], fps: 1, scale: Self.sitScale)
@@ -152,6 +185,31 @@ final class SpriteLibrary {
             return make(["peek_\(d)"], fps: 1, scale: Self.baseScale)
                 ?? make(["sniff_\(d)"], fps: 1, scale: Self.baseScale)
         }
+    }
+
+    /// True once the 8-rotation barking art is present. `Dog.renderedFacing`
+    /// asks, so wardrobe placement stops pretending he's facing east.
+    var hasDirectionalBark: Bool {
+        texture(named: "bark_\(Facing.south.fileSuffix)") != nil
+    }
+
+    /// The bark cycle: the open-mouthed bark pose alternating with the
+    /// mouth-shut idle of the SAME direction — a yap.
+    ///
+    /// The kit draws `barking` as the idle pose with the mouth open and the
+    /// same silhouette, in all 8 rotations, so this gets both things the old
+    /// art could only pick one of: he barks at what he's actually barking at,
+    /// and his jaw still moves. (The old animation was six frames of motion
+    /// that only existed facing east, mirrored for the three west-ish facings
+    /// and simply wrong for the other four.) That six-frame strip is kept as
+    /// the fallback so a build without the new art behaves exactly as before.
+    private func yap(facing: Facing, fps: Double) -> Animation? {
+        let d = facing.fileSuffix
+        if let real = make(["bark_\(d)", "idle_\(d)"], fps: fps, scale: Self.baseScale) {
+            return real
+        }
+        let flip = facing == .west || facing == .northWest || facing == .southWest
+        return make((0..<6).map { "bark_\($0)" }, fps: 10, scale: Self.baseScale, flipX: flip)
     }
 
     private var propCache: [String: Animation] = [:]
@@ -204,7 +262,28 @@ final class SpriteLibrary {
         return animation
     }
 
+    /// Build an animation from classic sprite names, rendered in the active
+    /// coat. All-or-nothing per animation: a coat that's missing even one frame
+    /// of a cycle hands the whole cycle back to the classic art rather than
+    /// alternating coats mid-gait.
     private func make(_ files: [String], fps: Double, scale: CGFloat, flipX: Bool = false) -> Animation? {
+        if coat != .classic,
+           let themed = build(files.map { coated($0) }, fps: fps, scale: scale, flipX: flipX) {
+            return themed
+        }
+        return build(files, fps: fps, scale: scale, flipX: flipX)
+    }
+
+    /// `"run1_north-east"` in the shaggy coat -> `"shaggy_run1_north-east"`.
+    /// The state is everything before the first underscore; the direction (or
+    /// the legacy bark frame index) rides along untouched.
+    private func coated(_ file: String) -> String {
+        let state = file.prefix { $0 != "_" }
+        let substituted = Self.coatSubstitutes[coat]?[String(state)] ?? String(state)
+        return coat.filePrefix + substituted + file.dropFirst(state.count)
+    }
+
+    private func build(_ files: [String], fps: Double, scale: CGFloat, flipX: Bool) -> Animation? {
         let textures = files.compactMap(texture(named:))
         guard textures.count == files.count, let first = textures.first else { return nil }
         return Animation(
