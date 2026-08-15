@@ -1539,3 +1539,125 @@ private func makeNaturallySleepingBrain() -> DogBrain {
         #expect(brain.state == .carried, "\(signal) must not move him out of your arms")
     }
 }
+
+// MARK: - Toy box: frisbee
+
+/// A brain with the frisbee armed and thrown, mid-chase.
+private func makeFrisbeeChase(
+    landing: CGPoint = CGPoint(x: 700, y: 100),
+    origin: CGPoint = CGPoint(x: 400, y: 300)
+) -> DogBrain {
+    let brain = makeBrain()
+    _ = brain.handle(.command(.toy(.frisbee)), at: 0)
+    _ = brain.handle(.toyThrown(kind: .frisbee, landing: landing, origin: origin), at: 1)
+    return brain
+}
+
+@Test func frisbeeCommandArmsThrowLikeFetch() {
+    let brain = makeBrain()
+    let effects = brain.handle(.command(.toy(.frisbee)), at: 0)
+    #expect(brain.state == .awaitingThrow)
+    #expect(effects.contains(.stopMoving))
+    #expect(effects.contains(.play(.sit)), "he waits for the throw sitting, like fetch")
+    #expect(effects.contains(.armThrow))
+}
+
+@Test func frisbeeThrownStartsChase() {
+    let brain = makeBrain()
+    _ = brain.handle(.command(.toy(.frisbee)), at: 0)
+    let landing = CGPoint(x: 700, y: 100)
+    let effects = brain.handle(
+        .toyThrown(kind: .frisbee, landing: landing, origin: CGPoint(x: 400, y: 300)), at: 1
+    )
+    #expect(brain.state == .chasingFrisbee)
+    #expect(effects.contains(.play(.run)))
+    #expect(moveTarget(in: effects)?.point == landing)
+    #expect(moveTarget(in: effects)?.speed == brain.tuning.runSpeed)
+}
+
+@Test func frisbeeThrownWithoutArmingIsIgnored() {
+    let brain = makeBrain()
+    let effects = brain.handle(
+        .toyThrown(kind: .frisbee, landing: CGPoint(x: 700, y: 100), origin: .zero), at: 1
+    )
+    #expect(effects == [])
+    #expect(brain.state == .idle)
+}
+
+@Test func ballThrownIsIgnoredWhileTheFrisbeeIsArmed() {
+    // The armed state is kind-aware: a stray ball throw can't hijack it.
+    let brain = makeBrain()
+    _ = brain.handle(.command(.toy(.frisbee)), at: 0)
+    let effects = brain.handle(.ballThrown(landing: CGPoint(x: 700, y: 100), origin: .zero), at: 1)
+    #expect(effects == [])
+    #expect(brain.state == .awaitingThrow)
+}
+
+@Test func frisbeeThrowTimesOutAndDisarms() {
+    let brain = makeBrain { $0.throwTimeout = 10 }
+    _ = brain.handle(.command(.toy(.frisbee)), at: 0)
+    let effects = brain.handle(.tick, at: 10.1)
+    #expect(brain.state == .idle)
+    #expect(effects.contains(.disarmThrow))
+    // The armed kind is cleared too: a late throw finds nothing armed.
+    #expect(brain.handle(.toyThrown(kind: .frisbee, landing: .zero, origin: .zero), at: 11) == [])
+}
+
+@Test func catchingFrisbeeMidAirCarriesItHome() {
+    // The signature moment: the scene sends .arrived while the disc is still
+    // in flight, so the pick-up happens off the ground.
+    let origin = CGPoint(x: 400, y: 300)
+    let brain = makeFrisbeeChase(origin: origin)
+
+    let effects = brain.handle(.arrived, at: 2)
+    #expect(brain.state == .returningToy(.frisbee))
+    #expect(effects.contains(.pickUpToy(.frisbee)))
+    #expect(effects.contains(.play(.carryWalk)))
+    #expect(moveTarget(in: effects)?.point == origin)
+    #expect(moveTarget(in: effects)?.speed == brain.tuning.carrySpeed)
+}
+
+@Test func frisbeeMissedInTheAirIsCollectedOffTheGround() {
+    // The unglamorous path: no catch, so .arrived only lands after the disc
+    // has settled. Same chain, later timestamp — he grabs it like the ball.
+    let origin = CGPoint(x: 400, y: 300)
+    let brain = makeFrisbeeChase(origin: origin)
+    #expect(brain.handle(.tick, at: 3) == [], "the chase has no deadline of its own")
+    #expect(brain.state == .chasingFrisbee)
+
+    let pickup = brain.handle(.arrived, at: 4)
+    #expect(brain.state == .returningToy(.frisbee))
+    #expect(pickup.contains(.pickUpToy(.frisbee)))
+
+    let home = brain.handle(.arrived, at: 6)
+    #expect(brain.state == .idle)
+    #expect(home.contains(.dropToy(.frisbee)))
+}
+
+@Test func returningFrisbeeDropsItAndCelebrates() {
+    let brain = makeFrisbeeChase()
+    _ = brain.handle(.arrived, at: 2)
+
+    let effects = brain.handle(.arrived, at: 4)
+    #expect(brain.state == .idle)
+    #expect(effects.contains(.dropToy(.frisbee)))
+    #expect(effects.contains(.celebrate))
+    #expect(effects.contains(.play(.idle)))
+}
+
+@Test func commandDuringFrisbeeChaseRemovesTheFrisbee() {
+    let brain = makeFrisbeeChase()
+    let effects = brain.handle(.command(.sit), at: 2)
+    #expect(brain.state == .sitting)
+    #expect(effects.contains(.removeToy(.frisbee)), "an abandoned chase tidies the disc away")
+}
+
+@Test func pickedUpWhileCarryingTheFrisbeeRemovesIt() {
+    let brain = makeFrisbeeChase()
+    _ = brain.handle(.arrived, at: 2)
+    #expect(brain.state == .returningToy(.frisbee))
+
+    let effects = brain.handle(.pickedUp, at: 3)
+    #expect(brain.state == .carried)
+    #expect(effects.contains(.removeToy(.frisbee)))
+}

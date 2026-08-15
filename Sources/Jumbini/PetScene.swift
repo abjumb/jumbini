@@ -9,6 +9,9 @@ final class PetScene: SKScene {
 
     private let dog = Dog()
     private var ball: Ball?
+
+    // The toy box: one node per toy, nil when that toy isn't out.
+    private var frisbee: Frisbee?
     private var brain: DogBrain!
     private var lastTime: TimeInterval = 0
 
@@ -53,6 +56,8 @@ final class PetScene: SKScene {
 
     /// Fetch was chosen: the next left-click anywhere throws the ball.
     private var armedForThrow = false
+    /// Which toy the armed throw will launch; nil = the fetch ball.
+    private var armedToy: ToyKind?
     /// Dog arrived at the landing spot before the ball finished bouncing.
     private var pendingChaseArrival = false
 
@@ -101,6 +106,7 @@ final class PetScene: SKScene {
         dog.onFacingChanged = { [weak self] in
             self?.reseatCarriedBall()
             self?.reseatCarriedRabbit()
+            self?.reseatCarriedToy()
             self?.reseatWornItem()
         }
         if let stored = UserDefaults.standard.string(forKey: Self.wardrobeItemKey) {
@@ -298,6 +304,7 @@ final class PetScene: SKScene {
         stepZoomies(dt: dt)
         stepSniffing(dt: dt)
         brain.position = dog.position
+        stepFrisbeeCatch()
         send(.tick)
         trackHover(at: currentTime)
         // Every frame (cheap): the anchor depends on the dog's node size,
@@ -336,6 +343,12 @@ final class PetScene: SKScene {
             pendingChaseArrival = true
             return
         }
+        if brain.state == .chasingFrisbee, let frisbee, !frisbee.isLanded {
+            // He beat the disc to the landing spot without catching it —
+            // wait for it to settle, then grab it off the ground.
+            pendingChaseArrival = true
+            return
+        }
         send(.arrived)
     }
 
@@ -354,6 +367,7 @@ final class PetScene: SKScene {
                 armedForThrow = true
             case .disarmThrow:
                 armedForThrow = false
+                armedToy = nil
             case .pickUpBall:
                 attachBallToDog()
             case .dropBall:
@@ -386,8 +400,14 @@ final class PetScene: SKScene {
                 playSound(named: name)
             case .nudgeCursor:
                 nudgeRealCursor()
-            case .pickUpToy, .dropToy, .removeToy, .startTug, .stopTug:
-                break // vocabulary stubs — wired by feature branches
+            case .pickUpToy(let kind):
+                attachToyToDog(kind)
+            case .dropToy(let kind):
+                dropToyAtDog(kind)
+            case .removeToy(let kind):
+                removeToy(kind)
+            case .startTug, .stopTug:
+                break // wired by the tug-of-war slice
             }
         }
     }
@@ -417,6 +437,7 @@ final class PetScene: SKScene {
 
     private func throwBall(to landing: CGPoint) {
         armedForThrow = false
+        armedToy = nil
         pendingChaseArrival = false
         let margin: CGFloat = 30
         let clamped = CGPoint(
@@ -464,6 +485,116 @@ final class PetScene: SKScene {
         // The dropped ball rests a while, then tidies itself away.
         ball.run(.sequence([.wait(forDuration: 8), .fadeOut(withDuration: 0.6), .removeFromParent()]))
         self.ball = nil
+    }
+
+    // MARK: - Toy box
+
+    /// How close his nose has to get to the disc's CURRENT position for the
+    /// catch to count. Generous: the disc is 36pt wide and he is not subtle.
+    private static let frisbeeCatchRadius: CGFloat = 40
+    /// How long a dropped toy lies around before it tidies itself away.
+    private static let toyLingerDuration: TimeInterval = 4
+
+    private func throwFrisbee(to landing: CGPoint) {
+        armedForThrow = false
+        armedToy = nil
+        pendingChaseArrival = false
+        let margin: CGFloat = 30
+        let clamped = CGPoint(
+            x: min(max(landing.x, margin), size.width - margin),
+            y: min(max(landing.y, margin), size.height - margin)
+        )
+
+        frisbee?.removeFromParent()
+        let disc = Frisbee()
+        addChild(disc)
+        disc.onLanded = { [weak self] in
+            // He beat the disc to the spot and it never got caught: the
+            // pick-up waits for it to stop skidding (same as the ball).
+            guard let self, self.pendingChaseArrival else { return }
+            self.pendingChaseArrival = false
+            self.send(.arrived)
+        }
+        frisbee = disc
+
+        let origin = dog.position
+        disc.throwArc(from: CGPoint(x: origin.x, y: origin.y + 20), to: clamped)
+        send(.toyThrown(kind: .frisbee, landing: clamped, origin: origin))
+    }
+
+    /// THE moment: while the disc is still in the air, check every frame
+    /// whether he has run under it. Close enough and the chase ends early —
+    /// he takes it out of the sky instead of off the floor.
+    private func stepFrisbeeCatch() {
+        guard brain.state == .chasingFrisbee,
+              let disc = frisbee, !disc.isLanded, disc.parent === self
+        else { return }
+        let gap = hypot(disc.position.x - dog.position.x, disc.position.y - dog.position.y)
+        guard gap <= Self.frisbeeCatchRadius else { return }
+        pendingChaseArrival = false
+        // The brain answers with .pickUpToy + a fresh .moveTo, which replaces
+        // the in-flight run action, so the stale arrival never fires.
+        send(.arrived)
+    }
+
+    private func toyNode(_ kind: ToyKind) -> SKSpriteNode? {
+        switch kind {
+        case .frisbee: return frisbee
+        case .squeaky, .rope: return nil
+        }
+    }
+
+    private func attachToyToDog(_ kind: ToyKind) {
+        guard let toy = toyNode(kind) else { return }
+        toy.removeAction(forKey: "flight")
+        if let disc = toy as? Frisbee { disc.clampInMouth() }
+        toy.removeFromParent()
+        dog.addChild(toy)
+        reseatCarriedToy()
+    }
+
+    /// Keep a carried toy at the dog's mouth as he turns. The dog's own
+    /// xScale (±1, mirrored bark art) is divided back out, same as the rabbit.
+    private func reseatCarriedToy() {
+        for kind in [ToyKind.frisbee] {
+            guard let toy = toyNode(kind), toy.parent === dog else { continue }
+            let parentFlip: CGFloat = dog.xScale < 0 ? -1 : 1
+            toy.position = CGPoint(x: dog.mouthOffset.x * parentFlip, y: dog.mouthOffset.y)
+            toy.zPosition = dog.mouthZOffset
+            toy.xScale = parentFlip
+        }
+    }
+
+    private func dropToyAtDog(_ kind: ToyKind) {
+        guard let toy = toyNode(kind) else { return }
+        toy.removeFromParent()
+        let v = dog.facing.unitVector
+        toy.position = CGPoint(x: dog.position.x + v.x * 34, y: dog.position.y + v.y * 34 - 10)
+        toy.zPosition = 5
+        toy.xScale = 1
+        addChild(toy)
+        toy.run(.sequence([
+            .wait(forDuration: Self.toyLingerDuration),
+            .fadeOut(withDuration: 0.6),
+            .removeFromParent(),
+        ]))
+        forgetToy(kind)
+    }
+
+    private func removeToy(_ kind: ToyKind) {
+        guard let toy = toyNode(kind) else { return }
+        toy.removeAllActions()
+        toy.run(.sequence([.fadeOut(withDuration: 0.25), .removeFromParent()]))
+        forgetToy(kind)
+        pendingChaseArrival = false
+    }
+
+    /// Let go of our reference — the node keeps running its own fade-out.
+    private func forgetToy(_ kind: ToyKind) {
+        switch kind {
+        case .frisbee: frisbee = nil
+        case .squeaky, .rope: break
+        }
     }
 
     // MARK: - Zoomies
@@ -844,7 +975,11 @@ final class PetScene: SKScene {
         } else if let pile = piles.last(where: { $0.frame.insetBy(dx: -6, dy: -6).contains(location) }) {
             draggedPile = pile // newest first when piles overlap
         } else if armedForThrow {
-            throwBall(to: location)
+            if armedToy == .frisbee {
+                throwFrisbee(to: location)
+            } else {
+                throwBall(to: location)
+            }
         }
     }
 
@@ -947,6 +1082,7 @@ final class PetScene: SKScene {
         }
         menu.addItem(.separator())
         menu.addItem(tricksMenuItem())
+        menu.addItem(toysMenuItem())
         let wardrobe = NSMenuItem(title: "Wardrobe", action: nil, keyEquivalent: "")
         wardrobe.submenu = wardrobeSelectionMenu()
         menu.addItem(wardrobe)
@@ -974,6 +1110,42 @@ final class PetScene: SKScene {
         }
         tricksItem.submenu = submenu
         return tricksItem
+    }
+
+    /// The Toys submenu, between Tricks and Wardrobe: fetch is one ball, this
+    /// is the rest of the box. Each toy plays differently — the frisbee is
+    /// aimed and thrown, the squeaky is lobbed nearby, the rope is tugged.
+    private func toysMenuItem() -> NSMenuItem {
+        let toysItem = NSMenuItem(title: "Toys", action: nil, keyEquivalent: "")
+        let submenu = NSMenu()
+        for (title, kind) in Self.toyMenuEntries {
+            let item = NSMenuItem(title: title, action: #selector(toyChosen(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = ToyChoice(kind: kind)
+            submenu.addItem(item)
+        }
+        toysItem.submenu = submenu
+        return toysItem
+    }
+
+    /// `representedObject` needs a class, and ToyKind is an enum.
+    private final class ToyChoice: NSObject {
+        let kind: ToyKind
+        init(kind: ToyKind) { self.kind = kind }
+    }
+
+    private static let toyMenuEntries: [(String, ToyKind)] = [("Frisbee", .frisbee)]
+
+    @objc private func toyChosen(_ sender: NSMenuItem) {
+        guard let choice = sender.representedObject as? ToyChoice else { return }
+        switch choice.kind {
+        case .frisbee:
+            // Arms the throw: the next left-click anywhere sails the disc there.
+            armedToy = .frisbee
+            send(.command(.toy(.frisbee)))
+        case .squeaky, .rope:
+            break // later slices of the toy box
+        }
     }
 
     @objc private func commandChosen(_ sender: NSMenuItem) {

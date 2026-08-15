@@ -29,6 +29,10 @@ enum SystemSignal: Equatable {
 enum DogCommand: Equatable {
     case sit, lieDown, spin, fetch, spinForever, zoomies, relax
     case trick(Trick)
+    /// Get a toy out of the box and wait for it to be thrown (the kind-aware
+    /// sibling of `.fetch`). Only the frisbee uses it today: the squeaky is
+    /// tossed by the scene without aiming, and the rope needs no throw.
+    case toy(ToyKind)
 }
 
 /// Why the dog is heading to his bed.
@@ -58,9 +62,15 @@ enum DogState: Equatable {
     case stalkingMouse
     case pouncing
     case performingTrick(Trick)
+    /// Running down a thrown toy. Named for the frisbee, used by every
+    /// thrown toy — `chasedToy` says which one, and decides what happens on
+    /// arrival (carry the frisbee home; shake the squeaky where it lands).
     case chasingFrisbee
     case shakingToy
     case tugging
+    /// Trotting back with a toy in his mouth (the frisbee's return leg, and
+    /// the victory lap after he wins a tug).
+    case returningToy(ToyKind)
 }
 
 enum DogEvent: Equatable {
@@ -197,6 +207,13 @@ final class DogBrain {
     private var deadline: TimeInterval?
     /// Where the dog stood when the ball was thrown — the fetch return point.
     private var fetchReturnPoint: CGPoint?
+    /// Which toy the armed throw will launch (nil = the fetch ball). Keeps
+    /// `.awaitingThrow` kind-aware so a ball throw can't hijack a frisbee.
+    private var armedToy: ToyKind?
+    /// The toy he's currently running down (set on `.toyThrown`).
+    private var chasedToy: ToyKind?
+    /// Where he stood when a toy was thrown — the frisbee's return point.
+    private var toyReturnPoint: CGPoint?
     /// State to resume after a petting session (dog stays sitting/lying).
     private var petReturn: DogState?
     /// State to resume after a bark (same pattern as `petReturn`).
@@ -221,6 +238,7 @@ final class DogBrain {
             return handleBallThrown(landing: landing, origin: origin, at: now)
         case .throwCancelled:
             guard state == .awaitingThrow else { return [] }
+            armedToy = nil
             return [.disarmThrow] + enterIdle(at: now)
         case .treatDropped(let point):
             return handleTreatDropped(at: point, now: now)
@@ -236,7 +254,9 @@ final class DogBrain {
             return handleProvoked(at: now)
         case .system(let signal):
             return handleSystemSignal(signal, at: now)
-        case .toyThrown, .tugStarted, .tugMoved, .tugEnded:
+        case .toyThrown(let kind, let landing, let origin):
+            return handleToyThrown(kind: kind, landing: landing, origin: origin, at: now)
+        case .tugStarted, .tugMoved, .tugEnded:
             // Vocabulary landed ahead of behavior — feature branches wire these.
             return []
         }
@@ -267,6 +287,7 @@ final class DogBrain {
             self.deadline = now + tuning.hunchDuration
             return [.play(.hunch)]
         case .awaitingThrow:
+            armedToy = nil
             return [.disarmThrow] + enterIdle(at: now)
         case .beingPetted:
             return endPetting(at: now)
@@ -324,9 +345,26 @@ final class DogBrain {
             state = .eating
             deadline = now + tuning.eatDuration
             return [.eatTreat, .play(.happy), .showHearts]
+        case .chasingFrisbee:
+            return reachedThrownToy(at: now)
+        case .returningToy(let kind):
+            toyReturnPoint = nil
+            chasedToy = nil
+            return [.dropToy(kind), .celebrate] + enterIdle(at: now)
         default:
             return []
         }
+    }
+
+    /// He got to the toy — by catching the frisbee out of the air, or by
+    /// picking it up off the ground once it settled (the scene decides when
+    /// to send `.arrived`; the brain treats both the same).
+    private func reachedThrownToy(at now: TimeInterval) -> [DogEffect] {
+        let kind = chasedToy ?? .frisbee
+        state = .returningToy(kind)
+        deadline = nil
+        let home = toyReturnPoint ?? position
+        return [.pickUpToy(kind), .play(.carryWalk), .moveTo(home, speed: tuning.carrySpeed)]
     }
 
     private func handleCommand(_ command: DogCommand, at now: TimeInterval) -> [DogEffect] {
@@ -358,6 +396,14 @@ final class DogBrain {
             effects.append(.play(.spin))
         case .fetch:
             state = .awaitingThrow
+            armedToy = nil // the plain ball
+            deadline = now + tuning.throwTimeout
+            effects.append(contentsOf: [.play(.sit), .armThrow])
+        case .toy(let kind):
+            // Same waiting pose as fetch, but the armed throw remembers which
+            // toy it is so `.toyThrown`/`.ballThrown` can't cross wires.
+            state = .awaitingThrow
+            armedToy = kind
             deadline = now + tuning.throwTimeout
             effects.append(contentsOf: [.play(.sit), .armThrow])
         case .spinForever:
@@ -380,10 +426,36 @@ final class DogBrain {
     }
 
     private func handleBallThrown(landing: CGPoint, origin: CGPoint, at now: TimeInterval) -> [DogEffect] {
-        guard state == .awaitingThrow else { return [] }
+        guard state == .awaitingThrow, armedToy == nil else { return [] }
         state = .chasingBall
         deadline = nil
         fetchReturnPoint = origin
+        return [.play(.run), .moveTo(landing, speed: tuning.runSpeed)]
+    }
+
+    /// A toy is in the air. The frisbee comes out of the armed throw (aimed
+    /// by the user, like fetch); the squeaky is lobbed by the scene from
+    /// wherever he is, so it interrupts whatever he was doing.
+    private func handleToyThrown(
+        kind: ToyKind, landing: CGPoint, origin: CGPoint, at now: TimeInterval
+    ) -> [DogEffect] {
+        switch kind {
+        case .frisbee:
+            guard state == .awaitingThrow, armedToy == .frisbee else { return [] }
+            armedToy = nil
+            return startToyChase(kind: kind, landing: landing, origin: origin)
+        case .squeaky, .rope:
+            // The squeaky lands in the next feature slice; the rope is never
+            // thrown at all — it's dropped and tugged.
+            return []
+        }
+    }
+
+    private func startToyChase(kind: ToyKind, landing: CGPoint, origin: CGPoint) -> [DogEffect] {
+        state = .chasingFrisbee
+        deadline = nil
+        chasedToy = kind
+        toyReturnPoint = origin
         return [.play(.run), .moveTo(landing, speed: tuning.runSpeed)]
     }
 
@@ -654,10 +726,20 @@ final class DogBrain {
     private func interruptionCleanup(keepTreat: Bool = false) -> [DogEffect] {
         switch state {
         case .awaitingThrow:
+            armedToy = nil
             return [.disarmThrow]
         case .chasingBall, .returningBall:
             fetchReturnPoint = nil
             return [.removeBall]
+        case .chasingFrisbee:
+            let kind = chasedToy ?? .frisbee
+            chasedToy = nil
+            toyReturnPoint = nil
+            return [.removeToy(kind)]
+        case .returningToy(let kind):
+            chasedToy = nil
+            toyReturnPoint = nil
+            return [.removeToy(kind)]
         case .zoomies:
             return [.stopZoomies]
         case .sniffingMouse, .stalkingMouse, .pouncing:
