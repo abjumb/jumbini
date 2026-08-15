@@ -8,6 +8,31 @@ enum DogAnimation: String, Equatable {
     case bark, stalk, pounce, shakePaw, highFive, playDead, rollOver, shakeToy, tug
 }
 
+/// A window the dog can stand on top of, in SCENE coordinates (bottom-left
+/// origin) so the brain never has to think about window-server geometry.
+///
+/// Produced by `WindowSurfaces` (the app layer, which owns the
+/// CGWindowList call and the coordinate flip) and handed to
+/// `DogBrain.surfaces`, exactly the way the scene keeps `bounds`/`position`
+/// current. The brain treats these as facts and only decides what to do
+/// with them.
+struct Surface: Equatable {
+    /// The window's CGWindowID. Stable for the life of the window, which is
+    /// what lets `.perched(surfaceID:)` survive a poll that reorders the list
+    /// — and what makes a *missing* id mean "that window is gone".
+    let id: CGWindowID
+    /// The window's frame in scene coordinates. `rect.maxY` is the perch line.
+    let rect: CGRect
+    /// The window title when the system gives us one. On modern macOS this is
+    /// gated by Screen Recording permission (the geometry is not), so it can
+    /// be nil on a perfectly healthy machine — never rely on it.
+    let title: String?
+    let ownerPID: pid_t
+
+    /// The y a dog's FEET rest at when standing on this window.
+    var topY: CGFloat { rect.maxY }
+}
+
 /// Tricks the dog can be taught. Raw value doubles as the menu title.
 enum Trick: String, CaseIterable, Equatable {
     case shake = "Shake"
