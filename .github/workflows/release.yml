@@ -79,7 +79,48 @@ jobs:
           KEYCHAIN_PASSWORD="$(uuidgen)"
           echo "KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
 
-          echo -n "$MACOS_CERT_P12_BASE64" | base64 --decode > "$CERT_PATH"
+          # Strip whitespace before decoding. `base64 -i cert.p12` on macOS
+          # hard-wraps at 68 columns, and a paste into the GitHub secrets UI can
+          # pick up CRs or stray blank lines on the way. None of that is a real
+          # corruption, so normalise it rather than failing on it.
+          #
+          # What is NOT recoverable is a genuinely non-base64 character, which
+          # is what "error decoding base64 input stream" means. Bare, that
+          # message says nothing about which of the six secrets is wrong or why,
+          # so check the alphabet ourselves and say so.
+          CLEAN="$(printf '%s' "$MACOS_CERT_P12_BASE64" | tr -d '[:space:]')"
+
+          if [ -z "$CLEAN" ]; then
+            echo "::error::MACOS_CERT_P12_BASE64 is empty. Set it to the base64" \
+                 "of your exported .p12: base64 -i cert.p12 | pbcopy"
+            exit 1
+          fi
+
+          if printf '%s' "$CLEAN" | LC_ALL=C grep -q '[^A-Za-z0-9+/=]'; then
+            echo "::error::MACOS_CERT_P12_BASE64 contains characters that are not" \
+                 "valid base64. This usually means the secret holds a file path," \
+                 "or the value was mangled in transit (smart quotes, an ellipsis" \
+                 "from truncated terminal output). Re-copy it with:" \
+                 "base64 -i cert.p12 | pbcopy"
+            exit 1
+          fi
+
+          if ! printf '%s' "$CLEAN" | base64 --decode > "$CERT_PATH"; then
+            echo "::error::MACOS_CERT_P12_BASE64 failed to base64-decode even" \
+                 "though every character is in the base64 alphabet — the value is" \
+                 "most likely truncated. Re-copy the whole blob."
+            exit 1
+          fi
+
+          # A .p12 is a DER SEQUENCE, so it always starts with 0x30. Catching a
+          # wrong-file paste here beats letting `security import` fail later
+          # with a generic error, or — worse — succeed on something unexpected.
+          if [ "$(head -c 1 "$CERT_PATH" | xxd -p)" != "30" ]; then
+            echo "::error::The decoded MACOS_CERT_P12_BASE64 is not a PKCS#12 file." \
+                 "Check you exported a 'Developer ID Application' certificate" \
+                 "(with its private key) as .p12 — not a .cer or .pem."
+            exit 1
+          fi
 
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
           security set-keychain-settings -lut 21600 "$KEYCHAIN"
@@ -118,7 +159,36 @@ jobs:
           APPLE_API_KEY_P8_BASE64: ${{ secrets.APPLE_API_KEY_P8_BASE64 }}
         run: |
           set -euo pipefail
-          echo -n "$APPLE_API_KEY_P8_BASE64" | base64 --decode > "$RUNNER_TEMP/apikey.p8"
+          # Same whitespace-tolerant, diagnosable decode as the .p12 step above.
+          CLEAN="$(printf '%s' "$APPLE_API_KEY_P8_BASE64" | tr -d '[:space:]')"
+
+          if [ -z "$CLEAN" ]; then
+            echo "::error::APPLE_API_KEY_P8_BASE64 is empty. Set it with:" \
+                 "base64 -i AuthKey_XXXXXXXXXX.p8 | pbcopy"
+            exit 1
+          fi
+
+          if printf '%s' "$CLEAN" | LC_ALL=C grep -q '[^A-Za-z0-9+/=]'; then
+            echo "::error::APPLE_API_KEY_P8_BASE64 contains characters that are not" \
+                 "valid base64. Re-copy it with: base64 -i AuthKey_XXXXXXXXXX.p8 | pbcopy"
+            exit 1
+          fi
+
+          if ! printf '%s' "$CLEAN" | base64 --decode > "$RUNNER_TEMP/apikey.p8"; then
+            echo "::error::APPLE_API_KEY_P8_BASE64 failed to base64-decode; the" \
+                 "value is most likely truncated. Re-copy the whole blob."
+            exit 1
+          fi
+
+          # The .p8 is PEM, so notarytool needs the header intact. A base64 blob
+          # of the wrong file decodes fine and only explodes much later, inside
+          # notarization, after a full build has already been paid for.
+          if ! head -n 1 "$RUNNER_TEMP/apikey.p8" | grep -q 'BEGIN PRIVATE KEY'; then
+            echo "::error::The decoded APPLE_API_KEY_P8_BASE64 is not a PEM private" \
+                 "key. Check you base64'd the App Store Connect .p8 file itself."
+            exit 1
+          fi
+
           chmod 600 "$RUNNER_TEMP/apikey.p8"
 
       - name: Build, sign, notarize and staple
