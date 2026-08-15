@@ -603,7 +603,7 @@ final class PetScene: SKScene {
     private static let squeakyHopRange: ClosedRange<CGFloat> = 130...240
 
     private func makeSqueakyNode() -> SKSpriteNode {
-        if let anim = SpriteLibrary.shared.prop(named: "squeaky", frameWidth: 16, fps: 9) {
+        if let anim = SpriteLibrary.shared.singleProp(named: "toy_chicken") {
             let node = SKSpriteNode(texture: anim.textures[0])
             node.size = CGSize(width: 36, height: 36)
             return node
@@ -681,6 +681,8 @@ final class PetScene: SKScene {
     private static let yankInterval: ClosedRange<TimeInterval> = 0.9...1.7
     private static let yankDuration: TimeInterval = 0.26
     private static let yankDistance: CGFloat = 34
+    /// Past this much of a pull (0...1) the rope is drawn strained.
+    private static let tugTautForce: CGFloat = 0.5
 
     /// The dog's end of the rope — his mouth, in scene coordinates.
     private func ropeAnchor() -> CGPoint {
@@ -730,7 +732,9 @@ final class PetScene: SKScene {
         let anchor = ropeAnchor()
 
         if carryingRope {
-            // Victory lap: it trails behind him as he swaggers off.
+            // Victory lap: it trails behind him as he swaggers off. Nobody is
+            // pulling any more, so it hangs slack.
+            rope.setTaut(false)
             let v = dog.facing.unitVector
             ropeEnd = CGPoint(
                 x: anchor.x - v.x * Self.ropeRestLength * 0.8,
@@ -770,9 +774,13 @@ final class PetScene: SKScene {
         rope.layout(from: anchor, to: ropeEnd)
         dog.face(towards: ropeEnd) // brace against the pull
 
+        // Every frame, not on the throttled send: the strain is what the user
+        // is watching while they haul, and it should track their arm.
+        let force = tugForce()
+        rope.setTaut(force >= Self.tugTautForce)
         if lastTime - lastTugSent >= 0.1 { // ~10/s
             lastTugSent = lastTime
-            send(.tugMoved(to: ropeEnd, force: tugForce()))
+            send(.tugMoved(to: ropeEnd, force: force))
         }
     }
 
@@ -799,6 +807,7 @@ final class PetScene: SKScene {
     private func endTug() {
         draggingRope = false
         yankPhase = 0
+        rope?.setTaut(false)
     }
 
     private func removeRope() {
@@ -832,11 +841,12 @@ final class PetScene: SKScene {
         if kind == .squeaky { startSqueakySqueezing() }
     }
 
-    /// The 3-frame strip is a rest pose plus two squeeze frames — looping it
-    /// only while he has it in his jaws makes the toy look worried.
+    /// toy_squash_0..2: the chicken being crushed and springing back. Looping
+    /// it only while he has it in his jaws — which is exactly the brain's
+    /// `.shakingToy` — makes the toy look worried.
     private func startSqueakySqueezing() {
         guard let squeaky,
-              let anim = SpriteLibrary.shared.prop(named: "squeaky", frameWidth: 16, fps: 9)
+              let anim = SpriteLibrary.shared.propSequence(named: "toy_squash", frames: 3, fps: 9)
         else { return }
         squeaky.run(
             .repeatForever(.animate(with: anim.textures, timePerFrame: 1 / anim.fps)),
@@ -865,7 +875,12 @@ final class PetScene: SKScene {
             return
         }
         guard let toy = toyNode(kind) else { return }
-        toy.removeAction(forKey: "squeeze") // back to the rest frame
+        // Back to the rest pose: stopping `animate` leaves whichever squash
+        // frame it was on, and the rest art is its own file now.
+        toy.removeAction(forKey: "squeeze")
+        if kind == .squeaky, let rest = SpriteLibrary.shared.singleProp(named: "toy_chicken") {
+            toy.texture = rest.textures[0]
+        }
         toy.removeFromParent()
         let v = dog.facing.unitVector
         toy.position = CGPoint(x: dog.position.x + v.x * 34, y: dog.position.y + v.y * 34 - 10)

@@ -13,8 +13,13 @@ final class Frisbee: SKSpriteNode {
     private static let minFlight: TimeInterval = 0.9
     private static let maxFlight: TimeInterval = 2.2
 
+    /// Alex's spin frames. frisbee_3 is deliberately absent — it was delivered
+    /// as a dither smear rather than a disc; redraw it and this becomes 4.
+    /// (Tools/import_kit_props.py has the matching note.)
+    private static let spinFrames = 3
+
     init() {
-        let anim = SpriteLibrary.shared.prop(named: "frisbee", frameWidth: 16, fps: 14)
+        let anim = SpriteLibrary.shared.propSequence(named: "frisbee", frames: Self.spinFrames, fps: 14)
         super.init(
             texture: anim?.textures.first,
             color: .systemOrange,
@@ -63,11 +68,13 @@ final class Frisbee: SKSpriteNode {
     func clampInMouth() {
         removeAction(forKey: "flight")
         removeAction(forKey: "spin")
-        guard let anim = SpriteLibrary.shared.prop(named: "frisbee_mouth", frameWidth: 16, fps: 1),
+        guard let anim = SpriteLibrary.shared.singleProp(named: "frisbee_mouth"),
               let texture = anim.textures.first
         else { return }
         self.texture = texture
-        size = CGSize(width: 36, height: 18)
+        // The mouth sprite is square art (the disc drawn edge-on inside the
+        // frame), so the node keeps its shape — no squashing to a slab.
+        size = CGSize(width: 36, height: 36)
     }
 
     func fadeOutAndRemove() {
