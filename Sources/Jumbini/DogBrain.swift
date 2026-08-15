@@ -5,10 +5,30 @@ import CoreGraphics
 
 enum DogAnimation: String, Equatable {
     case idle, walk, run, sit, lie, sleep, spin, carryWalk, happy, dangle, sniff, hunch
+    case bark, stalk, pounce, shakePaw, highFive, playDead, rollOver, shakeToy, tug
+}
+
+/// Tricks the dog can be taught. Raw value doubles as the menu title.
+enum Trick: String, CaseIterable, Equatable {
+    case shake = "Shake"
+    case highFive = "High Five"
+    case playDead = "Play Dead"
+    case rollOver = "Roll Over"
+}
+
+/// Toys beyond the fetch ball.
+enum ToyKind: Equatable {
+    case frisbee, squeaky, rope
+}
+
+/// Ambient machine happenings the scene layer can feed the brain.
+enum SystemSignal: Equatable {
+    case buildFinished, idleBegan, idleEnded, fansUp, batteryLow, batteryNormal, dndOn, dndOff
 }
 
 enum DogCommand: Equatable {
     case sit, lieDown, spin, fetch, spinForever, zoomies, relax
+    case trick(Trick)
 }
 
 /// Why the dog is heading to his bed.
@@ -34,6 +54,13 @@ enum DogState: Equatable {
     case zoomies
     case sniffingMouse
     case hunching
+    case barking
+    case stalkingMouse
+    case pouncing
+    case performingTrick(Trick)
+    case chasingFrisbee
+    case shakingToy
+    case tugging
 }
 
 enum DogEvent: Equatable {
@@ -47,6 +74,12 @@ enum DogEvent: Equatable {
     case petted
     case pickedUp
     case dropped(at: CGPoint)
+    case provoked(at: CGPoint)
+    case system(SystemSignal)
+    case toyThrown(kind: ToyKind, landing: CGPoint, origin: CGPoint)
+    case tugStarted(at: CGPoint)
+    case tugMoved(to: CGPoint, force: CGFloat)
+    case tugEnded
 }
 
 /// Side effects the scene applies (animations, movement, ball control).
@@ -67,6 +100,14 @@ enum DogEffect: Equatable {
     case startSniffing
     case stopSniffing
     case removeTreat
+    case playSound(String)
+    case leaveDeposit
+    case nudgeCursor
+    case pickUpToy(ToyKind)
+    case dropToy(ToyKind)
+    case removeToy(ToyKind)
+    case startTug
+    case stopTug
 }
 
 /// All timing/probability/speed knobs, overridable in tests for determinism.
@@ -92,6 +133,12 @@ struct BrainTuning {
     var sniffChance: Double = 0.12
     var hunchDuration: TimeInterval = 2.5
     var hunchChance: Double = 0.06
+    var barkDuration: TimeInterval = 1.2
+    var stalkDuration: TimeInterval = 3.0
+    var pounceDuration: TimeInterval = 0.5
+    var trickDuration: TimeInterval = 1.5
+    var shakeToyDuration: TimeInterval = 2.0
+    var tugTimeout: TimeInterval = 12
 }
 
 /// Deterministic RNG for tests (SplitMix64).
@@ -166,6 +213,9 @@ final class DogBrain {
             return handlePickedUp(at: now)
         case .dropped(let point):
             return handleDropped(at: point, now: now)
+        case .provoked, .system, .toyThrown, .tugStarted, .tugMoved, .tugEnded:
+            // Vocabulary landed ahead of behavior — feature branches wire these.
+            return []
         }
     }
 
@@ -271,6 +321,9 @@ final class DogBrain {
             effects.append(contentsOf: [.play(.run), .startZoomies])
         case .relax:
             effects.append(contentsOf: enterIdle(at: now))
+        case .trick:
+            // Vocabulary stub — the trick-training branch wires performingTrick.
+            break
         }
         return effects
     }
