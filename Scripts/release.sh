@@ -84,9 +84,26 @@ echo "==> Signing with: $SIGN_IDENTITY"
 # The SwiftPM resource bundle, if bundle.sh copied one in. No --options runtime:
 # it holds PNGs and WAVs, no Mach-O, so hardened runtime has nothing to apply to.
 # It still has to be signed BEFORE the app, or the app's seal over it breaks.
+#
+# Only sign it if it carries an Info.plist. codesign identifies a directory as a
+# bundle by that file alone, and without one it refuses the whole directory with
+# "bundle format unrecognized, invalid, or unsuitable". Which SwiftPM emits is
+# toolchain-dependent: Swift 6.4 writes Contents/Info.plist, the Swift 6.1 on
+# GitHub's macos-15 runners writes none at all. Signing it unconditionally means
+# the release builds on the developer's Mac and dies on CI.
+#
+# Skipping is safe rather than merely expedient. The bundle has no Mach-O, so
+# there is no code in it to sign, and `codesign` on the .app below seals every
+# file underneath it — a modified sprite still fails --verify --deep --strict as
+# "a sealed resource is missing or invalid". Notarization does not require nested
+# resource bundles to carry their own signature.
 RESOURCE_BUNDLE="$APP/Contents/Resources/Jumbini_Jumbini.bundle"
 if [ -d "$RESOURCE_BUNDLE" ]; then
-  codesign --force --timestamp --sign "$SIGN_IDENTITY" "$RESOURCE_BUNDLE"
+  if [ -f "$RESOURCE_BUNDLE/Contents/Info.plist" ] || [ -f "$RESOURCE_BUNDLE/Info.plist" ]; then
+    codesign --force --timestamp --sign "$SIGN_IDENTITY" "$RESOURCE_BUNDLE"
+  else
+    echo "    (resource bundle has no Info.plist; leaving it to the app's seal)"
+  fi
 fi
 
 # Signing the bundle re-signs Contents/MacOS/Jumbini in place — that is where the
