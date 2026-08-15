@@ -1,0 +1,36 @@
+{
+  "group_id": "8032ecd5-307d-4d1d-a928-71105de284db",
+  "states": [
+    {
+      "character": {
+        "id": "30c2637c-c606-4dcb-917a-3ed1f158076c",
+        "name": "hunched over defecat",
+        "prompt": "The dog's name is Jumba. He is a tricolor American Cocker and Springer Spaniel Mix\u2014 a medium-sized, compact dog with the breed's signature long floppy ears and heavy feathering on the chest and legs.\n\nCoat & Colors\nBlack \u2014 the base color across the back, top of head, and ears\nWhite \u2014 a blaze down the chest and neck, plus white \"socks\" on the front paws\nTan/rust \u2014 classic eyebrow dots above the eyes, on the cheeks, and lower legs\n",
+        "size": {
+          "width": 48,
+          "height": 48
+        },
+        "template_id": "dog",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-08-14T22:55:04.633736+00:00"
+      },
+      "folder": "hunched_over_defecat",
+      "frames": {
+        "rotations": {
+          "south": "hunched_over_defecat/rotations/south.png",
+          "south-east": "hunched_over_defecat/rotations/south-east.png",
+          "east": "hunched_over_defecat/rotations/east.png",
+          "north-east": "hunched_over_defecat/rotations/north-east.png",
+          "north": "hunched_over_defecat/rotations/north.png",
+          "north-west": "hunched_over_defecat/rotations/north-west.png",
+          "west": "hunched_over_defecat/rotations/west.png",
+          "south-west": "hunched_over_defecat/rotations/south-west.png"
+        },
+        "animations": {}
+      }
+    }
+  ],
+  "export_version": "3.1",
+  "export_date": "2026-08-14T23:33:45.419167"
+}

@@ -1,0 +1,22 @@
+{
+  "group_id": "65c3ce40-5326-459a-a1ed-0797cfe09ce2",
+  "objects": [
+    {
+      "id": "d394a482-7828-4367-9b0f-7b9efd7b3c78",
+      "name": "base",
+      "prompt": "blue fuzzy dog bed",
+      "size": {
+        "width": 48,
+        "height": 48
+      },
+      "directions": 1,
+      "view": "low top-down",
+      "rotations": {
+        "unknown": "rotations/blue_fuzzy_dog_bed.png"
+      },
+      "animations": {}
+    }
+  ],
+  "export_version": "1.1",
+  "export_date": "2026-08-14T23:55:29.495380"
+}

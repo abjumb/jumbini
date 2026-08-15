@@ -1,0 +1,36 @@
+{
+  "group_id": "8032ecd5-307d-4d1d-a928-71105de284db",
+  "states": [
+    {
+      "character": {
+        "id": "7cd02927-ad35-49c6-8245-dde3d9c6c03d",
+        "name": "sniffing the ground",
+        "prompt": "The dog's name is Jumba. He is a tricolor American Cocker and Springer Spaniel Mix\u2014 a medium-sized, compact dog with the breed's signature long floppy ears and heavy feathering on the chest and legs.\n\nCoat & Colors\nBlack \u2014 the base color across the back, top of head, and ears\nWhite \u2014 a blaze down the chest and neck, plus white \"socks\" on the front paws\nTan/rust \u2014 classic eyebrow dots above the eyes, on the cheeks, and lower legs\n",
+        "size": {
+          "width": 48,
+          "height": 48
+        },
+        "template_id": "dog",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-08-14T22:57:33.671552+00:00"
+      },
+      "folder": "sniffing_the_ground",
+      "frames": {
+        "rotations": {
+          "south": "sniffing_the_ground/rotations/south.png",
+          "south-east": "sniffing_the_ground/rotations/south-east.png",
+          "east": "sniffing_the_ground/rotations/east.png",
+          "north-east": "sniffing_the_ground/rotations/north-east.png",
+          "north": "sniffing_the_ground/rotations/north.png",
+          "north-west": "sniffing_the_ground/rotations/north-west.png",
+          "west": "sniffing_the_ground/rotations/west.png",
+          "south-west": "sniffing_the_ground/rotations/south-west.png"
+        },
+        "animations": {}
+      }
+    }
+  ],
+  "export_version": "3.1",
+  "export_date": "2026-08-14T23:33:20.903052"
+}
