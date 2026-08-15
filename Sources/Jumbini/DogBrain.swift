@@ -159,6 +159,11 @@ struct BrainTuning {
     var trickDuration: TimeInterval = 1.5
     var shakeToyDuration: TimeInterval = 2.0
     var tugTimeout: TimeInterval = 12
+    /// Backstop for a Do Not Disturb sleep, which otherwise has no deadline.
+    /// The `dndOff` signal can never arrive (the Focus database is
+    /// unreadable without Full Disk Access), and a sleep with no exit reads
+    /// as a hung app.
+    var dndSleepSafety: TimeInterval = 900
     /// Odds he wins when a tug-of-war goes the distance. A straight coin
     /// flip: he's a small dog with a lot of conviction.
     var tugWinChance: Double = 0.5
@@ -230,6 +235,11 @@ final class DogBrain {
     /// state — a nap or lie-down he chose on his own is never interrupted.
     private enum RestReason { case userIdle, batteryLow, doNotDisturb }
     private var restReason: RestReason?
+    /// A machine signal that arrived while he had momentum. The monitor is
+    /// edge-triggered — it reports the Focus switch flipping, not that Focus
+    /// is on — so dropping one loses the reaction for the whole session.
+    /// Held here and replayed on the first calm tick instead.
+    private var pendingSignal: SystemSignal?
 
     func handle(_ event: DogEvent, at now: TimeInterval) -> [DogEffect] {
         switch event {
@@ -284,6 +294,11 @@ final class DogBrain {
         if state == .idle && deadline == nil {
             deadline = now + random(in: tuning.idleDuration)
             return []
+        }
+        // He's settled and the machine had something to say while he was busy.
+        if isCalm, let parked = pendingSignal {
+            pendingSignal = nil
+            return handleSystemSignal(parked, at: now)
         }
         guard let deadline, now >= deadline else { return [] }
         switch state {
@@ -478,7 +493,10 @@ final class DogBrain {
             // No aiming and no armed state: the scene lobs it nearby, so the
             // toss interrupts whatever he was doing (like a dropped treat).
             guard state != .carried, state != .eating else { return [] }
-            let cleanup = interruptionCleanup()
+            // keepToy, same reasoning as keepTreat: the scene swaps the node
+            // before sending this event, so removing "the squeaky" here would
+            // delete the toy that just landed, not the stale one.
+            let cleanup = interruptionCleanup(keepToy: .squeaky)
             armedToy = nil
             petReturn = nil
             return [.stopMoving] + cleanup
@@ -633,35 +651,53 @@ final class DogBrain {
         }
     }
 
+    /// Park a signal he was too busy for. Wake-ups are not parked: they only
+    /// matter against a rest this same machine caused, and `riseFromRest`
+    /// already no-ops when the reason doesn't match. A newer signal wins —
+    /// the machine's latest word is the true one.
+    private func deferSignal(_ signal: SystemSignal) -> [DogEffect] {
+        switch signal {
+        case .idleEnded, .batteryNormal, .dndOff:
+            pendingSignal = nil // the rest it would end never happened
+        default:
+            pendingSignal = signal
+        }
+        return []
+    }
+
     private func handleSystemSignal(_ signal: SystemSignal, at now: TimeInterval) -> [DogEffect] {
         switch signal {
         case .buildFinished:
             // Ship it! A brief party — celebrate overlays the current art.
-            guard isCalm else { return [] }
+            guard isCalm else { return deferSignal(signal) }
+            // Celebrate in place while conserving: enterIdle would clear
+            // restReason, and batteryLow is edge-triggered, so the conserve
+            // would be lost for the rest of the discharge.
+            if restReason != nil { return [.celebrate, .showHearts] }
             return [.stopMoving, .celebrate, .showHearts] + enterIdle(at: now)
         case .idleBegan:
             // Human's wandered off — nap time, same path as an autonomous nap.
-            guard isCalm else { return [] }
+            guard isCalm else { return deferSignal(signal) }
             restReason = .userIdle
             return [.stopMoving] + restfulSleep(at: now)
         case .idleEnded:
             return riseFromRest(ended: .userIdle, at: now)
         case .fansUp:
             // The machine's working hard; so should he.
-            guard isCalm else { return [] }
+            guard isCalm else { return deferSignal(signal) }
             state = .zoomies
             deadline = now + tuning.zoomiesDuration
             return [.stopMoving, .play(.run), .startZoomies]
         case .batteryLow:
             // Conserve energy: lie down (in the bed when he has one).
-            guard isCalm else { return [] }
+            guard isCalm else { return deferSignal(signal) }
             restReason = .batteryLow
             return [.stopMoving] + restfulLie(at: now)
         case .batteryNormal:
             return riseFromRest(ended: .batteryLow, at: now)
         case .dndOn:
             // Do Not Disturb means exactly that: off to bed, no wake deadline.
-            guard isCalm else { return [] }
+            guard isCalm else { return deferSignal(signal) }
             restReason = .doNotDisturb
             return [.stopMoving] + restfulSleep(at: now)
         case .dndOff:
@@ -678,7 +714,11 @@ final class DogBrain {
             return [.play(.walk), .moveTo(bed, speed: tuning.walkSpeed)]
         }
         state = .sleeping
-        deadline = restReason == .doNotDisturb ? nil : now + random(in: tuning.sleepDuration)
+        // A DND sleep lasts until the signal lifts, but never forever: dndOff
+        // can genuinely never arrive, and a state with no exit reads as a hang.
+        deadline = restReason == .doNotDisturb
+            ? now + tuning.dndSleepSafety
+            : now + random(in: tuning.sleepDuration)
         return [.play(.sleep)]
     }
 
@@ -759,12 +799,17 @@ final class DogBrain {
             // Something at the screen edge (the Dock? his reflection?) needs
             // telling off. A small step toward the edge turns him to face it;
             // .arrived from that hop is ignored while barking.
-            lastBark = now
-            barkReturn = nil
-            state = .barking
-            deadline = now + tuning.barkDuration
-            return [.moveTo(nearestEdgeNudge(), speed: tuning.walkSpeed),
-                    .play(.bark), .playSound("borf")]
+            // The cooldown is a property of barking, not of one trigger: a
+            // provoked bark must silence this band too, or he double-barks.
+            if lastBark.map({ now - $0 >= tuning.barkCooldown }) ?? true {
+                lastBark = now
+                barkReturn = nil
+                state = .barking
+                deadline = now + tuning.barkDuration
+                return [.moveTo(nearestEdgeNudge(), speed: tuning.walkSpeed),
+                        .play(.bark), .playSound("borf")]
+            }
+            // Still cooling down: fall through to a wander instead.
         }
         state = .wandering
         deadline = nil
@@ -813,7 +858,9 @@ final class DogBrain {
     /// Effects needed to abandon the current activity when something interrupts it.
     /// `keepTreat` skips treat removal — a re-dropped treat swaps the node in the
     /// scene, so emitting `.removeTreat` there would delete the NEW treat.
-    private func interruptionCleanup(keepTreat: Bool = false) -> [DogEffect] {
+    private func interruptionCleanup(
+        keepTreat: Bool = false, keepToy: ToyKind? = nil
+    ) -> [DogEffect] {
         switch state {
         case .awaitingThrow:
             armedToy = nil
@@ -825,14 +872,14 @@ final class DogBrain {
             let kind = chasedToy ?? .frisbee
             chasedToy = nil
             toyReturnPoint = nil
-            return [.removeToy(kind)]
+            return kind == keepToy ? [] : [.removeToy(kind)]
         case .returningToy(let kind):
             chasedToy = nil
             toyReturnPoint = nil
-            return [.removeToy(kind)]
+            return kind == keepToy ? [] : [.removeToy(kind)]
         case .shakingToy:
             chasedToy = nil
-            return [.removeToy(.squeaky)]
+            return keepToy == .squeaky ? [] : [.removeToy(.squeaky)]
         case .tugging:
             // The scene must drop the user's drag immediately, or they'd be
             // left waggling a rope he has walked away from.

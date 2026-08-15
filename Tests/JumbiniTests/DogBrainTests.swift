@@ -1442,16 +1442,21 @@ private func makeNaturallySleepingBrain() -> DogBrain {
 
 // dndOn / dndOff → lights out until the humans say otherwise.
 
-@Test func dndOnSleepsIndefinitelyWithoutBed() {
+@Test func dndOnSleepsUntilLiftedOrTheSafetyDeadline() {
     let brain = makeBrain { $0.sleepDuration = 10...10 }
     let effects = brain.handle(.system(.dndOn), at: 1)
     #expect(brain.state == .sleeping)
     #expect(effects.contains(.stopMoving))
     #expect(effects.contains(.play(.sleep)))
 
-    // No wake deadline: still out cold ages later.
-    #expect(brain.handle(.tick, at: 10_000) == [])
+    // Far past a normal nap and still out cold — this is not sleepDuration.
+    #expect(brain.handle(.tick, at: 100) == [])
     #expect(brain.state == .sleeping)
+
+    // But not forever: dndOff can never arrive on a machine where the Focus
+    // database is unreadable, and a state with no exit reads as a hang.
+    _ = brain.handle(.tick, at: 1 + brain.tuning.dndSleepSafety + 0.1)
+    #expect(brain.state == .idle)
 }
 
 @Test func dndOnRoutesThroughBedAndSleepsUntilLifted() {
@@ -1906,4 +1911,105 @@ private func makeTugging(
     let effects = brain.handle(.command(.sit), at: 3)
     #expect(brain.state == .sitting)
     #expect(effects.contains(.stopTug))
+}
+
+// MARK: - Cross-feature defects found by the brain-semantics review
+
+@Test func retossedSqueakyDoesNotRemoveTheReplacementToy() {
+    // The scene swaps the squeaky node BEFORE sending .toyThrown, exactly like
+    // a re-dropped treat. Cleanup must not delete the toy that just arrived.
+    let brain = makeBrain()
+    _ = brain.handle(.toyThrown(kind: .squeaky, landing: CGPoint(x: 500, y: 300),
+                                origin: CGPoint(x: 400, y: 300)), at: 0)
+    #expect(brain.state == .chasingFrisbee)
+
+    let retoss = brain.handle(.toyThrown(kind: .squeaky, landing: CGPoint(x: 200, y: 200),
+                                         origin: CGPoint(x: 400, y: 300)), at: 1)
+    #expect(brain.state == .chasingFrisbee)
+    #expect(!retoss.contains(.removeToy(.squeaky)), "a re-toss swaps the node; removing it kills the NEW toy")
+}
+
+@Test func retossedSqueakyDuringTheShakeKeepsTheReplacement() {
+    let brain = makeBrain { $0.shakeToyDuration = 2 }
+    _ = brain.handle(.toyThrown(kind: .squeaky, landing: CGPoint(x: 500, y: 300),
+                                origin: CGPoint(x: 400, y: 300)), at: 0)
+    _ = brain.handle(.arrived, at: 1)
+    #expect(brain.state == .shakingToy)
+
+    let retoss = brain.handle(.toyThrown(kind: .squeaky, landing: CGPoint(x: 200, y: 200),
+                                         origin: CGPoint(x: 400, y: 300)), at: 1.5)
+    #expect(!retoss.contains(.removeToy(.squeaky)))
+    #expect(brain.state == .chasingFrisbee)
+}
+
+@Test func frisbeeTossStillClearsAStaleSqueaky() {
+    // Only the SAME kind is spared — a different toy must still be tidied away.
+    let brain = makeBrain()
+    _ = brain.handle(.toyThrown(kind: .squeaky, landing: CGPoint(x: 500, y: 300),
+                                origin: CGPoint(x: 400, y: 300)), at: 0)
+    _ = brain.handle(.command(.toy(.frisbee)), at: 1)
+    let thrown = brain.handle(.toyThrown(kind: .frisbee, landing: CGPoint(x: 200, y: 200),
+                                         origin: CGPoint(x: 400, y: 300)), at: 2)
+    #expect(brain.state == .chasingFrisbee)
+    #expect(thrown.isEmpty || !thrown.contains(.removeToy(.frisbee)))
+}
+
+@Test func autonomousBarkRespectsTheCooldownAndWandersInstead() {
+    // Bark-at-nothing wrote lastBark but never read it, so a provoked bark
+    // could be followed by an autonomous one well inside barkCooldown.
+    let brain = makeBrain { $0.barkAtNothingChance = 1.0; $0.barkCooldown = 8 }
+    _ = brain.handle(.provoked(at: CGPoint(x: 400, y: 300)), at: 0)
+    #expect(brain.state == .barking)
+    _ = brain.handle(.tick, at: 1.3) // bark ends -> idle, timer armed for 3s
+    #expect(brain.state == .idle)
+
+    let roll = brain.handle(.tick, at: 4.4) // inside the 8s cooldown
+    #expect(brain.state != .barking, "second bark only 4.4s after the first")
+    #expect(!roll.contains(.playSound("borf")))
+    #expect(brain.state == .wandering, "the band falls through to a wander")
+}
+
+@Test func buildPartyDoesNotCancelTheBatteryConserve() {
+    // batteryLow is edge-triggered: if the party clears restReason, the
+    // conserve is lost for the whole discharge because it never re-fires.
+    let brain = makeBrain()
+    _ = brain.handle(.system(.batteryLow), at: 0)
+    #expect(brain.state == .lyingDown)
+
+    let party = brain.handle(.system(.buildFinished), at: 30)
+    #expect(party.contains(.celebrate))
+    #expect(brain.state == .lyingDown, "he celebrates from his bed, still conserving")
+
+    let up = brain.handle(.system(.batteryNormal), at: 60)
+    #expect(brain.state == .idle, "plugging in still gets him up")
+    #expect(up.contains(.play(.idle)))
+}
+
+@Test func aSignalArrivingMidChaseIsDeferredNotDropped() {
+    // The monitor is edge-triggered, so a dropped signal is lost forever.
+    let brain = makeBrain()
+    _ = brain.handle(.treatDropped(at: CGPoint(x: 600, y: 300)), at: 0)
+    #expect(brain.state == .chasingTreat)
+
+    let ignored = brain.handle(.system(.dndOn), at: 1)
+    #expect(ignored.isEmpty, "nothing interrupts a treat")
+
+    _ = brain.handle(.arrived, at: 2)          // eating
+    _ = brain.handle(.tick, at: 3.2)           // -> hunching
+    _ = brain.handle(.tick, at: 6)             // -> idle, now calm
+    let caughtUp = brain.handle(.tick, at: 6.1)
+    #expect(brain.state == .sleeping || brain.state == .goingToBed(.sleep),
+            "the deferred Focus signal lands once he settles, got \(brain.state)")
+    #expect(!caughtUp.isEmpty)
+}
+
+@Test func dndSleepCannotStrandHimForeverWithoutADeadline() {
+    // dndOff may never arrive (the Focus DB is unreadable on some machines).
+    let brain = makeBrain()
+    _ = brain.handle(.system(.dndOn), at: 0)
+    #expect(brain.state == .sleeping)
+
+    let woken = brain.handle(.tick, at: brain.tuning.dndSleepSafety + 1)
+    #expect(brain.state == .idle, "a safety deadline eventually releases him")
+    #expect(woken.contains(.play(.idle)))
 }
