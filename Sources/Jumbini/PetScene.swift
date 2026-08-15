@@ -330,6 +330,13 @@ final class PetScene: SKScene {
         apply(effects: brain.handle(event, at: lastTime))
     }
 
+    /// Ambient machine news from the app layer's SystemMonitor. Goes through
+    /// the same path as a click or a menu command, so the brain's own rules
+    /// about what outranks what apply unchanged. Main thread only.
+    func receive(_ signal: SystemSignal) {
+        send(.system(signal))
+    }
+
     private func dogArrived() {
         if brain.state == .chasingBall, let ball, !ball.isLanded {
             // Fast dog: wait for the ball to stop bouncing before the pickup.

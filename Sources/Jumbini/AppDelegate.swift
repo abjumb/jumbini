@@ -16,6 +16,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var camHotKeyRef: EventHotKeyRef?
     private var camEventHandlerRef: EventHandlerRef?
 
+    // System reactions: ambient machine watcher, stopped in applicationWillTerminate.
+    private var systemMonitor: SystemMonitor?
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         setUpStatusItem()
         setUpOverlay()
@@ -31,6 +34,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             name: Notification.Name("JumbiniAteTreat"),
             object: nil
         )
+        // System reactions block: must follow setUpOverlay(), which creates
+        // the scene the signals are delivered to.
+        startSystemMonitor()
+        // System reactions block end.
         // Jumbini Cam block: global hotkey ⌥⇧J (Carbon; no accessibility
         // permission needed, unlike a CGEvent tap). Keep as the last line of
         // this method — self-contained, order-independent.
@@ -39,6 +46,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         unregisterCamHotKey()
+        // System reactions: drop the poll timer and the thermal observer.
+        systemMonitor?.stop()
+        systemMonitor = nil
     }
 
     // MARK: - Overlay
@@ -149,6 +159,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             skView?.isPaused = false
             window?.orderFrontRegardless()
         }
+    }
+
+    // MARK: - System reactions
+
+    /// Start watching the machine and forward what it notices to the dog.
+    /// The monitor is entirely self-contained: any source that can't work on
+    /// this Mac degrades to silence, so there is nothing to check here.
+    private func startSystemMonitor() {
+        let monitor = SystemMonitor()
+        monitor.onSignal = { [weak self] signal in
+            // SystemMonitor guarantees main-thread delivery, which is what
+            // the scene needs. Paused means the overlay is hidden and the
+            // view is frozen — the dog should not be reacting to anything.
+            guard let self, !self.isPaused else { return }
+            self.scene?.receive(signal)
+        }
+        monitor.start()
+        systemMonitor = monitor
     }
 
     // MARK: - Jumbini Cam
