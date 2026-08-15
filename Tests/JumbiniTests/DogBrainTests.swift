@@ -2475,3 +2475,136 @@ private func hopTarget(in effects: [DogEffect]) -> CGPoint? {
     _ = brain.handle(.tick, at: 28.8)
     #expect(brain.state == .headingToSurface(surfaceID: 1), "and off he goes again")
 }
+
+// MARK: - A world with holes in it (multi-monitor dead zones)
+//
+// On a multi-display desk the scene is the BOUNDING BOX of every display, and
+// on an uneven arrangement parts of that box are on no display at all. The
+// brain does not know what a display is: it is handed `roamableRects`, and
+// empty (the default, and every test above) means "all of `bounds`", which is
+// why nothing in this file needed changing.
+
+/// 800x600 of `bounds`, of which only an L-shape is real: a full-height left
+/// half, and a right half that stops at y = 300. Everything above (400, 300)
+/// on the right is a dead zone.
+private let lShapedWorld = [
+    CGRect(x: 0, y: 0, width: 400, height: 600),
+    CGRect(x: 400, y: 0, width: 400, height: 300),
+]
+
+private func isSomewhereReal(_ point: CGPoint, _ rects: [CGRect] = lShapedWorld) -> Bool {
+    rects.contains {
+        point.x >= $0.minX && point.x <= $0.maxX && point.y >= $0.minY && point.y <= $0.maxY
+    }
+}
+
+@Test func byDefaultTheWholeOfBoundsIsRoamable() {
+    let brain = makeBrain()
+    #expect(brain.roamableRects.isEmpty, "the single-display default: no holes to avoid")
+}
+
+@Test func wanderNeverTargetsADeadZone() {
+    for seed in UInt64(1)...40 {
+        let brain = makeBrain(seed: seed)
+        brain.roamableRects = lShapedWorld
+        _ = brain.handle(.tick, at: 0)
+        let target = moveTarget(in: brain.handle(.tick, at: 3.1))?.point
+        #expect(target != nil, "seed \(seed): wandering still needs somewhere to go")
+        if let target {
+            #expect(isSomewhereReal(target),
+                    "seed \(seed): wander target \(target) is in the dead zone")
+        }
+    }
+}
+
+@Test func wanderStillCoversBothHalvesOfAnLShapedWorld() {
+    // Rejection sampling must not quietly collapse him onto one display.
+    var onTheRight = 0
+    for seed in UInt64(1)...40 {
+        let brain = makeBrain(seed: seed)
+        brain.roamableRects = lShapedWorld
+        _ = brain.handle(.tick, at: 0)
+        if let target = moveTarget(in: brain.handle(.tick, at: 3.1))?.point, target.x > 400 {
+            onTheRight += 1
+        }
+    }
+    #expect(onTheRight > 0 && onTheRight < 40,
+            "he should use the whole L, got \(onTheRight)/40 on the short display")
+}
+
+@Test func aWanderTargetIsUnchangedWhenEveryRectIsRoamable() {
+    // The fast path must be bit-identical: same seed, same target, whether or
+    // not the scene bothered to hand over a (hole-free) set of rectangles.
+    for seed in UInt64(1)...8 {
+        let plain = makeBrain(seed: seed)
+        let described = makeBrain(seed: seed)
+        described.roamableRects = [CGRect(x: 0, y: 0, width: 800, height: 600)]
+        _ = plain.handle(.tick, at: 0)
+        _ = described.handle(.tick, at: 0)
+        #expect(moveTarget(in: plain.handle(.tick, at: 3.1))?.point
+                == moveTarget(in: described.handle(.tick, at: 3.1))?.point,
+                "seed \(seed)")
+    }
+}
+
+@Test func theVictoryTrotStaysOutOfTheDeadZone() {
+    // Standing on the short display, being pulled from the left: the trot away
+    // from the pull heads right and up, straight at the hole.
+    for seed in UInt64(1)...12 {
+        let brain = makeBrain(seed: seed) { $0.tugWinChance = 1.0 }
+        brain.roamableRects = lShapedWorld
+        brain.position = CGPoint(x: 700, y: 290)
+        _ = brain.handle(.tugStarted(at: CGPoint(x: 600, y: 200)), at: 1)
+        let effects = brain.handle(.tick, at: 1 + brain.tuning.tugTimeout + 0.1)
+        let target = moveTarget(in: effects)?.point
+        #expect(target != nil, "seed \(seed): the victory lap needs somewhere to go")
+        if let target {
+            #expect(isSomewhereReal(target), "seed \(seed): trotted into the void at \(target)")
+        }
+    }
+}
+
+@Test func theBarkNudgeStaysOutOfTheDeadZone() {
+    // Two bottom-aligned monitors of *nearly* the same height — 1000 and 980,
+    // which is what a pair of "1080p" panels at different scale factors looks
+    // like. The 20-point strip above the shorter one is the dead zone, and to
+    // a dog standing near the top of it that strip is the nearest edge of the
+    // world. A bark towards it would step him straight out of existence.
+    let displays = [
+        CGRect(x: 0, y: 0, width: 600, height: 1000),
+        CGRect(x: 600, y: 0, width: 600, height: 980),
+    ]
+    let brain = makeBrain { $0.barkAtNothingChance = 1.0 }
+    brain.bounds = CGSize(width: 1200, height: 1000)
+    brain.roamableRects = displays
+    brain.position = CGPoint(x: 900, y: 975)
+    _ = brain.handle(.tick, at: 0)
+
+    let effects = brain.handle(.tick, at: 3.1)
+    #expect(brain.state == .barking)
+    let target = moveTarget(in: effects)?.point
+    #expect(target != nil, "he still takes a step so he faces what he's barking at")
+    if let target {
+        #expect(target.y > 975, "the nearest edge really is the top one, got \(target)")
+        #expect(isSomewhereReal(target, displays), "nudged into the void at \(target)")
+        #expect(target.y == 980, "stopped exactly at the short display's top edge")
+    }
+}
+
+@Test func thePerchApproachStaysOutOfTheDeadZone() {
+    // A window whose left edge is out in the dead zone: he must not walk to a
+    // patch of nothing to look up at it.
+    let brain = makeBrain { $0.perchChance = 1.0 }
+    brain.roamableRects = lShapedWorld
+    brain.position = CGPoint(x: 380, y: 480)
+    brain.footOffset = 20
+    brain.surfaces = [Surface(
+        id: 1, rect: CGRect(x: 500, y: 400, width: 260, height: 180), title: "Notes", ownerPID: 900
+    )]
+    _ = brain.handle(.tick, at: 0)
+    let effects = brain.handle(.tick, at: 3.1)
+    #expect(brain.state == .headingToSurface(surfaceID: 1))
+    if let target = moveTarget(in: effects)?.point {
+        #expect(isSomewhereReal(target), "approached the window from the void at \(target)")
+    }
+}

@@ -272,6 +272,23 @@ final class DogBrain {
 
     /// Screen area the dog may roam (scene keeps this current).
     var bounds: CGSize
+    /// The parts of `bounds` that are solid ground, in the same coordinates —
+    /// kept current by the scene, exactly like `bounds` and `surfaces`.
+    ///
+    /// EMPTY (the default) means every point inside `bounds` is fair game,
+    /// which is the one-display case and therefore the overwhelming majority
+    /// of the time; the code below takes the identical path it always did.
+    ///
+    /// Non-empty means the world has HOLES in it. On a multi-display desk the
+    /// scene spans the bounding box of every display, and an uneven
+    /// arrangement leaves corners of that box on no display at all — points
+    /// that exist as far as arithmetic is concerned and nowhere at all as far
+    /// as the user is concerned. A dog who wanders into one has vanished.
+    ///
+    /// Plain rectangles on purpose: the brain does not know that a hole is
+    /// caused by a monitor, any more than it knows that a `Surface` is a
+    /// window. The app layer's `ScreenLayout` is what fills this in.
+    var roamableRects: [CGRect] = []
     /// Dog's position (scene keeps this current; brain uses it to pick targets).
     var position: CGPoint
     /// Where his bed is, if there is one — lie-down and naps route here.
@@ -690,10 +707,10 @@ final class DogBrain {
         }
         let margin = tuning.wanderMargin
         let step = Self.tugVictoryTrot
-        return CGPoint(
+        return onSolidGround(CGPoint(
             x: min(max(position.x + dx * step, margin), max(margin, bounds.width - margin)),
             y: min(max(position.y + dy * step, margin), max(margin, bounds.height - margin))
-        )
+        ))
     }
 
     /// How far he swaggers off with a won rope.
@@ -971,12 +988,7 @@ final class DogBrain {
         }
         state = .wandering
         deadline = nil
-        let margin = tuning.wanderMargin
-        let target = CGPoint(
-            x: CGFloat.random(in: margin...(bounds.width - margin), using: &rng),
-            y: CGFloat.random(in: margin...(bounds.height - margin), using: &rng)
-        )
-        return [.play(.walk), .moveTo(target, speed: tuning.walkSpeed)]
+        return [.play(.walk), .moveTo(wanderTarget(), speed: tuning.walkSpeed)]
     }
 
     /// Bark finished: resume sitting/lying if that's what was interrupted.
@@ -1229,10 +1241,12 @@ final class DogBrain {
     /// near edge, at the height he's already at.
     private func approachPoint(for surface: Surface) -> CGPoint {
         let margin = tuning.wanderMargin
-        return CGPoint(
+        // Solid ground: a window can sit beside a hole in the bounding box,
+        // and the floor below its near edge is then nowhere at all.
+        return onSolidGround(CGPoint(
             x: min(max(nearEdgeX(of: surface), margin), max(margin, bounds.width - margin)),
             y: position.y
-        )
+        ))
     }
 
     /// Where the hop puts him down: on the top edge, one inset in from the
@@ -1288,6 +1302,76 @@ final class DogBrain {
         perchExpiry = nil
     }
 
+    // MARK: - Solid ground
+
+    /// How many times a wander target is re-rolled before giving up and
+    /// clamping. Eight is plenty: the dead zone would have to be most of the
+    /// bounding box for the odds to matter, and the clamp is a fine answer
+    /// even then.
+    private static let wanderTargetAttempts = 8
+
+    /// Somewhere inside the margins to wander off to.
+    ///
+    /// Rejection sampling rather than "pick a rectangle, then pick a point in
+    /// it": picking a rectangle first would weight every display equally and
+    /// send him to a small second monitor as often as to a large main one.
+    /// Sampling the bounding box and rejecting the holes keeps his roaming
+    /// uniform over actual screen area, and — because the very first roll is
+    /// drawn exactly as it always was — leaves the hole-free case (which is
+    /// every single-display Mac) bit-for-bit unchanged.
+    private func wanderTarget() -> CGPoint {
+        let margin = tuning.wanderMargin
+        let xRange = margin...max(margin, bounds.width - margin)
+        let yRange = margin...max(margin, bounds.height - margin)
+        var target = CGPoint(
+            x: CGFloat.random(in: xRange, using: &rng),
+            y: CGFloat.random(in: yRange, using: &rng)
+        )
+        guard !roamableRects.isEmpty else { return target }
+        var attempts = 1
+        while !isRoamable(target), attempts < Self.wanderTargetAttempts {
+            target = CGPoint(
+                x: CGFloat.random(in: xRange, using: &rng),
+                y: CGFloat.random(in: yRange, using: &rng)
+            )
+            attempts += 1
+        }
+        return onSolidGround(target)
+    }
+
+    /// Is this somewhere he could actually be seen standing?
+    /// Always true when `roamableRects` is empty — see the property's comment.
+    /// Edges count as inside, so the seam between two abutting displays is
+    /// ground and not a crack to fall through.
+    private func isRoamable(_ point: CGPoint) -> Bool {
+        guard !roamableRects.isEmpty else { return true }
+        return roamableRects.contains {
+            point.x >= $0.minX && point.x <= $0.maxX && point.y >= $0.minY && point.y <= $0.maxY
+        }
+    }
+
+    /// The nearest point that is solid ground; the point itself if it already
+    /// is. Every target this file computes geometrically — a trot away from a
+    /// pull, a nudge towards an edge, the spot below a window — goes through
+    /// here, because any of them can otherwise aim into a hole.
+    private func onSolidGround(_ point: CGPoint) -> CGPoint {
+        guard !roamableRects.isEmpty, !isRoamable(point) else { return point }
+        var best = point
+        var bestDistance = CGFloat.greatestFiniteMagnitude
+        for rect in roamableRects {
+            let candidate = CGPoint(
+                x: min(max(point.x, rect.minX), rect.maxX),
+                y: min(max(point.y, rect.minY), rect.maxY)
+            )
+            let distance = hypot(candidate.x - point.x, candidate.y - point.y)
+            if distance < bestDistance {
+                best = candidate
+                bestDistance = distance
+            }
+        }
+        return best
+    }
+
     // MARK: - Helpers
 
     /// A point a short step toward the nearest screen edge — walking there
@@ -1299,10 +1383,19 @@ final class DogBrain {
         let toBottom = position.y
         let toTop = bounds.height - position.y
         let nearest = min(toLeft, toRight, toBottom, toTop)
-        if nearest == toLeft { return CGPoint(x: position.x - step, y: position.y) }
-        if nearest == toRight { return CGPoint(x: position.x + step, y: position.y) }
-        if nearest == toBottom { return CGPoint(x: position.x, y: position.y - step) }
-        return CGPoint(x: position.x, y: position.y + step)
+        let nudged: CGPoint
+        if nearest == toLeft {
+            nudged = CGPoint(x: position.x - step, y: position.y)
+        } else if nearest == toRight {
+            nudged = CGPoint(x: position.x + step, y: position.y)
+        } else if nearest == toBottom {
+            nudged = CGPoint(x: position.x, y: position.y - step)
+        } else {
+            nudged = CGPoint(x: position.x, y: position.y + step)
+        }
+        // On a multi-display desk the nearest edge of the BOUNDING BOX may be
+        // across a hole; barking into one would walk him out of existence.
+        return onSolidGround(nudged)
     }
 
     /// Which animation performs a given trick.
