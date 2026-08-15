@@ -100,9 +100,15 @@ codesign --verify --deep --strict --verbose=2 "$APP"
 
 # --verify checks signature integrity, not the two things notarization actually
 # rejects builds for. Catch those here rather than after a round trip to Apple.
-codesign -dv --verbose=4 "$APP" 2>&1 | grep -q 'flags=.*runtime' \
+#
+# Capture once into a variable rather than piping into `grep -q`: grep exits the
+# instant it matches, codesign is still writing, gets SIGPIPE and exits 141, and
+# pipefail reports that as failure -- on a signature that was perfectly fine.
+SIG_INFO=$(codesign -dv --verbose=4 "$APP" 2>&1)
+
+grep -q 'flags=.*runtime' <<<"$SIG_INFO" \
   || die "hardened runtime flag is not set on $APP"
-codesign -dv --verbose=4 "$APP" 2>&1 | grep -q 'Timestamp=' \
+grep -q 'Timestamp=' <<<"$SIG_INFO" \
   || die "no secure timestamp on $APP (could not reach Apple's timestamp server?)"
 
 # ---------------------------------------------------------------------------
