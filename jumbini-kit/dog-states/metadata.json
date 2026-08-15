@@ -1,0 +1,1308 @@
+{
+  "group_id": "8032ecd5-307d-4d1d-a928-71105de284db",
+  "states": [
+    {
+      "character": {
+        "id": "eab1ed51-3ec3-4c5e-a200-823abba56f17",
+        "name": "Idle",
+        "prompt": "The dog's name is Jumba. He is a tricolor American Cocker and Springer Spaniel Mix\u2014 a medium-sized, compact dog with the breed's signature long floppy ears and heavy feathering on the chest and legs.\n\nCoat & Colors\nBlack \u2014 the base color across the back, top of head, and ears\nWhite \u2014 a blaze down the chest and neck, plus white \"socks\" on the front paws\nTan/rust \u2014 classic eyebrow dots above the eyes, on the cheeks, and lower legs\n",
+        "size": {
+          "width": 48,
+          "height": 48
+        },
+        "template_id": "dog",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-08-14T22:21:28.739446+00:00"
+      },
+      "folder": "Idle",
+      "frames": {
+        "rotations": {
+          "south": "Idle/rotations/south.png",
+          "south-east": "Idle/rotations/south-east.png",
+          "east": "Idle/rotations/east.png",
+          "north-east": "Idle/rotations/north-east.png",
+          "north": "Idle/rotations/north.png",
+          "north-west": "Idle/rotations/north-west.png",
+          "west": "Idle/rotations/west.png",
+          "south-west": "Idle/rotations/south-west.png"
+        },
+        "animations": {
+          "The_dog_trots_forward_while_rhythmically_bobbing_i": {
+            "south": [
+              "Idle/animations/The_dog_trots_forward_while_rhythmically_bobbing_i/south/frame_000.png",
+              "Idle/animations/The_dog_trots_forward_while_rhythmically_bobbing_i/south/frame_001.png",
+              "Idle/animations/The_dog_trots_forward_while_rhythmically_bobbing_i/south/frame_002.png",
+              "Idle/animations/The_dog_trots_forward_while_rhythmically_bobbing_i/south/frame_003.png",
+              "Idle/animations/The_dog_trots_forward_while_rhythmically_bobbing_i/south/frame_004.png",
+              "Idle/animations/The_dog_trots_forward_while_rhythmically_bobbing_i/south/frame_005.png",
+              "Idle/animations/The_dog_trots_forward_while_rhythmically_bobbing_i/south/frame_006.png",
+              "Idle/animations/The_dog_trots_forward_while_rhythmically_bobbing_i/south/frame_007.png",
+              "Idle/animations/The_dog_trots_forward_while_rhythmically_bobbing_i/south/frame_008.png"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "character": {
+        "id": "a4b758e1-127a-43b5-bc5c-f6a5466d7539",
+        "name": "sitting down",
+        "prompt": "The dog's name is Jumba. He is a tricolor American Cocker and Springer Spaniel Mix\u2014 a medium-sized, compact dog with the breed's signature long floppy ears and heavy feathering on the chest and legs.\n\nCoat & Colors\nBlack \u2014 the base color across the back, top of head, and ears\nWhite \u2014 a blaze down the chest and neck, plus white \"socks\" on the front paws\nTan/rust \u2014 classic eyebrow dots above the eyes, on the cheeks, and lower legs\n",
+        "size": {
+          "width": 68,
+          "height": 76
+        },
+        "template_id": "dog",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-08-14T22:24:00.353073+00:00"
+      },
+      "folder": "sitting_down",
+      "frames": {
+        "rotations": {
+          "south": "sitting_down/rotations/south.png",
+          "south-east": "sitting_down/rotations/south-east.png",
+          "east": "sitting_down/rotations/east.png",
+          "north-east": "sitting_down/rotations/north-east.png",
+          "north": "sitting_down/rotations/north.png",
+          "north-west": "sitting_down/rotations/north-west.png",
+          "west": "sitting_down/rotations/west.png",
+          "south-west": "sitting_down/rotations/south-west.png"
+        },
+        "animations": {
+          "Bark": {
+            "east": [
+              "sitting_down/animations/Bark/east/frame_000.png",
+              "sitting_down/animations/Bark/east/frame_001.png",
+              "sitting_down/animations/Bark/east/frame_002.png",
+              "sitting_down/animations/Bark/east/frame_003.png",
+              "sitting_down/animations/Bark/east/frame_004.png",
+              "sitting_down/animations/Bark/east/frame_005.png"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "character": {
+        "id": "9eb2377b-d751-4c9d-82ea-4a97ec4e837f",
+        "name": "Idle",
+        "prompt": "The dog's name is Jumba. He is a tricolor American Cocker and Springer Spaniel Mix\u2014 a medium-sized, compact dog with the breed's signature long floppy ears and heavy feathering on the chest and legs.\n\nCoat & Colors\nBlack \u2014 the base color across the back, top of head, and ears\nWhite \u2014 a blaze down the chest and neck, plus white \"socks\" on the front paws\nTan/rust \u2014 classic eyebrow dots above the eyes, on the cheeks, and lower legs\n",
+        "size": {
+          "width": 48,
+          "height": 48
+        },
+        "template_id": "dog",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-08-15T02:31:11.208102+00:00"
+      },
+      "folder": "Idle_2",
+      "frames": {
+        "rotations": {
+          "south": "Idle_2/rotations/south.png",
+          "south-east": "Idle_2/rotations/south-east.png",
+          "east": "Idle_2/rotations/east.png",
+          "north-east": "Idle_2/rotations/north-east.png",
+          "north": "Idle_2/rotations/north.png",
+          "north-west": "Idle_2/rotations/north-west.png",
+          "west": "Idle_2/rotations/west.png",
+          "south-west": "Idle_2/rotations/south-west.png"
+        },
+        "animations": {}
+      }
+    },
+    {
+      "character": {
+        "id": "aef50df8-428b-479f-adaf-766c5677bb90",
+        "name": "Shaggy",
+        "prompt": "The dog's name is Jumba. He is a tricolor American Cocker and Springer Spaniel Mix\u2014 a medium-sized, compact dog with the breed's signature long floppy ears and heavy feathering on the chest and legs.\n\nCoat & Colors\nBlack \u2014 the base color across the back, top of head, and ears\nWhite \u2014 a blaze down the chest and neck, plus white \"socks\" on the front paws\nTan/rust \u2014 classic eyebrow dots above the eyes, on the cheeks, and lower legs\n",
+        "size": {
+          "width": 48,
+          "height": 48
+        },
+        "template_id": "dog",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-08-15T02:31:14.312367+00:00"
+      },
+      "folder": "Shaggy",
+      "frames": {
+        "rotations": {
+          "south": "Shaggy/rotations/south.png",
+          "south-east": "Shaggy/rotations/south-east.png",
+          "east": "Shaggy/rotations/east.png",
+          "north-east": "Shaggy/rotations/north-east.png",
+          "north": "Shaggy/rotations/north.png",
+          "north-west": "Shaggy/rotations/north-west.png",
+          "west": "Shaggy/rotations/west.png",
+          "south-west": "Shaggy/rotations/south-west.png"
+        },
+        "animations": {}
+      }
+    },
+    {
+      "character": {
+        "id": "f61b94ff-25a2-45d3-86a5-13f35111fddf",
+        "name": "Very Shaggy",
+        "prompt": "The dog's name is Jumba. He is a tricolor American Cocker and Springer Spaniel Mix\u2014 a medium-sized, compact dog with the breed's signature long floppy ears and heavy feathering on the chest and legs.\n\nCoat & Colors\nBlack \u2014 the base color across the back, top of head, and ears\nWhite \u2014 a blaze down the chest and neck, plus white \"socks\" on the front paws\nTan/rust \u2014 classic eyebrow dots above the eyes, on the cheeks, and lower legs\n",
+        "size": {
+          "width": 48,
+          "height": 48
+        },
+        "template_id": "dog",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-08-15T02:31:17.181708+00:00"
+      },
+      "folder": "Very_Shaggy",
+      "frames": {
+        "rotations": {
+          "south": "Very_Shaggy/rotations/south.png",
+          "south-east": "Very_Shaggy/rotations/south-east.png",
+          "east": "Very_Shaggy/rotations/east.png",
+          "north-east": "Very_Shaggy/rotations/north-east.png",
+          "north": "Very_Shaggy/rotations/north.png",
+          "north-west": "Very_Shaggy/rotations/north-west.png",
+          "west": "Very_Shaggy/rotations/west.png",
+          "south-west": "Very_Shaggy/rotations/south-west.png"
+        },
+        "animations": {}
+      }
+    },
+    {
+      "character": {
+        "id": "9f88b5be-bd25-4bf0-9c03-bdfefae76abe",
+        "name": "barking",
+        "prompt": "The dog's name is Jumba. He is a tricolor American Cocker and Springer Spaniel Mix\u2014 a medium-sized, compact dog with the breed's signature long floppy ears and heavy feathering on the chest and legs.\n\nCoat & Colors\nBlack \u2014 the base color across the back, top of head, and ears\nWhite \u2014 a blaze down the chest and neck, plus white \"socks\" on the front paws\nTan/rust \u2014 classic eyebrow dots above the eyes, on the cheeks, and lower legs\n",
+        "size": {
+          "width": 48,
+          "height": 48
+        },
+        "template_id": "dog",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-08-15T02:39:52.069977+00:00"
+      },
+      "folder": "barking",
+      "frames": {
+        "rotations": {
+          "south": "barking/rotations/south.png",
+          "south-east": "barking/rotations/south-east.png",
+          "east": "barking/rotations/east.png",
+          "north-east": "barking/rotations/north-east.png",
+          "north": "barking/rotations/north.png",
+          "north-west": "barking/rotations/north-west.png",
+          "west": "barking/rotations/west.png",
+          "south-west": "barking/rotations/south-west.png"
+        },
+        "animations": {}
+      }
+    },
+    {
+      "character": {
+        "id": "a642ca98-eba2-47aa-9c2d-8ec44df5a5f4",
+        "name": "growling very angril",
+        "prompt": "The dog's name is Jumba. He is a tricolor American Cocker and Springer Spaniel Mix\u2014 a medium-sized, compact dog with the breed's signature long floppy ears and heavy feathering on the chest and legs.\n\nCoat & Colors\nBlack \u2014 the base color across the back, top of head, and ears\nWhite \u2014 a blaze down the chest and neck, plus white \"socks\" on the front paws\nTan/rust \u2014 classic eyebrow dots above the eyes, on the cheeks, and lower legs\n",
+        "size": {
+          "width": 48,
+          "height": 48
+        },
+        "template_id": "dog",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-08-15T02:39:53.424067+00:00"
+      },
+      "folder": "growling_very_angril",
+      "frames": {
+        "rotations": {
+          "south": "growling_very_angril/rotations/south.png",
+          "south-east": "growling_very_angril/rotations/south-east.png",
+          "east": "growling_very_angril/rotations/east.png",
+          "north-east": "growling_very_angril/rotations/north-east.png",
+          "north": "growling_very_angril/rotations/north.png",
+          "north-west": "growling_very_angril/rotations/north-west.png",
+          "west": "growling_very_angril/rotations/west.png",
+          "south-west": "growling_very_angril/rotations/south-west.png"
+        },
+        "animations": {}
+      }
+    },
+    {
+      "character": {
+        "id": "5aab35d5-43bf-4f9c-8306-309050afe053",
+        "name": "sprinting really fas",
+        "prompt": "The dog's name is Jumba. He is a tricolor American Cocker and Springer Spaniel Mix\u2014 a medium-sized, compact dog with the breed's signature long floppy ears and heavy feathering on the chest and legs.\n\nCoat & Colors\nBlack \u2014 the base color across the back, top of head, and ears\nWhite \u2014 a blaze down the chest and neck, plus white \"socks\" on the front paws\nTan/rust \u2014 classic eyebrow dots above the eyes, on the cheeks, and lower legs\n",
+        "size": {
+          "width": 48,
+          "height": 48
+        },
+        "template_id": "dog",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-08-15T02:39:56.790381+00:00"
+      },
+      "folder": "sprinting_really_fas",
+      "frames": {
+        "rotations": {
+          "south": "sprinting_really_fas/rotations/south.png",
+          "south-east": "sprinting_really_fas/rotations/south-east.png",
+          "east": "sprinting_really_fas/rotations/east.png",
+          "north-east": "sprinting_really_fas/rotations/north-east.png",
+          "north": "sprinting_really_fas/rotations/north.png",
+          "north-west": "sprinting_really_fas/rotations/north-west.png",
+          "west": "sprinting_really_fas/rotations/west.png",
+          "south-west": "sprinting_really_fas/rotations/south-west.png"
+        },
+        "animations": {}
+      }
+    },
+    {
+      "character": {
+        "id": "215a9de5-5a2e-4cfc-a638-dd299ff83fb3",
+        "name": "sniffing the ground",
+        "prompt": "The dog's name is Jumba. He is a tricolor American Cocker and Springer Spaniel Mix\u2014 a medium-sized, compact dog with the breed's signature long floppy ears and heavy feathering on the chest and legs.\n\nCoat & Colors\nBlack \u2014 the base color across the back, top of head, and ears\nWhite \u2014 a blaze down the chest and neck, plus white \"socks\" on the front paws\nTan/rust \u2014 classic eyebrow dots above the eyes, on the cheeks, and lower legs\n",
+        "size": {
+          "width": 48,
+          "height": 48
+        },
+        "template_id": "dog",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-08-15T02:39:58.949518+00:00"
+      },
+      "folder": "sniffing_the_ground",
+      "frames": {
+        "rotations": {
+          "south": "sniffing_the_ground/rotations/south.png",
+          "south-east": "sniffing_the_ground/rotations/south-east.png",
+          "east": "sniffing_the_ground/rotations/east.png",
+          "north-east": "sniffing_the_ground/rotations/north-east.png",
+          "north": "sniffing_the_ground/rotations/north.png",
+          "north-west": "sniffing_the_ground/rotations/north-west.png",
+          "west": "sniffing_the_ground/rotations/west.png",
+          "south-west": "sniffing_the_ground/rotations/south-west.png"
+        },
+        "animations": {}
+      }
+    },
+    {
+      "character": {
+        "id": "eff68578-36af-4e40-847f-d7a4e048213f",
+        "name": "hunched over defecat",
+        "prompt": "The dog's name is Jumba. He is a tricolor American Cocker and Springer Spaniel Mix\u2014 a medium-sized, compact dog with the breed's signature long floppy ears and heavy feathering on the chest and legs.\n\nCoat & Colors\nBlack \u2014 the base color across the back, top of head, and ears\nWhite \u2014 a blaze down the chest and neck, plus white \"socks\" on the front paws\nTan/rust \u2014 classic eyebrow dots above the eyes, on the cheeks, and lower legs\n",
+        "size": {
+          "width": 48,
+          "height": 48
+        },
+        "template_id": "dog",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-08-15T02:40:05.857191+00:00"
+      },
+      "folder": "hunched_over_defecat",
+      "frames": {
+        "rotations": {
+          "south": "hunched_over_defecat/rotations/south.png",
+          "south-east": "hunched_over_defecat/rotations/south-east.png",
+          "east": "hunched_over_defecat/rotations/east.png",
+          "north-east": "hunched_over_defecat/rotations/north-east.png",
+          "north": "hunched_over_defecat/rotations/north.png",
+          "north-west": "hunched_over_defecat/rotations/north-west.png",
+          "west": "hunched_over_defecat/rotations/west.png",
+          "south-west": "hunched_over_defecat/rotations/south-west.png"
+        },
+        "animations": {}
+      }
+    },
+    {
+      "character": {
+        "id": "f1527852-f0c9-406b-a2e2-8f658eecaeb2",
+        "name": "sleeping curled up",
+        "prompt": "The dog's name is Jumba. He is a tricolor American Cocker and Springer Spaniel Mix\u2014 a medium-sized, compact dog with the breed's signature long floppy ears and heavy feathering on the chest and legs.\n\nCoat & Colors\nBlack \u2014 the base color across the back, top of head, and ears\nWhite \u2014 a blaze down the chest and neck, plus white \"socks\" on the front paws\nTan/rust \u2014 classic eyebrow dots above the eyes, on the cheeks, and lower legs\n",
+        "size": {
+          "width": 48,
+          "height": 48
+        },
+        "template_id": "dog",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-08-15T02:40:08.362220+00:00"
+      },
+      "folder": "sleeping_curled_up",
+      "frames": {
+        "rotations": {
+          "south": "sleeping_curled_up/rotations/south.png",
+          "south-east": "sleeping_curled_up/rotations/south-east.png",
+          "east": "sleeping_curled_up/rotations/east.png",
+          "north-east": "sleeping_curled_up/rotations/north-east.png",
+          "north": "sleeping_curled_up/rotations/north.png",
+          "north-west": "sleeping_curled_up/rotations/north-west.png",
+          "west": "sleeping_curled_up/rotations/west.png",
+          "south-west": "sleeping_curled_up/rotations/south-west.png"
+        },
+        "animations": {}
+      }
+    },
+    {
+      "character": {
+        "id": "666ba5f6-5ff8-40a0-b05a-9e5a6dcd4246",
+        "name": "sprinting really fas",
+        "prompt": "The dog's name is Jumba. He is a tricolor American Cocker and Springer Spaniel Mix\u2014 a medium-sized, compact dog with the breed's signature long floppy ears and heavy feathering on the chest and legs.\n\nCoat & Colors\nBlack \u2014 the base color across the back, top of head, and ears\nWhite \u2014 a blaze down the chest and neck, plus white \"socks\" on the front paws\nTan/rust \u2014 classic eyebrow dots above the eyes, on the cheeks, and lower legs\n",
+        "size": {
+          "width": 48,
+          "height": 48
+        },
+        "template_id": "dog",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-08-15T02:40:11.871975+00:00"
+      },
+      "folder": "sprinting_really_fas_2",
+      "frames": {
+        "rotations": {
+          "south": "sprinting_really_fas_2/rotations/south.png",
+          "south-east": "sprinting_really_fas_2/rotations/south-east.png",
+          "east": "sprinting_really_fas_2/rotations/east.png",
+          "north-east": "sprinting_really_fas_2/rotations/north-east.png",
+          "north": "sprinting_really_fas_2/rotations/north.png",
+          "north-west": "sprinting_really_fas_2/rotations/north-west.png",
+          "west": "sprinting_really_fas_2/rotations/west.png",
+          "south-west": "sprinting_really_fas_2/rotations/south-west.png"
+        },
+        "animations": {}
+      }
+    },
+    {
+      "character": {
+        "id": "98e94acb-0946-4c59-8fa2-d0f0ea3f8660",
+        "name": "sitting down",
+        "prompt": "The dog's name is Jumba. He is a tricolor American Cocker and Springer Spaniel Mix\u2014 a medium-sized, compact dog with the breed's signature long floppy ears and heavy feathering on the chest and legs.\n\nCoat & Colors\nBlack \u2014 the base color across the back, top of head, and ears\nWhite \u2014 a blaze down the chest and neck, plus white \"socks\" on the front paws\nTan/rust \u2014 classic eyebrow dots above the eyes, on the cheeks, and lower legs\n",
+        "size": {
+          "width": 68,
+          "height": 76
+        },
+        "template_id": "dog",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-08-15T02:40:14.244520+00:00"
+      },
+      "folder": "sitting_down_2",
+      "frames": {
+        "rotations": {
+          "south": "sitting_down_2/rotations/south.png",
+          "south-east": "sitting_down_2/rotations/south-east.png",
+          "east": "sitting_down_2/rotations/east.png",
+          "north-east": "sitting_down_2/rotations/north-east.png",
+          "north": "sitting_down_2/rotations/north.png",
+          "north-west": "sitting_down_2/rotations/north-west.png",
+          "west": "sitting_down_2/rotations/west.png",
+          "south-west": "sitting_down_2/rotations/south-west.png"
+        },
+        "animations": {}
+      }
+    },
+    {
+      "character": {
+        "id": "0d2aced6-bbcf-47d0-a1b7-8c548bfa5185",
+        "name": "whine",
+        "prompt": "The dog's name is Jumba. He is a tricolor American Cocker and Springer Spaniel Mix\u2014 a medium-sized, compact dog with the breed's signature long floppy ears and heavy feathering on the chest and legs.\n\nCoat & Colors\nBlack \u2014 the base color across the back, top of head, and ears\nWhite \u2014 a blaze down the chest and neck, plus white \"socks\" on the front paws\nTan/rust \u2014 classic eyebrow dots above the eyes, on the cheeks, and lower legs\n",
+        "size": {
+          "width": 48,
+          "height": 48
+        },
+        "template_id": "dog",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-08-15T03:20:13.918135+00:00"
+      },
+      "folder": "whine",
+      "frames": {
+        "rotations": {
+          "south": "whine/rotations/south.png",
+          "south-east": "whine/rotations/south-east.png",
+          "east": "whine/rotations/east.png",
+          "north-east": "whine/rotations/north-east.png",
+          "north": "whine/rotations/north.png",
+          "north-west": "whine/rotations/north-west.png",
+          "west": "whine/rotations/west.png",
+          "south-west": "whine/rotations/south-west.png"
+        },
+        "animations": {}
+      }
+    },
+    {
+      "character": {
+        "id": "7ae68c7e-ec98-4140-9c17-ee97ba559e3d",
+        "name": "stalk",
+        "prompt": "The dog's name is Jumba. He is a tricolor American Cocker and Springer Spaniel Mix\u2014 a medium-sized, compact dog with the breed's signature long floppy ears and heavy feathering on the chest and legs.\n\nCoat & Colors\nBlack \u2014 the base color across the back, top of head, and ears\nWhite \u2014 a blaze down the chest and neck, plus white \"socks\" on the front paws\nTan/rust \u2014 classic eyebrow dots above the eyes, on the cheeks, and lower legs\n",
+        "size": {
+          "width": 48,
+          "height": 48
+        },
+        "template_id": "dog",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-08-15T03:20:16.023491+00:00"
+      },
+      "folder": "stalk",
+      "frames": {
+        "rotations": {
+          "south": "stalk/rotations/south.png",
+          "south-east": "stalk/rotations/south-east.png",
+          "east": "stalk/rotations/east.png",
+          "north-east": "stalk/rotations/north-east.png",
+          "north": "stalk/rotations/north.png",
+          "north-west": "stalk/rotations/north-west.png",
+          "west": "stalk/rotations/west.png",
+          "south-west": "stalk/rotations/south-west.png"
+        },
+        "animations": {}
+      }
+    },
+    {
+      "character": {
+        "id": "0b435539-378a-4cbf-905b-45275b403b94",
+        "name": "pounce",
+        "prompt": "The dog's name is Jumba. He is a tricolor American Cocker and Springer Spaniel Mix\u2014 a medium-sized, compact dog with the breed's signature long floppy ears and heavy feathering on the chest and legs.\n\nCoat & Colors\nBlack \u2014 the base color across the back, top of head, and ears\nWhite \u2014 a blaze down the chest and neck, plus white \"socks\" on the front paws\nTan/rust \u2014 classic eyebrow dots above the eyes, on the cheeks, and lower legs\n",
+        "size": {
+          "width": 48,
+          "height": 48
+        },
+        "template_id": "dog",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-08-15T03:20:17.691017+00:00"
+      },
+      "folder": "pounce",
+      "frames": {
+        "rotations": {
+          "south": "pounce/rotations/south.png",
+          "south-east": "pounce/rotations/south-east.png",
+          "east": "pounce/rotations/east.png",
+          "north-east": "pounce/rotations/north-east.png",
+          "north": "pounce/rotations/north.png",
+          "north-west": "pounce/rotations/north-west.png",
+          "west": "pounce/rotations/west.png",
+          "south-west": "pounce/rotations/south-west.png"
+        },
+        "animations": {}
+      }
+    },
+    {
+      "character": {
+        "id": "feb7bf3a-d5a6-4684-a6d1-a1260e20fb5f",
+        "name": "pin",
+        "prompt": "The dog's name is Jumba. He is a tricolor American Cocker and Springer Spaniel Mix\u2014 a medium-sized, compact dog with the breed's signature long floppy ears and heavy feathering on the chest and legs.\n\nCoat & Colors\nBlack \u2014 the base color across the back, top of head, and ears\nWhite \u2014 a blaze down the chest and neck, plus white \"socks\" on the front paws\nTan/rust \u2014 classic eyebrow dots above the eyes, on the cheeks, and lower legs\n",
+        "size": {
+          "width": 48,
+          "height": 48
+        },
+        "template_id": "dog",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-08-15T03:20:24.196219+00:00"
+      },
+      "folder": "pin",
+      "frames": {
+        "rotations": {
+          "south": "pin/rotations/south.png",
+          "south-east": "pin/rotations/south-east.png",
+          "east": "pin/rotations/east.png",
+          "north-east": "pin/rotations/north-east.png",
+          "north": "pin/rotations/north.png",
+          "north-west": "pin/rotations/north-west.png",
+          "west": "pin/rotations/west.png",
+          "south-west": "pin/rotations/south-west.png"
+        },
+        "animations": {}
+      }
+    },
+    {
+      "character": {
+        "id": "202d261b-8023-4831-b0ad-8621ffdf8b68",
+        "name": "fall",
+        "prompt": "The dog's name is Jumba. He is a tricolor American Cocker and Springer Spaniel Mix\u2014 a medium-sized, compact dog with the breed's signature long floppy ears and heavy feathering on the chest and legs.\n\nCoat & Colors\nBlack \u2014 the base color across the back, top of head, and ears\nWhite \u2014 a blaze down the chest and neck, plus white \"socks\" on the front paws\nTan/rust \u2014 classic eyebrow dots above the eyes, on the cheeks, and lower legs\n",
+        "size": {
+          "width": 48,
+          "height": 48
+        },
+        "template_id": "dog",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-08-15T03:20:25.891278+00:00"
+      },
+      "folder": "fall",
+      "frames": {
+        "rotations": {
+          "south": "fall/rotations/south.png",
+          "south-east": "fall/rotations/south-east.png",
+          "east": "fall/rotations/east.png",
+          "north-east": "fall/rotations/north-east.png",
+          "north": "fall/rotations/north.png",
+          "north-west": "fall/rotations/north-west.png",
+          "west": "fall/rotations/west.png",
+          "south-west": "fall/rotations/south-west.png"
+        },
+        "animations": {}
+      }
+    },
+    {
+      "character": {
+        "id": "30f7b852-9764-4925-a56b-2140fbcfb2d9",
+        "name": "land",
+        "prompt": "The dog's name is Jumba. He is a tricolor American Cocker and Springer Spaniel Mix\u2014 a medium-sized, compact dog with the breed's signature long floppy ears and heavy feathering on the chest and legs.\n\nCoat & Colors\nBlack \u2014 the base color across the back, top of head, and ears\nWhite \u2014 a blaze down the chest and neck, plus white \"socks\" on the front paws\nTan/rust \u2014 classic eyebrow dots above the eyes, on the cheeks, and lower legs\n",
+        "size": {
+          "width": 48,
+          "height": 48
+        },
+        "template_id": "dog",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-08-15T03:20:28.041319+00:00"
+      },
+      "folder": "land",
+      "frames": {
+        "rotations": {
+          "south": "land/rotations/south.png",
+          "south-east": "land/rotations/south-east.png",
+          "east": "land/rotations/east.png",
+          "north-east": "land/rotations/north-east.png",
+          "north": "land/rotations/north.png",
+          "north-west": "land/rotations/north-west.png",
+          "west": "land/rotations/west.png",
+          "south-west": "land/rotations/south-west.png"
+        },
+        "animations": {}
+      }
+    },
+    {
+      "character": {
+        "id": "aa3ffd33-763b-44fa-8f2a-48d26cd3c38c",
+        "name": "peek",
+        "prompt": "The dog's name is Jumba. He is a tricolor American Cocker and Springer Spaniel Mix\u2014 a medium-sized, compact dog with the breed's signature long floppy ears and heavy feathering on the chest and legs.\n\nCoat & Colors\nBlack \u2014 the base color across the back, top of head, and ears\nWhite \u2014 a blaze down the chest and neck, plus white \"socks\" on the front paws\nTan/rust \u2014 classic eyebrow dots above the eyes, on the cheeks, and lower legs\n",
+        "size": {
+          "width": 48,
+          "height": 48
+        },
+        "template_id": "dog",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-08-15T03:20:29.530897+00:00"
+      },
+      "folder": "peek",
+      "frames": {
+        "rotations": {
+          "south": "peek/rotations/south.png",
+          "south-east": "peek/rotations/south-east.png",
+          "east": "peek/rotations/east.png",
+          "north-east": "peek/rotations/north-east.png",
+          "north": "peek/rotations/north.png",
+          "north-west": "peek/rotations/north-west.png",
+          "west": "peek/rotations/west.png",
+          "south-west": "peek/rotations/south-west.png"
+        },
+        "animations": {}
+      }
+    },
+    {
+      "character": {
+        "id": "fb592f92-3f33-4054-89f9-e1e7dece4be4",
+        "name": "paw",
+        "prompt": "The dog's name is Jumba. He is a tricolor American Cocker and Springer Spaniel Mix\u2014 a medium-sized, compact dog with the breed's signature long floppy ears and heavy feathering on the chest and legs.\n\nCoat & Colors\nBlack \u2014 the base color across the back, top of head, and ears\nWhite \u2014 a blaze down the chest and neck, plus white \"socks\" on the front paws\nTan/rust \u2014 classic eyebrow dots above the eyes, on the cheeks, and lower legs\n",
+        "size": {
+          "width": 48,
+          "height": 48
+        },
+        "template_id": "dog",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-08-15T03:42:18.238087+00:00"
+      },
+      "folder": "paw",
+      "frames": {
+        "rotations": {
+          "south": "paw/rotations/south.png",
+          "south-east": "paw/rotations/south-east.png",
+          "east": "paw/rotations/east.png",
+          "north-east": "paw/rotations/north-east.png",
+          "north": "paw/rotations/north.png",
+          "north-west": "paw/rotations/north-west.png",
+          "west": "paw/rotations/west.png",
+          "south-west": "paw/rotations/south-west.png"
+        },
+        "animations": {}
+      }
+    },
+    {
+      "character": {
+        "id": "e1273b52-58dd-4a20-aef9-6a259924e652",
+        "name": "highfive",
+        "prompt": "The dog's name is Jumba. He is a tricolor American Cocker and Springer Spaniel Mix\u2014 a medium-sized, compact dog with the breed's signature long floppy ears and heavy feathering on the chest and legs.\n\nCoat & Colors\nBlack \u2014 the base color across the back, top of head, and ears\nWhite \u2014 a blaze down the chest and neck, plus white \"socks\" on the front paws\nTan/rust \u2014 classic eyebrow dots above the eyes, on the cheeks, and lower legs\n",
+        "size": {
+          "width": 48,
+          "height": 48
+        },
+        "template_id": "dog",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-08-15T03:42:19.449047+00:00"
+      },
+      "folder": "highfive",
+      "frames": {
+        "rotations": {
+          "south": "highfive/rotations/south.png",
+          "south-east": "highfive/rotations/south-east.png",
+          "east": "highfive/rotations/east.png",
+          "north-east": "highfive/rotations/north-east.png",
+          "north": "highfive/rotations/north.png",
+          "north-west": "highfive/rotations/north-west.png",
+          "west": "highfive/rotations/west.png",
+          "south-west": "highfive/rotations/south-west.png"
+        },
+        "animations": {}
+      }
+    },
+    {
+      "character": {
+        "id": "529121dc-c53e-4f32-af26-41be0f87ec12",
+        "name": "playdead",
+        "prompt": "The dog's name is Jumba. He is a tricolor American Cocker and Springer Spaniel Mix\u2014 a medium-sized, compact dog with the breed's signature long floppy ears and heavy feathering on the chest and legs.\n\nCoat & Colors\nBlack \u2014 the base color across the back, top of head, and ears\nWhite \u2014 a blaze down the chest and neck, plus white \"socks\" on the front paws\nTan/rust \u2014 classic eyebrow dots above the eyes, on the cheeks, and lower legs\n",
+        "size": {
+          "width": 48,
+          "height": 48
+        },
+        "template_id": "dog",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-08-15T03:42:22.118548+00:00"
+      },
+      "folder": "playdead",
+      "frames": {
+        "rotations": {
+          "south": "playdead/rotations/south.png",
+          "south-east": "playdead/rotations/south-east.png",
+          "east": "playdead/rotations/east.png",
+          "north-east": "playdead/rotations/north-east.png",
+          "north": "playdead/rotations/north.png",
+          "north-west": "playdead/rotations/north-west.png",
+          "west": "playdead/rotations/west.png",
+          "south-west": "playdead/rotations/south-west.png"
+        },
+        "animations": {}
+      }
+    },
+    {
+      "character": {
+        "id": "1d8b9fe4-0c4e-4e45-ae26-8b340db580e1",
+        "name": "brace",
+        "prompt": "The dog's name is Jumba. He is a tricolor American Cocker and Springer Spaniel Mix\u2014 a medium-sized, compact dog with the breed's signature long floppy ears and heavy feathering on the chest and legs.\n\nCoat & Colors\nBlack \u2014 the base color across the back, top of head, and ears\nWhite \u2014 a blaze down the chest and neck, plus white \"socks\" on the front paws\nTan/rust \u2014 classic eyebrow dots above the eyes, on the cheeks, and lower legs\n",
+        "size": {
+          "width": 48,
+          "height": 48
+        },
+        "template_id": "dog",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-08-15T03:42:23.555020+00:00"
+      },
+      "folder": "brace",
+      "frames": {
+        "rotations": {
+          "south": "brace/rotations/south.png",
+          "south-east": "brace/rotations/south-east.png",
+          "east": "brace/rotations/east.png",
+          "north-east": "brace/rotations/north-east.png",
+          "north": "brace/rotations/north.png",
+          "north-west": "brace/rotations/north-west.png",
+          "west": "brace/rotations/west.png",
+          "south-west": "brace/rotations/south-west.png"
+        },
+        "animations": {}
+      }
+    },
+    {
+      "character": {
+        "id": "d4a22db9-4cfc-4184-b75e-24999e06de40",
+        "name": "alert",
+        "prompt": "The dog's name is Jumba. He is a tricolor American Cocker and Springer Spaniel Mix\u2014 a medium-sized, compact dog with the breed's signature long floppy ears and heavy feathering on the chest and legs.\n\nCoat & Colors\nBlack \u2014 the base color across the back, top of head, and ears\nWhite \u2014 a blaze down the chest and neck, plus white \"socks\" on the front paws\nTan/rust \u2014 classic eyebrow dots above the eyes, on the cheeks, and lower legs\n",
+        "size": {
+          "width": 48,
+          "height": 48
+        },
+        "template_id": "dog",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-08-15T03:59:10.350984+00:00"
+      },
+      "folder": "alert",
+      "frames": {
+        "rotations": {
+          "south": "alert/rotations/south.png",
+          "south-east": "alert/rotations/south-east.png",
+          "east": "alert/rotations/east.png",
+          "north-east": "alert/rotations/north-east.png",
+          "north": "alert/rotations/north.png",
+          "north-west": "alert/rotations/north-west.png",
+          "west": "alert/rotations/west.png",
+          "south-west": "alert/rotations/south-west.png"
+        },
+        "animations": {}
+      }
+    },
+    {
+      "character": {
+        "id": "af3834c3-4935-495b-8e39-5c13aa8335da",
+        "name": "Shaggy barking",
+        "prompt": "The dog's name is Jumba. He is a tricolor American Cocker and Springer Spaniel Mix\u2014 a medium-sized, compact dog with the breed's signature long floppy ears and heavy feathering on the chest and legs.\n\nCoat & Colors\nBlack \u2014 the base color across the back, top of head, and ears\nWhite \u2014 a blaze down the chest and neck, plus white \"socks\" on the front paws\nTan/rust \u2014 classic eyebrow dots above the eyes, on the cheeks, and lower legs\n",
+        "size": {
+          "width": 48,
+          "height": 48
+        },
+        "template_id": "dog",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-08-15T04:06:26.794131+00:00"
+      },
+      "folder": "Shaggy_barking",
+      "frames": {
+        "rotations": {
+          "south": "Shaggy_barking/rotations/south.png",
+          "south-east": "Shaggy_barking/rotations/south-east.png",
+          "east": "Shaggy_barking/rotations/east.png",
+          "north-east": "Shaggy_barking/rotations/north-east.png",
+          "north": "Shaggy_barking/rotations/north.png",
+          "north-west": "Shaggy_barking/rotations/north-west.png",
+          "west": "Shaggy_barking/rotations/west.png",
+          "south-west": "Shaggy_barking/rotations/south-west.png"
+        },
+        "animations": {}
+      }
+    },
+    {
+      "character": {
+        "id": "c1019991-1827-4ddc-8ede-206fb4871bc7",
+        "name": "Shaggy growling",
+        "prompt": "The dog's name is Jumba. He is a tricolor American Cocker and Springer Spaniel Mix\u2014 a medium-sized, compact dog with the breed's signature long floppy ears and heavy feathering on the chest and legs.\n\nCoat & Colors\nBlack \u2014 the base color across the back, top of head, and ears\nWhite \u2014 a blaze down the chest and neck, plus white \"socks\" on the front paws\nTan/rust \u2014 classic eyebrow dots above the eyes, on the cheeks, and lower legs\n",
+        "size": {
+          "width": 48,
+          "height": 48
+        },
+        "template_id": "dog",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-08-15T04:06:28.426038+00:00"
+      },
+      "folder": "Shaggy_growling",
+      "frames": {
+        "rotations": {
+          "south": "Shaggy_growling/rotations/south.png",
+          "south-east": "Shaggy_growling/rotations/south-east.png",
+          "east": "Shaggy_growling/rotations/east.png",
+          "north-east": "Shaggy_growling/rotations/north-east.png",
+          "north": "Shaggy_growling/rotations/north.png",
+          "north-west": "Shaggy_growling/rotations/north-west.png",
+          "west": "Shaggy_growling/rotations/west.png",
+          "south-west": "Shaggy_growling/rotations/south-west.png"
+        },
+        "animations": {}
+      }
+    },
+    {
+      "character": {
+        "id": "133d3337-d315-4554-bf49-9dbfe15e6f21",
+        "name": "Shaggy sprinting",
+        "prompt": "The dog's name is Jumba. He is a tricolor American Cocker and Springer Spaniel Mix\u2014 a medium-sized, compact dog with the breed's signature long floppy ears and heavy feathering on the chest and legs.\n\nCoat & Colors\nBlack \u2014 the base color across the back, top of head, and ears\nWhite \u2014 a blaze down the chest and neck, plus white \"socks\" on the front paws\nTan/rust \u2014 classic eyebrow dots above the eyes, on the cheeks, and lower legs\n",
+        "size": {
+          "width": 48,
+          "height": 48
+        },
+        "template_id": "dog",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-08-15T04:06:30.642405+00:00"
+      },
+      "folder": "Shaggy_sprinting",
+      "frames": {
+        "rotations": {
+          "south": "Shaggy_sprinting/rotations/south.png",
+          "south-east": "Shaggy_sprinting/rotations/south-east.png",
+          "east": "Shaggy_sprinting/rotations/east.png",
+          "north-east": "Shaggy_sprinting/rotations/north-east.png",
+          "north": "Shaggy_sprinting/rotations/north.png",
+          "north-west": "Shaggy_sprinting/rotations/north-west.png",
+          "west": "Shaggy_sprinting/rotations/west.png",
+          "south-west": "Shaggy_sprinting/rotations/south-west.png"
+        },
+        "animations": {}
+      }
+    },
+    {
+      "character": {
+        "id": "a4ee3c1c-c1de-4c23-97bf-0f138e473fcc",
+        "name": "Shaggy sniffing",
+        "prompt": "The dog's name is Jumba. He is a tricolor American Cocker and Springer Spaniel Mix\u2014 a medium-sized, compact dog with the breed's signature long floppy ears and heavy feathering on the chest and legs.\n\nCoat & Colors\nBlack \u2014 the base color across the back, top of head, and ears\nWhite \u2014 a blaze down the chest and neck, plus white \"socks\" on the front paws\nTan/rust \u2014 classic eyebrow dots above the eyes, on the cheeks, and lower legs\n",
+        "size": {
+          "width": 48,
+          "height": 48
+        },
+        "template_id": "dog",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-08-15T04:06:32.767376+00:00"
+      },
+      "folder": "Shaggy_sniffing",
+      "frames": {
+        "rotations": {
+          "south": "Shaggy_sniffing/rotations/south.png",
+          "south-east": "Shaggy_sniffing/rotations/south-east.png",
+          "east": "Shaggy_sniffing/rotations/east.png",
+          "north-east": "Shaggy_sniffing/rotations/north-east.png",
+          "north": "Shaggy_sniffing/rotations/north.png",
+          "north-west": "Shaggy_sniffing/rotations/north-west.png",
+          "west": "Shaggy_sniffing/rotations/west.png",
+          "south-west": "Shaggy_sniffing/rotations/south-west.png"
+        },
+        "animations": {}
+      }
+    },
+    {
+      "character": {
+        "id": "cbd17c65-2a13-4b17-8c0d-46d24443beea",
+        "name": "Shaggy hunched",
+        "prompt": "The dog's name is Jumba. He is a tricolor American Cocker and Springer Spaniel Mix\u2014 a medium-sized, compact dog with the breed's signature long floppy ears and heavy feathering on the chest and legs.\n\nCoat & Colors\nBlack \u2014 the base color across the back, top of head, and ears\nWhite \u2014 a blaze down the chest and neck, plus white \"socks\" on the front paws\nTan/rust \u2014 classic eyebrow dots above the eyes, on the cheeks, and lower legs\n",
+        "size": {
+          "width": 48,
+          "height": 48
+        },
+        "template_id": "dog",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-08-15T04:06:34.792633+00:00"
+      },
+      "folder": "Shaggy_hunched",
+      "frames": {
+        "rotations": {
+          "south": "Shaggy_hunched/rotations/south.png",
+          "south-east": "Shaggy_hunched/rotations/south-east.png",
+          "east": "Shaggy_hunched/rotations/east.png",
+          "north-east": "Shaggy_hunched/rotations/north-east.png",
+          "north": "Shaggy_hunched/rotations/north.png",
+          "north-west": "Shaggy_hunched/rotations/north-west.png",
+          "west": "Shaggy_hunched/rotations/west.png",
+          "south-west": "Shaggy_hunched/rotations/south-west.png"
+        },
+        "animations": {}
+      }
+    },
+    {
+      "character": {
+        "id": "10e8e48e-f9e9-4a6a-84ca-36b3815a02af",
+        "name": "Shaggy sleeping",
+        "prompt": "The dog's name is Jumba. He is a tricolor American Cocker and Springer Spaniel Mix\u2014 a medium-sized, compact dog with the breed's signature long floppy ears and heavy feathering on the chest and legs.\n\nCoat & Colors\nBlack \u2014 the base color across the back, top of head, and ears\nWhite \u2014 a blaze down the chest and neck, plus white \"socks\" on the front paws\nTan/rust \u2014 classic eyebrow dots above the eyes, on the cheeks, and lower legs\n",
+        "size": {
+          "width": 48,
+          "height": 48
+        },
+        "template_id": "dog",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-08-15T04:06:37.515686+00:00"
+      },
+      "folder": "Shaggy_sleeping",
+      "frames": {
+        "rotations": {
+          "south": "Shaggy_sleeping/rotations/south.png",
+          "south-east": "Shaggy_sleeping/rotations/south-east.png",
+          "east": "Shaggy_sleeping/rotations/east.png",
+          "north-east": "Shaggy_sleeping/rotations/north-east.png",
+          "north": "Shaggy_sleeping/rotations/north.png",
+          "north-west": "Shaggy_sleeping/rotations/north-west.png",
+          "west": "Shaggy_sleeping/rotations/west.png",
+          "south-west": "Shaggy_sleeping/rotations/south-west.png"
+        },
+        "animations": {}
+      }
+    },
+    {
+      "character": {
+        "id": "603b5197-77bb-4c2d-9a4d-81335fbcfef1",
+        "name": "Shaggy sitting",
+        "prompt": "The dog's name is Jumba. He is a tricolor American Cocker and Springer Spaniel Mix\u2014 a medium-sized, compact dog with the breed's signature long floppy ears and heavy feathering on the chest and legs.\n\nCoat & Colors\nBlack \u2014 the base color across the back, top of head, and ears\nWhite \u2014 a blaze down the chest and neck, plus white \"socks\" on the front paws\nTan/rust \u2014 classic eyebrow dots above the eyes, on the cheeks, and lower legs\n",
+        "size": {
+          "width": 68,
+          "height": 76
+        },
+        "template_id": "dog",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-08-15T04:06:39.768271+00:00"
+      },
+      "folder": "Shaggy_sitting",
+      "frames": {
+        "rotations": {
+          "south": "Shaggy_sitting/rotations/south.png",
+          "south-east": "Shaggy_sitting/rotations/south-east.png",
+          "east": "Shaggy_sitting/rotations/east.png",
+          "north-east": "Shaggy_sitting/rotations/north-east.png",
+          "north": "Shaggy_sitting/rotations/north.png",
+          "north-west": "Shaggy_sitting/rotations/north-west.png",
+          "west": "Shaggy_sitting/rotations/west.png",
+          "south-west": "Shaggy_sitting/rotations/south-west.png"
+        },
+        "animations": {}
+      }
+    },
+    {
+      "character": {
+        "id": "cc1a930c-bf01-4c98-9910-ebae7b0182bd",
+        "name": "Shaggy alert",
+        "prompt": "The dog's name is Jumba. He is a tricolor American Cocker and Springer Spaniel Mix\u2014 a medium-sized, compact dog with the breed's signature long floppy ears and heavy feathering on the chest and legs.\n\nCoat & Colors\nBlack \u2014 the base color across the back, top of head, and ears\nWhite \u2014 a blaze down the chest and neck, plus white \"socks\" on the front paws\nTan/rust \u2014 classic eyebrow dots above the eyes, on the cheeks, and lower legs\n",
+        "size": {
+          "width": 48,
+          "height": 48
+        },
+        "template_id": "dog",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-08-15T04:06:42.280582+00:00"
+      },
+      "folder": "Shaggy_alert",
+      "frames": {
+        "rotations": {
+          "south": "Shaggy_alert/rotations/south.png",
+          "south-east": "Shaggy_alert/rotations/south-east.png",
+          "east": "Shaggy_alert/rotations/east.png",
+          "north-east": "Shaggy_alert/rotations/north-east.png",
+          "north": "Shaggy_alert/rotations/north.png",
+          "north-west": "Shaggy_alert/rotations/north-west.png",
+          "west": "Shaggy_alert/rotations/west.png",
+          "south-west": "Shaggy_alert/rotations/south-west.png"
+        },
+        "animations": {}
+      }
+    },
+    {
+      "character": {
+        "id": "c62d2b44-407a-410e-985c-e649d6267178",
+        "name": "Shaggy whine",
+        "prompt": "The dog's name is Jumba. He is a tricolor American Cocker and Springer Spaniel Mix\u2014 a medium-sized, compact dog with the breed's signature long floppy ears and heavy feathering on the chest and legs.\n\nCoat & Colors\nBlack \u2014 the base color across the back, top of head, and ears\nWhite \u2014 a blaze down the chest and neck, plus white \"socks\" on the front paws\nTan/rust \u2014 classic eyebrow dots above the eyes, on the cheeks, and lower legs\n",
+        "size": {
+          "width": 48,
+          "height": 48
+        },
+        "template_id": "dog",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-08-15T04:08:32.842890+00:00"
+      },
+      "folder": "Shaggy_whine",
+      "frames": {
+        "rotations": {
+          "south": "Shaggy_whine/rotations/south.png",
+          "south-east": "Shaggy_whine/rotations/south-east.png",
+          "east": "Shaggy_whine/rotations/east.png",
+          "north-east": "Shaggy_whine/rotations/north-east.png",
+          "north": "Shaggy_whine/rotations/north.png",
+          "north-west": "Shaggy_whine/rotations/north-west.png",
+          "west": "Shaggy_whine/rotations/west.png",
+          "south-west": "Shaggy_whine/rotations/south-west.png"
+        },
+        "animations": {}
+      }
+    },
+    {
+      "character": {
+        "id": "1e387caa-9dc2-4ef5-addb-99645a3b88ac",
+        "name": "Shaggy stalk",
+        "prompt": "The dog's name is Jumba. He is a tricolor American Cocker and Springer Spaniel Mix\u2014 a medium-sized, compact dog with the breed's signature long floppy ears and heavy feathering on the chest and legs.\n\nCoat & Colors\nBlack \u2014 the base color across the back, top of head, and ears\nWhite \u2014 a blaze down the chest and neck, plus white \"socks\" on the front paws\nTan/rust \u2014 classic eyebrow dots above the eyes, on the cheeks, and lower legs\n",
+        "size": {
+          "width": 48,
+          "height": 48
+        },
+        "template_id": "dog",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-08-15T04:08:35.924177+00:00"
+      },
+      "folder": "Shaggy_stalk",
+      "frames": {
+        "rotations": {
+          "south": "Shaggy_stalk/rotations/south.png",
+          "south-east": "Shaggy_stalk/rotations/south-east.png",
+          "east": "Shaggy_stalk/rotations/east.png",
+          "north-east": "Shaggy_stalk/rotations/north-east.png",
+          "north": "Shaggy_stalk/rotations/north.png",
+          "north-west": "Shaggy_stalk/rotations/north-west.png",
+          "west": "Shaggy_stalk/rotations/west.png",
+          "south-west": "Shaggy_stalk/rotations/south-west.png"
+        },
+        "animations": {}
+      }
+    },
+    {
+      "character": {
+        "id": "ceee2d55-14a9-4411-ae3a-b212d492b191",
+        "name": "Shaggy pounce",
+        "prompt": "The dog's name is Jumba. He is a tricolor American Cocker and Springer Spaniel Mix\u2014 a medium-sized, compact dog with the breed's signature long floppy ears and heavy feathering on the chest and legs.\n\nCoat & Colors\nBlack \u2014 the base color across the back, top of head, and ears\nWhite \u2014 a blaze down the chest and neck, plus white \"socks\" on the front paws\nTan/rust \u2014 classic eyebrow dots above the eyes, on the cheeks, and lower legs\n",
+        "size": {
+          "width": 48,
+          "height": 48
+        },
+        "template_id": "dog",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-08-15T04:08:38.275122+00:00"
+      },
+      "folder": "Shaggy_pounce",
+      "frames": {
+        "rotations": {
+          "south": "Shaggy_pounce/rotations/south.png",
+          "south-east": "Shaggy_pounce/rotations/south-east.png",
+          "east": "Shaggy_pounce/rotations/east.png",
+          "north-east": "Shaggy_pounce/rotations/north-east.png",
+          "north": "Shaggy_pounce/rotations/north.png",
+          "north-west": "Shaggy_pounce/rotations/north-west.png",
+          "west": "Shaggy_pounce/rotations/west.png",
+          "south-west": "Shaggy_pounce/rotations/south-west.png"
+        },
+        "animations": {}
+      }
+    },
+    {
+      "character": {
+        "id": "b649ae39-ec5d-45dd-b71a-40960336526f",
+        "name": "Shaggy pin",
+        "prompt": "The dog's name is Jumba. He is a tricolor American Cocker and Springer Spaniel Mix\u2014 a medium-sized, compact dog with the breed's signature long floppy ears and heavy feathering on the chest and legs.\n\nCoat & Colors\nBlack \u2014 the base color across the back, top of head, and ears\nWhite \u2014 a blaze down the chest and neck, plus white \"socks\" on the front paws\nTan/rust \u2014 classic eyebrow dots above the eyes, on the cheeks, and lower legs\n",
+        "size": {
+          "width": 48,
+          "height": 48
+        },
+        "template_id": "dog",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-08-15T04:08:40.952762+00:00"
+      },
+      "folder": "Shaggy_pin",
+      "frames": {
+        "rotations": {
+          "south": "Shaggy_pin/rotations/south.png",
+          "south-east": "Shaggy_pin/rotations/south-east.png",
+          "east": "Shaggy_pin/rotations/east.png",
+          "north-east": "Shaggy_pin/rotations/north-east.png",
+          "north": "Shaggy_pin/rotations/north.png",
+          "north-west": "Shaggy_pin/rotations/north-west.png",
+          "west": "Shaggy_pin/rotations/west.png",
+          "south-west": "Shaggy_pin/rotations/south-west.png"
+        },
+        "animations": {}
+      }
+    },
+    {
+      "character": {
+        "id": "03868b50-9d03-4b75-b86c-9e925dddd07a",
+        "name": "Shaggy fall",
+        "prompt": "The dog's name is Jumba. He is a tricolor American Cocker and Springer Spaniel Mix\u2014 a medium-sized, compact dog with the breed's signature long floppy ears and heavy feathering on the chest and legs.\n\nCoat & Colors\nBlack \u2014 the base color across the back, top of head, and ears\nWhite \u2014 a blaze down the chest and neck, plus white \"socks\" on the front paws\nTan/rust \u2014 classic eyebrow dots above the eyes, on the cheeks, and lower legs\n",
+        "size": {
+          "width": 48,
+          "height": 48
+        },
+        "template_id": "dog",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-08-15T04:08:43.805110+00:00"
+      },
+      "folder": "Shaggy_fall",
+      "frames": {
+        "rotations": {
+          "south": "Shaggy_fall/rotations/south.png",
+          "south-east": "Shaggy_fall/rotations/south-east.png",
+          "east": "Shaggy_fall/rotations/east.png",
+          "north-east": "Shaggy_fall/rotations/north-east.png",
+          "north": "Shaggy_fall/rotations/north.png",
+          "north-west": "Shaggy_fall/rotations/north-west.png",
+          "west": "Shaggy_fall/rotations/west.png",
+          "south-west": "Shaggy_fall/rotations/south-west.png"
+        },
+        "animations": {}
+      }
+    },
+    {
+      "character": {
+        "id": "a20e81a3-3465-49a3-bd85-c07cdeb2d625",
+        "name": "Shaggy land",
+        "prompt": "The dog's name is Jumba. He is a tricolor American Cocker and Springer Spaniel Mix\u2014 a medium-sized, compact dog with the breed's signature long floppy ears and heavy feathering on the chest and legs.\n\nCoat & Colors\nBlack \u2014 the base color across the back, top of head, and ears\nWhite \u2014 a blaze down the chest and neck, plus white \"socks\" on the front paws\nTan/rust \u2014 classic eyebrow dots above the eyes, on the cheeks, and lower legs\n",
+        "size": {
+          "width": 48,
+          "height": 48
+        },
+        "template_id": "dog",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-08-15T04:08:46.634702+00:00"
+      },
+      "folder": "Shaggy_land",
+      "frames": {
+        "rotations": {
+          "south": "Shaggy_land/rotations/south.png",
+          "south-east": "Shaggy_land/rotations/south-east.png",
+          "east": "Shaggy_land/rotations/east.png",
+          "north-east": "Shaggy_land/rotations/north-east.png",
+          "north": "Shaggy_land/rotations/north.png",
+          "north-west": "Shaggy_land/rotations/north-west.png",
+          "west": "Shaggy_land/rotations/west.png",
+          "south-west": "Shaggy_land/rotations/south-west.png"
+        },
+        "animations": {}
+      }
+    },
+    {
+      "character": {
+        "id": "08654976-8373-4bda-8e60-8c7c35d23a3c",
+        "name": "Shaggy peek",
+        "prompt": "The dog's name is Jumba. He is a tricolor American Cocker and Springer Spaniel Mix\u2014 a medium-sized, compact dog with the breed's signature long floppy ears and heavy feathering on the chest and legs.\n\nCoat & Colors\nBlack \u2014 the base color across the back, top of head, and ears\nWhite \u2014 a blaze down the chest and neck, plus white \"socks\" on the front paws\nTan/rust \u2014 classic eyebrow dots above the eyes, on the cheeks, and lower legs\n",
+        "size": {
+          "width": 48,
+          "height": 48
+        },
+        "template_id": "dog",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-08-15T04:08:50.186128+00:00"
+      },
+      "folder": "Shaggy_peek",
+      "frames": {
+        "rotations": {
+          "south": "Shaggy_peek/rotations/south.png",
+          "south-east": "Shaggy_peek/rotations/south-east.png",
+          "east": "Shaggy_peek/rotations/east.png",
+          "north-east": "Shaggy_peek/rotations/north-east.png",
+          "north": "Shaggy_peek/rotations/north.png",
+          "north-west": "Shaggy_peek/rotations/north-west.png",
+          "west": "Shaggy_peek/rotations/west.png",
+          "south-west": "Shaggy_peek/rotations/south-west.png"
+        },
+        "animations": {}
+      }
+    },
+    {
+      "character": {
+        "id": "77639c03-8d8a-4181-8701-f5f1ad10314a",
+        "name": "Shaggy paw",
+        "prompt": "The dog's name is Jumba. He is a tricolor American Cocker and Springer Spaniel Mix\u2014 a medium-sized, compact dog with the breed's signature long floppy ears and heavy feathering on the chest and legs.\n\nCoat & Colors\nBlack \u2014 the base color across the back, top of head, and ears\nWhite \u2014 a blaze down the chest and neck, plus white \"socks\" on the front paws\nTan/rust \u2014 classic eyebrow dots above the eyes, on the cheeks, and lower legs\n",
+        "size": {
+          "width": 48,
+          "height": 48
+        },
+        "template_id": "dog",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-08-15T04:08:52.328971+00:00"
+      },
+      "folder": "Shaggy_paw",
+      "frames": {
+        "rotations": {
+          "south": "Shaggy_paw/rotations/south.png",
+          "south-east": "Shaggy_paw/rotations/south-east.png",
+          "east": "Shaggy_paw/rotations/east.png",
+          "north-east": "Shaggy_paw/rotations/north-east.png",
+          "north": "Shaggy_paw/rotations/north.png",
+          "north-west": "Shaggy_paw/rotations/north-west.png",
+          "west": "Shaggy_paw/rotations/west.png",
+          "south-west": "Shaggy_paw/rotations/south-west.png"
+        },
+        "animations": {}
+      }
+    },
+    {
+      "character": {
+        "id": "68f2acec-e0f7-44d1-a73e-8a701e174542",
+        "name": "Shaggy highfive",
+        "prompt": "The dog's name is Jumba. He is a tricolor American Cocker and Springer Spaniel Mix\u2014 a medium-sized, compact dog with the breed's signature long floppy ears and heavy feathering on the chest and legs.\n\nCoat & Colors\nBlack \u2014 the base color across the back, top of head, and ears\nWhite \u2014 a blaze down the chest and neck, plus white \"socks\" on the front paws\nTan/rust \u2014 classic eyebrow dots above the eyes, on the cheeks, and lower legs\n",
+        "size": {
+          "width": 48,
+          "height": 48
+        },
+        "template_id": "dog",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-08-15T04:10:43.809979+00:00"
+      },
+      "folder": "Shaggy_highfive",
+      "frames": {
+        "rotations": {
+          "south": "Shaggy_highfive/rotations/south.png",
+          "south-east": "Shaggy_highfive/rotations/south-east.png",
+          "east": "Shaggy_highfive/rotations/east.png",
+          "north-east": "Shaggy_highfive/rotations/north-east.png",
+          "north": "Shaggy_highfive/rotations/north.png",
+          "north-west": "Shaggy_highfive/rotations/north-west.png",
+          "west": "Shaggy_highfive/rotations/west.png",
+          "south-west": "Shaggy_highfive/rotations/south-west.png"
+        },
+        "animations": {}
+      }
+    },
+    {
+      "character": {
+        "id": "90da738d-9a56-4072-b076-bf71d298d5e5",
+        "name": "Shaggy playdead",
+        "prompt": "The dog's name is Jumba. He is a tricolor American Cocker and Springer Spaniel Mix\u2014 a medium-sized, compact dog with the breed's signature long floppy ears and heavy feathering on the chest and legs.\n\nCoat & Colors\nBlack \u2014 the base color across the back, top of head, and ears\nWhite \u2014 a blaze down the chest and neck, plus white \"socks\" on the front paws\nTan/rust \u2014 classic eyebrow dots above the eyes, on the cheeks, and lower legs\n",
+        "size": {
+          "width": 48,
+          "height": 48
+        },
+        "template_id": "dog",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-08-15T04:10:46.367654+00:00"
+      },
+      "folder": "Shaggy_playdead",
+      "frames": {
+        "rotations": {
+          "south": "Shaggy_playdead/rotations/south.png",
+          "south-east": "Shaggy_playdead/rotations/south-east.png",
+          "east": "Shaggy_playdead/rotations/east.png",
+          "north-east": "Shaggy_playdead/rotations/north-east.png",
+          "north": "Shaggy_playdead/rotations/north.png",
+          "north-west": "Shaggy_playdead/rotations/north-west.png",
+          "west": "Shaggy_playdead/rotations/west.png",
+          "south-west": "Shaggy_playdead/rotations/south-west.png"
+        },
+        "animations": {}
+      }
+    },
+    {
+      "character": {
+        "id": "cfdc75ba-5174-4f2d-9eef-5ff32fef2e32",
+        "name": "Shaggy brace",
+        "prompt": "The dog's name is Jumba. He is a tricolor American Cocker and Springer Spaniel Mix\u2014 a medium-sized, compact dog with the breed's signature long floppy ears and heavy feathering on the chest and legs.\n\nCoat & Colors\nBlack \u2014 the base color across the back, top of head, and ears\nWhite \u2014 a blaze down the chest and neck, plus white \"socks\" on the front paws\nTan/rust \u2014 classic eyebrow dots above the eyes, on the cheeks, and lower legs\n",
+        "size": {
+          "width": 48,
+          "height": 48
+        },
+        "template_id": "dog",
+        "directions": 8,
+        "view": "low top-down",
+        "created_at": "2026-08-15T04:10:48.640550+00:00"
+      },
+      "folder": "Shaggy_brace",
+      "frames": {
+        "rotations": {
+          "south": "Shaggy_brace/rotations/south.png",
+          "south-east": "Shaggy_brace/rotations/south-east.png",
+          "east": "Shaggy_brace/rotations/east.png",
+          "north-east": "Shaggy_brace/rotations/north-east.png",
+          "north": "Shaggy_brace/rotations/north.png",
+          "north-west": "Shaggy_brace/rotations/north-west.png",
+          "west": "Shaggy_brace/rotations/west.png",
+          "south-west": "Shaggy_brace/rotations/south-west.png"
+        },
+        "animations": {}
+      }
+    }
+  ],
+  "export_version": "3.1",
+  "export_date": "2026-08-15T04:41:16.592136"
+}
