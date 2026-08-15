@@ -62,12 +62,21 @@ if [ "${SKIP_NOTARIZE:-0}" != "1" ]; then
   # stores the quotes when the shell doesn't strip them, and the value becomes
   # literally "ABC123". Trim them and carry on rather than fail: the intent is
   # unambiguous, and a release should not die over a paste artifact.
+  #
+  # Keep the characters these two credentials are allowed to contain, rather
+  # than listing the ones to strip. Both alphabets are strict -- hex, hyphens
+  # and uppercase alphanumerics -- so an allowlist covers every wrapper
+  # (straight quotes, smart quotes, backticks, zero-width spaces) without
+  # needing to anticipate it.
+  #
+  # Deliberately `tr -dc` and not a bash bracket expression: in bash 3.2, which
+  # is what /bin/bash still is on macOS and on GitHub's runners, a bracket
+  # expression containing multibyte characters like " " is read as a byte
+  # RANGE and silently deletes digits. That turned a valid issuer UUID into
+  # 'a6f3e7-f4-4a4-f-f74bb' on CI while testing clean under a newer bash.
   for _var in APPLE_API_KEY_ID APPLE_API_ISSUER_ID; do
     _val="${!_var}"
-    _trimmed="${_val//[$'\r\n\t ']/}"          # whitespace, incl. CRs from pastes
-    _trimmed="${_trimmed//\"/}"                # straight double quotes
-    _trimmed="${_trimmed//\'/}"                # straight single quotes
-    _trimmed="${_trimmed//[$'\u201c\u201d\u2018\u2019']/}"   # smart quotes
+    _trimmed="$(printf '%s' "$_val" | LC_ALL=C tr -dc 'A-Za-z0-9-')"
     if [ "$_trimmed" != "$_val" ]; then
       echo "    (trimmed quotes/whitespace from $_var)"
       printf -v "$_var" '%s' "$_trimmed"
