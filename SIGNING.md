@@ -1,12 +1,18 @@
 # Signing and notarizing Jumbini
 
-Right now Jumbini is ad-hoc signed, which means macOS refuses it on first launch
-and the person downloading it has to go dig around in System Settings. A
-meaningful number of them conclude it is malware instead and delete it. This
-document is how that stops.
+Jumbini is signed with a Developer ID certificate and notarized by Apple. Someone
+downloads `Jumbini.dmg`, double-clicks it, and it opens — no warning, no
+override, no instructions. Before this, macOS refused it on first launch and a
+fair number of people concluded it was malware and deleted it.
 
-The end state: someone downloads `Jumbini.dmg`, double-clicks it, and it opens.
-No warning, no override, no instructions.
+This document is the runbook: how it was set up, how to cut a release, and how to
+redo any of it when a certificate expires or a key goes missing.
+
+> **Current setup.** Identity `Developer ID Application: Alexander Wenson
+> (MT2EH3GD49)`, certificate valid to **16 August 2031**. Notarization uses an
+> App Store Connect **Team Key** with the Developer role. Local releases read
+> credentials from `.env.release`, which is excluded via `.git/info/exclude` and
+> must never be committed.
 
 **Cost:** $99/year for the Apple Developer Program. There is no free path —
 notarization requires a Developer ID certificate, which requires a paid
@@ -261,6 +267,50 @@ exact file the user downloaded.
 **Certificate expired.** Developer ID certificates last five years. Because the
 signatures are timestamped, everything you already shipped keeps working; you
 just need a new certificate to sign new builds.
+
+### Actually hit during setup
+
+Keeping these because they cost real time and will cost it again.
+
+**`security import` says the password is wrong, and it isn't.** Homebrew's
+OpenSSL 3 defaults `pkcs12 -export` to AES-256-CBC with a SHA-256 MAC. Apple's
+`security` can't parse that and reports it as a password failure. Diagnose with
+`openssl pkcs12 -in devid.p12 -noout -info` — if it shows `MAC: sha256` and
+`AES-256-CBC`, that's the problem, not your password. Re-export with `-legacy`:
+
+```bash
+openssl pkcs12 -export -legacy -inkey devid.key -in devid.pem -out devid.p12 \
+  -name "Developer ID Application"
+```
+
+A correct file shows `MAC: sha1` and `RC2-40-CBC`. Reading it back with
+`openssl -info` afterwards throws `RC2-40-CBC unsupported` — ignore that, it's
+OpenSSL 3 refusing to load the legacy provider for *reading*. macOS reads it
+fine, which is the only thing that matters. `/usr/bin/openssl` (LibreSSL)
+produces a compatible file by default if `-legacy` isn't available.
+
+**HTTP 401 Unauthenticated from notarytool.** Credentials, not the DMG. Check
+for a placeholder that never got substituted before anything else:
+
+```bash
+echo "${#APPLE_API_KEY_ID}"      # must be 10
+echo "${#APPLE_API_ISSUER_ID}"   # must be 36
+```
+
+Then smoke-test auth without spending a submission — `xcrun notarytool history`
+with the same three arguments. `No submission history.` is success.
+
+**The portal hands you four `.cer` files and only one is yours.** The others are
+Apple's intermediate and root CAs. Identify yours by subject:
+
+```bash
+openssl x509 -inform DER -in "some.cer" -noout -subject
+# yours: CN=Developer ID Application: <name> (TEAMID)
+```
+
+**Certificate Assistant is in the macOS menu bar**, not inside the Keychain
+Access window — which is why the `openssl` route above is the one documented
+here.
 
 ---
 

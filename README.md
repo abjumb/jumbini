@@ -51,17 +51,11 @@ character" screen. There is one dog. That is the entire point.
 
 1. Grab `Jumbini.dmg` from the [latest release](https://github.com/abjumb/jumbini/releases/latest).
 2. Open the DMG and drag **Jumbini** to Applications.
-3. Open it. macOS will refuse the first time — see below.
+3. Open it.
 
-Jumbini is ad-hoc signed and not notarized by Apple, so the first launch needs one manual
-override. Which override depends on your macOS version, because Apple changed this:
-
-- **macOS 15 (Sequoia) and newer:** double-click Jumbini, let it get refused, then go to
-  **System Settings → Privacy & Security**, scroll to the bottom, and click **Open Anyway**.
-- **macOS 14 (Sonoma):** right-click the app and choose **Open**, then confirm.
-
-Either way it is a one-time thing; after that it launches normally. Nothing about the app
-changes, and you can read every line of what you just allowed in this repository.
+That is the whole thing. Jumbini is signed with a Developer ID certificate and notarized by
+Apple, so it opens on first launch like any other app — no right-click trick, no trip
+through Privacy & Security, no "Jumbini is damaged and can't be opened."
 
 Jumbini has no Dock icon and no window. When it is running you get a dog on screen and a
 small pixel-dog icon in your menu bar. Everything else lives in that menu.
@@ -250,6 +244,10 @@ Worth stating plainly, because a lot of things in this category do:
 - **No AI.** No model, no API key, no chat. He is a state machine with 29 states and a
   dice roll, and he does not have anything to say to you.
 - **No purchases, no cosmetic packs, no subscription, no ads.**
+
+What he *is*: signed with a Developer ID certificate and notarized by Apple, which is how
+your Mac knows the build you downloaded is the one that left this repository. The pipeline
+that does it is [SIGNING.md](SIGNING.md), and it runs on every tagged release.
 
 <!-- TODO: measure and publish idle CPU %, resident memory, and battery impact on an
      M-series Mac. Resource cost is the top complaint driver in this category and the
@@ -451,7 +449,6 @@ Stub the new case so the package compiles, then wire it up for real.
 
 ## Known limitations
 
-- **Not notarized.** Ad-hoc signed only, so the first launch needs the override above.
 - **Apple Silicon only.** A universal binary would need `--arch` work in `bundle.sh`.
 - **Do Not Disturb detection usually doesn't work**, by design — see above.
 
