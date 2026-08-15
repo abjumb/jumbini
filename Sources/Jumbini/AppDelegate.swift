@@ -133,6 +133,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let muteItem = NSMenuItem(title: "Mute Sounds", action: #selector(toggleMute(_:)), keyEquivalent: "")
         muteItem.target = self
         muteItem.state = UserDefaults.standard.bool(forKey: "soundMuted") ? .on : .off
+        // Alex's icon, colored — deliberately NOT a template image, same call
+        // as the menu bar dog above: this app's art is pixel art, and macOS
+        // would flatten it to a monochrome silhouette.
+        if let url = Bundle.module.url(forResource: "icon_mute", withExtension: "png", subdirectory: "sprites"),
+           let image = NSImage(contentsOf: url) {
+            image.size = NSSize(width: 16, height: 16)
+            muteItem.image = image
+        }
         menu.addItem(muteItem)
         let pauseItem = NSMenuItem(title: "Pause", action: #selector(togglePause(_:)), keyEquivalent: "")
         pauseItem.target = self

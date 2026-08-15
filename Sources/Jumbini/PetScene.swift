@@ -61,8 +61,11 @@ final class PetScene: SKScene {
 
     /// The wardrobe item he's wearing (a child of the dog); nil = nothing.
     private var wornItem: SKSpriteNode?
-    /// Sprite file of the current wardrobe selection (mirrors UserDefaults).
-    private var currentWardrobeFile: String?
+    /// Catalog name of the current wardrobe selection (mirrors UserDefaults).
+    private var currentWardrobeItem: String?
+    /// Which of the four front directions the worn piece is currently drawn
+    /// in, so the texture is only swapped when he actually turns.
+    private var wornDirection: String?
 
     // Mouse sniffing: he tracks the cursor while the brain's timer runs.
     private var isSniffing = false
@@ -241,69 +244,125 @@ final class PetScene: SKScene {
         applyBedVariant(index >= 0 ? index : nil)
     }
 
-    // MARK: - Wardrobe
+    // MARK: - Wardrobe  (region owned by the wardrobe work; ends at "Wardrobe end")
 
-    /// Wardrobe catalog, menu order. Seating is per-item because the pieces
-    /// live at different heights: `dy` shifts the crown anchor by a fraction
-    /// of the dog's height (negative = down towards face/neck), `lift` raises
-    /// by a fraction of the item's own height (so hats perch on the head
-    /// instead of swallowing it). All placement lives here, not in the art,
-    /// so the placeholder sprites can swap for real 48x48 art untouched.
-    private static let wardrobeItems:
-        [(title: String, file: String, dy: CGFloat, lift: CGFloat, isEyewear: Bool)] = [
-            ("Party Hat", "wardrobe_partyhat", 0, 0.30, false),
-            ("Top Hat", "wardrobe_tophat", 0, 0.30, false),
-            ("Cowboy Hat", "wardrobe_cowboyhat", 0.02, 0.10, false),
-            ("Bandana", "wardrobe_bandana", -0.34, 0, false),
-            ("Sunglasses", "wardrobe_sunglasses", -0.10, 0, true),
-        ]
+    /// One wearable. Two numbers, both meaningful: `slot` is the place on him
+    /// the piece hangs from, `frontWidth` is how wide the front view is on
+    /// screen in points (he stands ~115pt tall with a ~45pt-wide head).
+    ///
+    /// Everything else is derived from the art: which of the four front
+    /// directions to draw, where the ink sits inside its canvas, the mirror
+    /// for the west side. The old per-item `dy`/`lift` nudges are gone — see
+    /// `SpriteLibrary.WardrobeArt` for why one number still has to stay.
+    private struct WardrobeSpec {
+        let title: String
+        /// Catalog name; the files are `wardrobe_<item>_<direction>.png`.
+        let item: String
+        let slot: Dog.WearSlot
+        let frontWidth: CGFloat
+    }
+
+    /// The wardrobe catalog, menu order.
+    private static let wardrobeItems: [WardrobeSpec] = [
+        WardrobeSpec(title: "Party Hat", item: "party", slot: .crown, frontWidth: 34),
+        WardrobeSpec(title: "Top Hat", item: "tophat", slot: .crown, frontWidth: 40),
+        WardrobeSpec(title: "Cowboy Hat", item: "cowboy", slot: .crown, frontWidth: 52),
+        WardrobeSpec(title: "Beanie", item: "beanie", slot: .crown, frontWidth: 34),
+        WardrobeSpec(title: "Bandana", item: "bandana", slot: .neck, frontWidth: 42),
+        WardrobeSpec(title: "Sunglasses", item: "shades", slot: .eyes, frontWidth: 40),
+        WardrobeSpec(title: "Raincoat", item: "raincoat", slot: .body, frontWidth: 54),
+    ]
     private static let wardrobeItemKey = "wardrobeItem"
 
-    private func applyWardrobeItem(_ file: String?) {
+    /// How far a hat sinks past the crown line, as a fraction of its own
+    /// height — otherwise it balances on his scalp instead of being worn.
+    private static let wardrobeHatSink: CGFloat = 0.15
+
+    /// The four front directions the art ships in, plus whether to mirror.
+    /// There is deliberately no west-side art (same as the bark frames), and
+    /// no straight-from-behind art either — the north-east three-quarter view
+    /// reads correctly when he's walking away.
+    private static func wardrobeDirection(for facing: Facing) -> (key: String, mirrored: Bool) {
+        switch facing {
+        case .south: ("s", false)
+        case .southEast: ("se", false)
+        case .southWest: ("se", true)
+        case .east: ("e", false)
+        case .west: ("e", true)
+        case .northEast, .north: ("ne", false)
+        case .northWest: ("ne", true)
+        }
+    }
+
+    private func applyWardrobeItem(_ item: String?) {
         wornItem?.removeFromParent()
         wornItem = nil
-        currentWardrobeFile = nil
-        guard let file, Self.wardrobeItems.contains(where: { $0.file == file }) else {
+        currentWardrobeItem = nil
+        wornDirection = nil
+        guard let item, Self.wardrobeItems.contains(where: { $0.item == item }) else {
             UserDefaults.standard.removeObject(forKey: Self.wardrobeItemKey)
             return
         }
-        let node: SKSpriteNode
-        if let anim = SpriteLibrary.shared.singleProp(named: file) {
-            node = SKSpriteNode(texture: anim.textures[0])
-            node.size = anim.nodeSize
-        } else {
-            node = SKSpriteNode(color: .systemPink, size: CGSize(width: 36, height: 24))
-        }
+        let node = SKSpriteNode()
         dog.addChild(node)
         wornItem = node
-        currentWardrobeFile = file
-        UserDefaults.standard.set(file, forKey: Self.wardrobeItemKey)
+        currentWardrobeItem = item
+        UserDefaults.standard.set(item, forKey: Self.wardrobeItemKey)
         reseatWornItem()
     }
 
-    /// Keep the worn item seated as he turns and as his node size changes
-    /// between poses (sit art is taller than idle). The dog's own xScale
-    /// (±1, mirrored bark art) is divided back out because a child node
-    /// inherits its parent's scale — same gotcha as reseatCarriedRabbit().
+    /// Keep the worn piece seated: swap in the art for whichever way he is
+    /// rendered facing, then hang it off its slot on him. Called on every
+    /// turn and every frame, because the anchor moves with his node size as
+    /// well as his facing (sit art is taller than idle).
+    ///
+    /// The dog's own xScale (±1 — the bark art is mirrored art, not a turn)
+    /// is divided back out of the child's position and scale, because a child
+    /// inherits its parent's transform. Same gotcha as reseatCarriedRabbit().
     private func reseatWornItem() {
-        guard let item = wornItem, item.parent === dog,
-              let spec = Self.wardrobeItems.first(where: { $0.file == currentWardrobeFile })
+        guard let node = wornItem, node.parent === dog,
+              let spec = Self.wardrobeItems.first(where: { $0.item == currentWardrobeItem })
         else { return }
-        let parentFlip: CGFloat = dog.xScale < 0 ? -1 : 1
-        let anchor = dog.hatOffset
-        item.position = CGPoint(
-            x: anchor.x * parentFlip,
-            y: anchor.y + spec.dy * dog.size.height + spec.lift * item.size.height
-        )
-        item.zPosition = dog.hatZOffset
-        // Facing away, glasses would float on the back of his head — hide
-        // them; hats and the bandana still read and just tuck behind (-1).
-        // renderedFacing, not facing: the dangle/bark poses draw him facing
-        // somewhere his logical facing disagrees with.
-        item.isHidden = spec.isEyewear && dog.renderedFacing.isNorthish
-        // Any lean in the art follows the facing (and cancels the parent flip).
-        let westish = dog.renderedFacing.unitVector.x < 0
-        item.xScale = (westish ? -1 : 1) * parentFlip
+        // renderedFacing, not facing: the dangle and bark poses draw him
+        // looking somewhere his logical facing disagrees with.
+        let facing = dog.renderedFacing
+        let direction = Self.wardrobeDirection(for: facing)
+        guard let art = SpriteLibrary.shared.wardrobe(item: spec.item, direction: direction.key),
+              let front = SpriteLibrary.shared.wardrobe(item: spec.item, direction: "s"),
+              front.ink.width > 0
+        else {
+            node.isHidden = true
+            return
+        }
+        node.isHidden = false
+        if wornDirection != direction.key {
+            wornDirection = direction.key
+            node.texture = art.texture
+        }
+
+        // Points per art pixel, fixed per item by its front view, so the side
+        // views come out narrower on their own instead of being stretched.
+        // `wearScale` keeps the piece the same size on him across poses.
+        let scale = spec.frontWidth / front.ink.width * dog.wearScale
+        node.size = CGSize(width: art.canvas.width * scale, height: art.canvas.height * scale)
+
+        // Where the ink sits inside the node, measured from the node centre.
+        let inkX = (art.ink.midX - art.canvas.width / 2) * scale
+        let inkCentreY = (art.canvas.height / 2 - art.ink.midY) * scale
+        let inkBottomY = (art.canvas.height / 2 - art.ink.maxY) * scale
+
+        let anchor = dog.wearAnchor(spec.slot)
+        let flip: CGFloat = dog.xScale < 0 ? -1 : 1
+        let mirror: CGFloat = direction.mirrored ? -1 : 1
+        // A hat hangs by the bottom edge of its ink (the brim lands on his
+        // crown); everything else hangs by the middle of its ink.
+        let y = spec.slot == .crown
+            ? anchor.y - art.ink.height * scale * Self.wardrobeHatSink - inkBottomY
+            : anchor.y - inkCentreY
+        node.position = CGPoint(x: flip * (anchor.x - mirror * inkX), y: y)
+        node.xScale = mirror * flip
+        node.yScale = 1
+        node.zPosition = dog.wearZOffset
     }
 
     private func wardrobeSelectionMenu() -> NSMenu {
@@ -311,18 +370,21 @@ final class PetScene: SKScene {
         let nothing = NSMenuItem(title: "Nothing", action: #selector(wardrobeChosen(_:)), keyEquivalent: "")
         nothing.target = self
         nothing.representedObject = ""
-        nothing.state = currentWardrobeFile == nil ? .on : .off
+        nothing.state = currentWardrobeItem == nil ? .on : .off
         menu.addItem(nothing)
         menu.addItem(.separator())
         for spec in Self.wardrobeItems {
             let item = NSMenuItem(title: spec.title, action: #selector(wardrobeChosen(_:)), keyEquivalent: "")
             item.target = self
-            item.representedObject = spec.file
-            item.state = currentWardrobeFile == spec.file ? .on : .off
-            if let url = Bundle.module.url(forResource: spec.file, withExtension: "png", subdirectory: "sprites"),
-               let image = NSImage(contentsOf: url) {
-                // x2, not a fixed height: the items' aspects vary too much.
-                image.size = NSSize(width: image.size.width * 2, height: image.size.height * 2)
+            item.representedObject = spec.item
+            item.state = currentWardrobeItem == spec.item ? .on : .off
+            // The real front-view art, at a common size: every piece is drawn
+            // on the same 48x48 canvas, so they line up in the menu the way
+            // they line up on the dog.
+            if let url = Bundle.module.url(
+                forResource: "wardrobe_\(spec.item)_s", withExtension: "png", subdirectory: "sprites"
+            ), let image = NSImage(contentsOf: url) {
+                image.size = NSSize(width: 26, height: 26)
                 item.image = image
             }
             menu.addItem(item)
@@ -331,9 +393,11 @@ final class PetScene: SKScene {
     }
 
     @objc private func wardrobeChosen(_ sender: NSMenuItem) {
-        guard let file = sender.representedObject as? String else { return }
-        applyWardrobeItem(file.isEmpty ? nil : file)
+        guard let item = sender.representedObject as? String else { return }
+        applyWardrobeItem(item.isEmpty ? nil : item)
     }
+
+    // MARK: - Wardrobe end
 
     // MARK: - Coat
 
@@ -430,11 +494,69 @@ final class PetScene: SKScene {
     /// Ambient machine news from the app layer's SystemMonitor. Goes through
     /// the same path as a click or a menu command, so the brain's own rules
     /// about what outranks what apply unchanged. Main thread only.
+    ///
+    /// This is also where the emote is decided, and it has to be: `DogEffect`
+    /// is deliberately signal-agnostic, so by the time the effects come back
+    /// nothing in them says WHY he did that. Here — the one place that still
+    /// knows the signal's name — the scene can caption it without teaching
+    /// the brain a word of UI.
     func receive(_ signal: SystemSignal) {
         // The build party is the scene's to throw — the brain's `.celebrate`
         // covers every kind of good news, and only this one gets confetti.
         if signal == .buildFinished { showConfetti() }
-        send(.system(signal))
+        // Not `send`: the emote needs to know whether the brain ACTED on the
+        // signal or parked it, which is the difference between the real icon
+        // and the "noticed, not now" gear.
+        let effects = brain.handle(.system(signal), at: lastTime)
+        apply(effects: effects)
+        emote(for: signal, acted: !effects.isEmpty)
+    }
+
+    // MARK: - Emotes
+
+    /// The icon for news he acts on. nil for the all-clear signals, which
+    /// only get an emote when they actually rouse him (see `emote(for:)`).
+    private static func emoteIcon(for signal: SystemSignal) -> String? {
+        switch signal {
+        case .buildFinished: "icon_party"
+        case .batteryLow: "icon_battery"
+        case .fansUp: "icon_flame"
+        case .dndOn: "icon_moon"
+        case .idleBegan: "icon_sleep"
+        case .idleEnded, .batteryNormal, .dndOff: nil
+        }
+    }
+
+    /// Caption a system signal, going by what he did with it:
+    ///
+    /// - news he acted on gets its own icon — the party for a finished build,
+    ///   the flame for the fans, the moon for Focus, the battery, the zeds
+    ///   for the idle nap;
+    /// - news that arrived while he was mid-fetch gets the gear: the brain
+    ///   parks it (`deferSignal`) and comes back to it, and the gear says so
+    ///   rather than leaving the user wondering why nothing happened;
+    /// - the all-clear signals (the human's back, the charger's in, Focus
+    ///   off) stay silent unless they genuinely got him up, and then it's
+    ///   the alert perk-up.
+    private func emote(for signal: SystemSignal, acted: Bool) {
+        guard let icon = Self.emoteIcon(for: signal) else {
+            if acted { showEmote("icon_alert") }
+            return
+        }
+        showEmote(acted ? icon : "icon_gear")
+    }
+
+    /// Float an emote off the top of his head. Offset to one side so it
+    /// doesn't fight the hearts, which rise straight up from the same line.
+    private func showEmote(_ icon: String) {
+        guard let bubble = EmoteBubble(icon: icon) else { return }
+        bubble.position = CGPoint(
+            x: dog.position.x + 30,
+            y: dog.position.y + dog.size.height / 2 + 14
+        )
+        bubble.zPosition = 21 // just above the hearts (20)
+        addChild(bubble)
+        bubble.play()
     }
 
     private func dogArrived() {
@@ -1399,6 +1521,8 @@ final class PetScene: SKScene {
             dog.celebrate()
             showHearts()
             showSparkles()
+            showTrickBadge()
+            playSound(named: "chime")
         }
     }
 
@@ -1680,6 +1804,31 @@ final class PetScene: SKScene {
                 .removeFromParent(),
             ]))
         }
+    }
+
+    /// A trick just stuck: the badge pops over his head for a moment. The
+    /// hearts say he enjoyed the treat; this says the lesson landed. Rises on
+    /// the opposite side from the emotes, so a build finishing mid-lesson
+    /// doesn't stack two bubbles on top of each other.
+    private func showTrickBadge() {
+        guard let art = SpriteLibrary.shared.singleProp(named: "badge_trick") else { return }
+        let badge = SKSpriteNode(texture: art.textures[0])
+        badge.size = CGSize(width: 34, height: 34)
+        badge.position = CGPoint(
+            x: dog.position.x - 30,
+            y: dog.position.y + dog.size.height / 2 + 14
+        )
+        badge.zPosition = 21
+        badge.alpha = 0
+        badge.setScale(0.3)
+        addChild(badge)
+        badge.run(.sequence([
+            .group([.fadeIn(withDuration: 0.12), .scale(to: 1.15, duration: 0.18)]),
+            .scale(to: 1, duration: 0.1),
+            .wait(forDuration: 1.0),
+            .group([.moveBy(x: 0, y: 26, duration: 0.45), .fadeOut(withDuration: 0.45)]),
+            .removeFromParent(),
+        ]))
     }
 
     // MARK: - Click-through
@@ -2024,7 +2173,12 @@ final class PetScene: SKScene {
 
     @objc private func commandChosen(_ sender: NSMenuItem) {
         guard let command = sender.representedObject as? DogCommand else { return }
-        send(.command(command))
+        let effects = brain.handle(.command(command), at: lastTime)
+        apply(effects: effects)
+        // `handleCommand` returns nothing for exactly one reason: he's in
+        // your arms and taking no orders. A shrug beats a menu item that
+        // silently does nothing.
+        if effects.isEmpty { showEmote("icon_question") }
     }
 
     @objc private func trickChosen(_ sender: NSMenuItem) {
@@ -2084,7 +2238,8 @@ final class PetScene: SKScene {
     /// Compose dog-above-caption on a transparent canvas. Everything is laid
     /// out in device pixels (points x camScale) with nearest-neighbor
     /// sampling so the pixel art never picks up a smoothing blur; the caption
-    /// is white with a 1px dark outline so it reads on any background.
+    /// sits on the kit's plate, white with a 1px dark outline so it reads
+    /// whatever the plate is doing underneath.
     private static func composeCamImage(
         dogImage: CGImage, dogPointSize: CGSize, date: Date
     ) -> NSImage? {
@@ -2103,25 +2258,26 @@ final class PetScene: SKScene {
         )
         let textSize = captionFace.size()
 
-        // Optional paw-print glyph before the text (skipped if the symbol is
-        // unavailable). Rasterized here, then drawn via clip-to-alpha-mask so
-        // it gets the same white-with-dark-outline treatment as the caption.
-        let pawSide = (font.capHeight * 1.2).rounded()
-        let pawGap = 5 * scale
-        var pawMask: CGImage?
-        if let paw = NSImage(systemSymbolName: "pawprint.fill", accessibilityDescription: nil) {
-            var pawRect = CGRect(x: 0, y: 0, width: pawSide, height: pawSide)
-            pawMask = paw.cgImage(forProposedRect: &pawRect, context: nil, hints: nil)
-        }
+        // The caption rides on the kit's plate — a rounded pixel slab, wider
+        // than the text by a margin on each side. It replaces the bare
+        // outlined text, and the SF Symbol paw that used to sit in front of
+        // it: there's a hand-drawn paw in the corner now instead.
+        let plate = camSprite(named: "caption_plate")
+        let platePadX = 11 * scale
+        let platePadY = 7 * scale
+        let plateSize = CGSize(
+            width: textSize.width.rounded(.up) + platePadX * 2,
+            height: textSize.height.rounded(.up) + platePadY * 2
+        )
+        let captionHeight = plate == nil ? textSize.height.rounded(.up) : plateSize.height
 
         let dogPixelSize = CGSize(
             width: (dogPointSize.width * scale).rounded(),
             height: (dogPointSize.height * scale).rounded()
         )
-        let captionWidth = (pawMask != nil ? pawSide + pawGap : 0) + textSize.width.rounded(.up)
-        let contentWidth = max(dogPixelSize.width, captionWidth)
+        let contentWidth = max(dogPixelSize.width, plate == nil ? textSize.width.rounded(.up) : plateSize.width)
         let canvasWidth = Int((contentWidth + pad * 2).rounded(.up))
-        let canvasHeight = Int((pad + textSize.height + gap + dogPixelSize.height + pad).rounded(.up))
+        let canvasHeight = Int((pad + captionHeight + gap + dogPixelSize.height + pad).rounded(.up))
 
         guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB),
               let context = CGContext(
@@ -2136,23 +2292,23 @@ final class PetScene: SKScene {
         // The dog, centered, above the caption line.
         let dogRect = CGRect(
             x: ((CGFloat(canvasWidth) - dogPixelSize.width) / 2).rounded(),
-            y: (pad + textSize.height + gap).rounded(),
+            y: (pad + captionHeight + gap).rounded(),
             width: dogPixelSize.width, height: dogPixelSize.height
         )
         context.draw(dogImage, in: dogRect)
 
-        // Caption row, centered under the dog.
-        var cursorX = ((CGFloat(canvasWidth) - captionWidth) / 2).rounded()
-        if let pawMask {
-            // Bottom of the glyph on the text baseline (descender is negative).
-            let pawRect = CGRect(
-                x: cursorX, y: (pad - font.descender).rounded(), width: pawSide, height: pawSide
+        // Caption row, centered under the dog: plate first, text on top.
+        if let plate {
+            let plateRect = CGRect(
+                x: ((CGFloat(canvasWidth) - plateSize.width) / 2).rounded(), y: pad,
+                width: plateSize.width, height: plateSize.height
             )
-            drawCamGlyph(pawMask, in: pawRect, context: context, fill: outlineColor, outlinePass: true)
-            drawCamGlyph(pawMask, in: pawRect, context: context, fill: .white, outlinePass: false)
-            cursorX += pawSide + pawGap
+            drawCamPlate(plate, in: plateRect, corner: 9 * scale, context: context)
         }
-        let textOrigin = CGPoint(x: cursorX, y: pad)
+        let textOrigin = CGPoint(
+            x: ((CGFloat(canvasWidth) - textSize.width) / 2).rounded(),
+            y: (pad + (captionHeight - textSize.height) / 2).rounded()
+        )
         let appKitContext = NSGraphicsContext(cgContext: context, flipped: false)
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = appKitContext
@@ -2164,6 +2320,21 @@ final class PetScene: SKScene {
         captionFace.draw(at: textOrigin)
         NSGraphicsContext.restoreGraphicsState()
 
+        // Signed top-right, at half strength — a maker's mark, not a sticker.
+        // Top rather than bottom: the caption plate is as wide as the canvas
+        // allows down there, and the corner beside his ears is always empty.
+        if let paw = camSprite(named: "paw_watermark") {
+            let side = 16 * scale
+            context.saveGState()
+            context.setAlpha(0.55)
+            context.draw(paw, in: CGRect(
+                x: CGFloat(canvasWidth) - side - pad / 2,
+                y: CGFloat(canvasHeight) - side - pad / 2,
+                width: side, height: side
+            ))
+            context.restoreGState()
+        }
+
         guard let composed = context.makeImage() else { return nil }
         // Point size = pixels / camScale, so the image self-reports as retina
         // (2x) content on the pasteboard.
@@ -2173,33 +2344,62 @@ final class PetScene: SKScene {
         )
     }
 
-    /// Fill `mask`'s alpha silhouette with a color — the classic clip-to-mask
-    /// tinting recipe. `outlinePass` stamps the 8 one-pixel offsets (the same
-    /// halo the caption text gets); otherwise a single centered fill.
-    private static func drawCamGlyph(
-        _ mask: CGImage, in rect: CGRect, context: CGContext, fill: NSColor, outlinePass: Bool
+    /// A sprite from Resources/sprites as a CGImage. The cam composes
+    /// offscreen in Core Graphics, where an SKTexture is no use.
+    private static func camSprite(named name: String) -> CGImage? {
+        guard let url = Bundle.module.url(forResource: name, withExtension: "png", subdirectory: "sprites"),
+              let image = NSImage(contentsOf: url)
+        else { return nil }
+        var rect = CGRect(origin: .zero, size: image.size)
+        return image.cgImage(forProposedRect: &rect, context: nil, hints: nil)
+    }
+
+    /// Stretch a small square plate across `rect` as a nine-slice: the four
+    /// corners keep their size, the edges stretch along one axis, the middle
+    /// fills the rest. Scaling the whole 48x48 plate to a caption-shaped
+    /// oblong instead would smear its border and flatten its corners.
+    ///
+    /// Source rows/columns run top-down (`cropping(to:)` is in image space);
+    /// destination rows are laid out from the top edge down, because the
+    /// context's y grows upwards.
+    private static func drawCamPlate(
+        _ plate: CGImage, in rect: CGRect, corner: CGFloat, context: CGContext
     ) {
-        let offsets: [CGPoint] = outlinePass
-            ? [CGPoint(x: -1, y: -1), CGPoint(x: -1, y: 0), CGPoint(x: -1, y: 1),
-               CGPoint(x: 0, y: -1), CGPoint(x: 0, y: 1),
-               CGPoint(x: 1, y: -1), CGPoint(x: 1, y: 0), CGPoint(x: 1, y: 1)]
-            : [.zero]
-        for offset in offsets {
-            let shifted = rect.offsetBy(dx: offset.x, dy: offset.y)
-            context.saveGState()
-            context.clip(to: shifted, mask: mask)
-            context.setFillColor(fill.cgColor)
-            context.fill(shifted)
-            context.restoreGState()
+        let sw = CGFloat(plate.width), sh = CGFloat(plate.height)
+        // A quarter of the plate per corner: enough to carry the border and
+        // the rounding, and it leaves a middle band to stretch.
+        let slice = (min(sw, sh) / 4).rounded()
+        let cornerW = min(corner.rounded(), (rect.width / 2).rounded())
+        let cornerH = min(corner.rounded(), (rect.height / 2).rounded())
+        let columns: [(sx: CGFloat, sw: CGFloat, dx: CGFloat, dw: CGFloat)] = [
+            (0, slice, rect.minX, cornerW),
+            (slice, sw - slice * 2, rect.minX + cornerW, rect.width - cornerW * 2),
+            (sw - slice, slice, rect.maxX - cornerW, cornerW),
+        ]
+        let rows: [(sy: CGFloat, sh: CGFloat, top: CGFloat, dh: CGFloat)] = [
+            (0, slice, rect.maxY, cornerH),
+            (slice, sh - slice * 2, rect.maxY - cornerH, rect.height - cornerH * 2),
+            (sh - slice, slice, rect.minY + cornerH, cornerH),
+        ]
+        for row in rows where row.dh > 0 && row.sh > 0 {
+            for column in columns where column.dw > 0 && column.sw > 0 {
+                guard let piece = plate.cropping(to: CGRect(
+                    x: column.sx, y: row.sy, width: column.sw, height: row.sh
+                )) else { continue }
+                context.draw(piece, in: CGRect(
+                    x: column.dx, y: row.top - row.dh, width: column.dw, height: row.dh
+                ))
+            }
         }
     }
 
-    /// Shutter feedback: a quick white flash over everything (alpha
-    /// 0 -> 0.7 -> 0 over ~0.25s). Skipped while the view is paused: SKActions
-    /// don't run then, and a stale flash firing on resume would be confusing.
-    /// No shutter sound for now — make_audio.py is contested by sibling
-    /// branches; noted as future work.
+    /// Shutter feedback: the shutter click, plus a quick white flash over
+    /// everything (alpha 0 -> 0.7 -> 0 over ~0.25s). The flash is skipped
+    /// while the view is paused — SKActions don't run then, and a stale flash
+    /// firing on resume would be confusing — but the click still fires, since
+    /// the capture itself worked.
     private func flashCamFeedback() {
+        playSound(named: "shutter")
         guard let view, !view.isPaused, !isPaused else { return }
         // Only the display he's standing on. The scene spans the whole desk,
         // and whiting out three monitors to photograph one dog is a jump

@@ -39,17 +39,58 @@ final class Dog: SKSpriteNode {
     /// A carried ball hides behind him when he faces away from the viewer.
     var mouthZOffset: CGFloat { facing.isNorthish ? -1 : 1 }
 
-    /// Where a worn wardrobe item sits, relative to the dog (the crown of his
-    /// head). Uses the live node size so the anchor tracks pose changes
-    /// (sit art renders taller than idle) — positioning stays in code, never
-    /// baked into the item art.
-    var hatOffset: CGPoint {
-        let v = renderedFacing.unitVector
-        return CGPoint(x: v.x * 10, y: size.height * 0.32)
+    /// The places a wardrobe piece can hang off him. The catalog names a
+    /// place ("this is eyewear"), not a nudge ("this is 3pt lower than the
+    /// hats") — which is what keeps the per-item numbers down to one.
+    enum WearSlot: Hashable {
+        case crown, eyes, neck, body
     }
 
-    /// A worn item tucks behind him when he faces away from the viewer.
-    var hatZOffset: CGFloat { renderedFacing.isNorthish ? -1 : 1 }
+    /// Where each slot sits, as a fraction of the art canvas measured DOWN
+    /// from its top. Two columns because Jumba's art comes in two canvas
+    /// families: the 48x48 poses (idle, walk, sleep, sniff…) and the taller
+    /// 68x76 sit/bark exports, which draw him lower in frame. Read off
+    /// idle_south and sit_south — crown is the top of his head, eyes the eye
+    /// row, neck the collar line, body mid-chest.
+    private static let slotRows: [WearSlot: (short: CGFloat, tall: CGFloat)] = [
+        .crown: (0.14, 0.28),
+        .eyes: (0.29, 0.37),
+        .neck: (0.50, 0.52),
+        .body: (0.62, 0.60),
+    ]
+
+    /// Sideways lean of the anchor, as a fraction of the node width: facing
+    /// east or west he is drawn with his head off the canvas centre, and a
+    /// hat belongs over the head, not the shoulder.
+    private static let headLean: (short: CGFloat, tall: CGFloat) = (0.145, 0.10)
+
+    /// Where a worn piece hangs, relative to the dog's centre. Uses the live
+    /// node size, so the anchor tracks pose changes (the sit art renders
+    /// taller than idle) without the art knowing anything about poses.
+    func wearAnchor(_ slot: WearSlot) -> CGPoint {
+        let rows = Self.slotRows[slot] ?? (0.5, 0.5)
+        let tall = isTallCanvasPose
+        let v = renderedFacing.unitVector
+        return CGPoint(
+            x: v.x * size.width * (tall ? Self.headLean.tall : Self.headLean.short),
+            y: size.height * (0.5 - (tall ? rows.tall : rows.short))
+        )
+    }
+
+    /// The sit/bark exports are drawn on a 68x76 canvas instead of 48x48, so
+    /// he sits lower in frame; every anchor shifts with him.
+    private var isTallCanvasPose: Bool { (texture?.size().height ?? 48) > 60 }
+
+    /// How big he is drawn right now relative to his baseline idle art. The
+    /// sit/bark sets render about a fifth larger (they were exported at a
+    /// different pixel density), and a hat has to grow with the head it's on.
+    var wearScale: CGFloat {
+        guard let texture, texture.size().height > 0 else { return 1 }
+        return (size.height / texture.size().height) / SpriteLibrary.baseScale
+    }
+
+    /// A worn piece tucks behind him when he faces away from the viewer.
+    var wearZOffset: CGFloat { renderedFacing.isNorthish ? -1 : 1 }
 
     /// The direction the art on screen ACTUALLY faces, which is not always the
     /// logical `facing`: the dangle pose always draws `sit_south`, and the

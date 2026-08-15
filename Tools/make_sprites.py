@@ -525,11 +525,10 @@ def main():
         "bed": [bed_frame()],
         "treat": [treat_frame()],
         "rabbit": [rabbit_frame()],
-        "wardrobe_partyhat": [partyhat_frame()],
-        "wardrobe_tophat": [tophat_frame()],
-        "wardrobe_cowboyhat": [cowboyhat_frame()],
-        "wardrobe_bandana": [bandana_frame()],
-        "wardrobe_sunglasses": [sunglasses_frame()],
+        # Retired stand-ins, kept only as a record of what they looked like:
+        # the props (deposit/frisbee/squeaky/rope) now come from Alex's kit via
+        # Tools/import_kit_props.py, and the wardrobe from import_kit_art.py.
+        # Their *_frame() generators are left below, unreferenced.
     }
     if "--all" in sys.argv:
         sheets.update({
