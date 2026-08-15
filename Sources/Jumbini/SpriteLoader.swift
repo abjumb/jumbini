@@ -266,6 +266,43 @@ final class SpriteLibrary {
     /// coat. All-or-nothing per animation: a coat that's missing even one frame
     /// of a cycle hands the whole cycle back to the classic art rather than
     /// alternating coats mid-gait.
+    /// Multi-frame prop assembled from individually numbered files —
+    /// `dust_0.png`, `dust_1.png`, … — rather than sliced out of one strip
+    /// sheet. Alex's art arrives one PNG per frame, and this keeps it that way:
+    /// redrawing a single frame is a file drop, with no sheet to recompose.
+    ///
+    /// Frame size comes from the first file (the kit's frames are all square
+    /// and equal-sized); the whole sequence is rejected if any file is missing,
+    /// so a caller's `?? fallback` sees an incomplete sequence as no sequence.
+    func propSequence(named name: String, frames: Int, fps: Double) -> Animation? {
+        // Namespaced so a sequence can't collide with `prop`/`singleProp` art
+        // of the same base name (there is a `frisbee_mouth` single AND a
+        // `frisbee` sequence).
+        let key = "seq:\(name):\(frames)"
+        if let cached = propCache[key] { return cached }
+        guard frames > 0 else { return nil }
+        var textures: [SKTexture] = []
+        var frameSize: CGSize = .zero
+        for index in 0..<frames {
+            guard
+                let url = Bundle.module.url(
+                    forResource: "\(name)_\(index)", withExtension: "png", subdirectory: "sprites"
+                ),
+                let image = NSImage(contentsOf: url),
+                let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
+            else { return nil }
+            let texture = SKTexture(cgImage: cg)
+            texture.filteringMode = .nearest
+            if textures.isEmpty {
+                frameSize = CGSize(width: CGFloat(cg.width) * 3, height: CGFloat(cg.height) * 3)
+            }
+            textures.append(texture)
+        }
+        let animation = Animation(textures: textures, fps: fps, nodeSize: frameSize, flipX: false)
+        propCache[key] = animation
+        return animation
+    }
+
     private func make(_ files: [String], fps: Double, scale: CGFloat, flipX: Bool = false) -> Animation? {
         if coat != .classic,
            let themed = build(files.map { coated($0) }, fps: fps, scale: scale, flipX: flipX) {

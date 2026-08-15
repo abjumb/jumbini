@@ -41,7 +41,7 @@ final class PetScene: SKScene {
 
     // Furniture.
     private var bed: SKSpriteNode!
-    private var jar: SKSpriteNode!
+    private var treatBox: SKSpriteNode!
 
     // Treats.
     private var treatInHand: SKSpriteNode?
@@ -89,8 +89,9 @@ final class PetScene: SKScene {
     private var mouseDownOnDog = false
     private var isCarryingDog = false
     private var draggedFurniture: SKSpriteNode?
-    /// A plain press started on the jar: click = take a treat, drag = move the jar.
-    private var pressedJar = false
+    /// A plain press started on the treat box: click = take a treat,
+    /// drag = move the box.
+    private var pressedTreatBox = false
     /// Where the current press started (drag threshold is measured from here).
     private var pressLocation: CGPoint = .zero
     /// Keeps the grab point under the cursor while carrying (no center-snap).
@@ -111,7 +112,7 @@ final class PetScene: SKScene {
         // Furniture goes in the bottom-right of the PRIMARY display, not of the
         // whole desk: on a three-monitor setup the union's bottom-right corner
         // is off in someone's peripheral vision, and a fresh install should
-        // look the way it always did — bed and jar by the Dock.
+        // look the way it always did — bed and treat box by the Dock.
         // Before anything asks for dog art: the coat decides which files that
         // resolves to, and the first pose is played at the end of this method.
         if let stored = UserDefaults.standard.string(forKey: Self.coatKey),
@@ -129,11 +130,10 @@ final class PetScene: SKScene {
             applyBedVariant(stored)
         }
 
-        jar = Self.propNode(named: "jar", frameWidth: 22, fallbackColor: .systemGray,
-                            fallbackSize: CGSize(width: 66, height: 78))
-        jar.position = CGPoint(x: home.maxX - 70, y: home.minY + 145)
-        jar.zPosition = 6
-        addChild(jar)
+        treatBox = Self.treatBoxNode()
+        treatBox.position = CGPoint(x: home.maxX - 70, y: home.minY + 145)
+        treatBox.zPosition = 6
+        addChild(treatBox)
 
         dog.position = CGPoint(x: home.midX, y: home.midY)
         dog.zPosition = 10
@@ -395,7 +395,7 @@ final class PetScene: SKScene {
         stepFrisbeeCatch()
         stepTug(dt: dt)
         send(.tick)
-        updatePerchShadow()
+        updateContactShadow()
         trackHover(at: currentTime)
         // Every frame (cheap): the anchor depends on the dog's node size,
         // which changes with the pose (sit vs idle), not just the facing.
@@ -431,6 +431,9 @@ final class PetScene: SKScene {
     /// the same path as a click or a menu command, so the brain's own rules
     /// about what outranks what apply unchanged. Main thread only.
     func receive(_ signal: SystemSignal) {
+        // The build party is the scene's to throw — the brain's `.celebrate`
+        // covers every kind of good news, and only this one gets confetti.
+        if signal == .buildFinished { showConfetti() }
         send(.system(signal))
     }
 
@@ -456,6 +459,13 @@ final class PetScene: SKScene {
             switch effect {
             case .play(let animation):
                 dog.play(animation)
+                // Two poses come with their own puff of air. The brain sends
+                // each exactly once on entering the state, so these fire once.
+                switch animation {
+                case .bark: showBarkPuff()
+                case .pounce: showDust()
+                default: break
+                }
             case .moveTo(let point, let speed):
                 dog.move(to: point, speed: speed)
             case .stopMoving:
@@ -496,7 +506,9 @@ final class PetScene: SKScene {
             case .playSound(let name):
                 playSound(named: name)
             case .nudgeCursor:
+                // The catch. The jitter is the payoff; the sparkles sell it.
                 nudgeRealCursor()
+                showSparkles()
             case .pickUpToy(let kind):
                 attachToyToDog(kind)
             case .dropToy(let kind):
@@ -515,6 +527,7 @@ final class PetScene: SKScene {
                 stopFalling()
             case .absorbLanding:
                 dog.absorb()
+                showDust()
             }
         }
     }
@@ -648,7 +661,7 @@ final class PetScene: SKScene {
     private static let squeakyHopRange: ClosedRange<CGFloat> = 130...240
 
     private func makeSqueakyNode() -> SKSpriteNode {
-        if let anim = SpriteLibrary.shared.prop(named: "squeaky", frameWidth: 16, fps: 9) {
+        if let anim = SpriteLibrary.shared.singleProp(named: "toy_chicken") {
             let node = SKSpriteNode(texture: anim.textures[0])
             node.size = CGSize(width: 36, height: 36)
             return node
@@ -726,6 +739,8 @@ final class PetScene: SKScene {
     private static let yankInterval: ClosedRange<TimeInterval> = 0.9...1.7
     private static let yankDuration: TimeInterval = 0.26
     private static let yankDistance: CGFloat = 34
+    /// Past this much of a pull (0...1) the rope is drawn strained.
+    private static let tugTautForce: CGFloat = 0.5
 
     /// The dog's end of the rope — his mouth, in scene coordinates.
     private func ropeAnchor() -> CGPoint {
@@ -775,7 +790,9 @@ final class PetScene: SKScene {
         let anchor = ropeAnchor()
 
         if carryingRope {
-            // Victory lap: it trails behind him as he swaggers off.
+            // Victory lap: it trails behind him as he swaggers off. Nobody is
+            // pulling any more, so it hangs slack.
+            rope.setTaut(false)
             let v = dog.facing.unitVector
             ropeEnd = CGPoint(
                 x: anchor.x - v.x * Self.ropeRestLength * 0.8,
@@ -815,9 +832,13 @@ final class PetScene: SKScene {
         rope.layout(from: anchor, to: ropeEnd)
         dog.face(towards: ropeEnd) // brace against the pull
 
+        // Every frame, not on the throttled send: the strain is what the user
+        // is watching while they haul, and it should track their arm.
+        let force = tugForce()
+        rope.setTaut(force >= Self.tugTautForce)
         if lastTime - lastTugSent >= 0.1 { // ~10/s
             lastTugSent = lastTime
-            send(.tugMoved(to: ropeEnd, force: tugForce()))
+            send(.tugMoved(to: ropeEnd, force: force))
         }
     }
 
@@ -844,6 +865,7 @@ final class PetScene: SKScene {
     private func endTug() {
         draggingRope = false
         yankPhase = 0
+        rope?.setTaut(false)
     }
 
     private func removeRope() {
@@ -877,11 +899,12 @@ final class PetScene: SKScene {
         if kind == .squeaky { startSqueakySqueezing() }
     }
 
-    /// The 3-frame strip is a rest pose plus two squeeze frames — looping it
-    /// only while he has it in his jaws makes the toy look worried.
+    /// toy_squash_0..2: the chicken being crushed and springing back. Looping
+    /// it only while he has it in his jaws — which is exactly the brain's
+    /// `.shakingToy` — makes the toy look worried.
     private func startSqueakySqueezing() {
         guard let squeaky,
-              let anim = SpriteLibrary.shared.prop(named: "squeaky", frameWidth: 16, fps: 9)
+              let anim = SpriteLibrary.shared.propSequence(named: "toy_squash", frames: 3, fps: 9)
         else { return }
         squeaky.run(
             .repeatForever(.animate(with: anim.textures, timePerFrame: 1 / anim.fps)),
@@ -910,7 +933,12 @@ final class PetScene: SKScene {
             return
         }
         guard let toy = toyNode(kind) else { return }
-        toy.removeAction(forKey: "squeeze") // back to the rest frame
+        // Back to the rest pose: stopping `animate` leaves whichever squash
+        // frame it was on, and the rest art is its own file now.
+        toy.removeAction(forKey: "squeeze")
+        if kind == .squeaky, let rest = SpriteLibrary.shared.singleProp(named: "toy_chicken") {
+            toy.texture = rest.textures[0]
+        }
         toy.removeFromParent()
         let v = dog.facing.unitVector
         toy.position = CGPoint(x: dog.position.x + v.x * 34, y: dog.position.y + v.y * 34 - 10)
@@ -1030,8 +1058,17 @@ final class PetScene: SKScene {
     /// Polls the window server and keeps `brain.surfaces` current. nil once
     /// the scene has been torn down.
     private var windowSurfaces: WindowSurfaces?
-    /// The soft ellipse under his feet while he's on a ledge.
-    private var perchShadow: SKShapeNode?
+    /// The soft blob under his feet while he's on a ledge — or on the ground
+    /// he's falling towards. nil until the first time one is needed.
+    private var contactShadow: SKSpriteNode?
+    /// Footprint of the shadow when he's standing right on the surface. The
+    /// art is a round 32x32 blob; the node squashes it a little so it reads as
+    /// ground rather than as a hole (no detail in there to smear).
+    private static let contactShadowSize = CGSize(width: 48, height: 26)
+    /// Matches the ellipse this replaced: the art is opaque dark grey.
+    private static let contactShadowAlpha: CGFloat = 0.34
+    /// A fall from this high renders the shadow at its smallest and faintest.
+    private static let contactShadowFallSpan: CGFloat = 320
 
     private func startWatchingWindows() {
         let watcher = WindowSurfaces(geometry: { [weak self] in
@@ -1074,26 +1111,44 @@ final class PetScene: SKScene {
     }
 
     /// A contact shadow so he reads as standing ON the title bar rather than
-    /// floating over it. Created once, then just moved and hidden.
-    private func updatePerchShadow() {
-        guard case .perched(let id) = brain.state,
-              let surface = brain.surfaces.first(where: { $0.id == id })
-        else {
-            perchShadow?.isHidden = true
+    /// floating over it — and, mid-fall, as being somewhere above the floor.
+    /// Created once, then just moved, scaled and hidden.
+    private func updateContactShadow() {
+        // On a ledge: parked under his feet, full size.
+        if case .perched(let id) = brain.state,
+           let surface = brain.surfaces.first(where: { $0.id == id }),
+           let shadow = contactShadow ?? makeContactShadow() {
+            shadow.isHidden = false
+            shadow.position = CGPoint(x: dog.position.x, y: surface.topY + 2)
+            shadow.setScale(1)
+            shadow.alpha = Self.contactShadowAlpha
             return
         }
-        let shadow = perchShadow ?? makePerchShadow()
-        shadow.isHidden = false
-        shadow.position = CGPoint(x: dog.position.x, y: surface.topY + 2)
+        // Falling: it waits on the ground he's heading for and swells as he
+        // arrives — the oldest trick there is for reading height.
+        if fallVelocity != nil, let shadow = contactShadow ?? makeContactShadow() {
+            let drop = min(1, max(0, dog.position.y - fallFloorY) / Self.contactShadowFallSpan)
+            shadow.isHidden = false
+            // fallFloorY is where his CENTRE comes to rest, so the ground he
+            // lands on is half a sprite below it.
+            shadow.position = CGPoint(x: dog.position.x, y: fallFloorY - dog.size.height / 2 + 2)
+            shadow.setScale(1 - 0.55 * drop)
+            shadow.alpha = Self.contactShadowAlpha * (1 - 0.7 * drop)
+            return
+        }
+        contactShadow?.isHidden = true
     }
 
-    private func makePerchShadow() -> SKShapeNode {
-        let shadow = SKShapeNode(ellipseOf: CGSize(width: 44, height: 12))
-        shadow.fillColor = NSColor.black.withAlphaComponent(0.28)
-        shadow.strokeColor = .clear
+    /// nil if the art isn't in the bundle — a missing shadow is a better
+    /// failure than a black rectangle under the dog.
+    private func makeContactShadow() -> SKSpriteNode? {
+        guard let anim = SpriteLibrary.shared.singleProp(named: "shadow_blob") else { return nil }
+        let shadow = SKSpriteNode(texture: anim.textures[0])
+        shadow.size = Self.contactShadowSize
+        shadow.alpha = Self.contactShadowAlpha
         shadow.zPosition = dog.zPosition - 1
         addChild(shadow)
-        perchShadow = shadow
+        contactShadow = shadow
         return shadow
     }
 
@@ -1256,6 +1311,48 @@ final class PetScene: SKScene {
         }
     }
 
+    // MARK: - The treat box
+
+    /// Rendered size of the box. Alex's art is 64x64 with the carton drawn
+    /// inside a transparent margin; at the props' usual x3 that would be a
+    /// 192pt box, twice the dog. This lands its drawn footprint at roughly the
+    /// height of the peanut butter jar it replaces.
+    private static let treatBoxSize = CGSize(width: 84, height: 84)
+
+    private static func treatBoxNode() -> SKSpriteNode {
+        if let anim = SpriteLibrary.shared.singleProp(named: "treat_box") {
+            let node = SKSpriteNode(texture: anim.textures[0])
+            node.size = treatBoxSize
+            return node
+        }
+        return SKSpriteNode(color: .systemBrown, size: treatBoxSize)
+    }
+
+    /// The box's hit region. `frame` is the whole 84pt node, and about 12pt of
+    /// each side of that is the art's transparent margin — inset back to the
+    /// drawn carton (plus a couple of points of slop) or the box grabs clicks
+    /// from empty desktop beside it.
+    private func treatBoxFrame() -> CGRect {
+        treatBox.frame.insetBy(dx: 10, dy: 2)
+    }
+
+    /// The box rocks as he digs a treat out of it: one pass through the wobble
+    /// frames, then back to the resting carton.
+    private func wobbleTreatBox() {
+        guard
+            let wobble = SpriteLibrary.shared.propSequence(
+                named: "treat_box_wobble", frames: 9, fps: 18
+            ),
+            let rest = SpriteLibrary.shared.singleProp(named: "treat_box")
+        else { return }
+        treatBox.removeAction(forKey: "wobble")
+        treatBox.run(.sequence([
+            .animate(with: wobble.textures, timePerFrame: 1 / wobble.fps,
+                     resize: false, restore: false),
+            .setTexture(rest.textures[0]),
+        ]), withKey: "wobble")
+    }
+
     // MARK: - Treats
 
     private func makeTreat(at location: CGPoint) -> SKSpriteNode {
@@ -1270,8 +1367,8 @@ final class PetScene: SKScene {
     private func dropTreat(at location: CGPoint) {
         guard let treat = treatInHand else { return }
         treatInHand = nil
-        // Released back over (or never left) the jar: put the treat away.
-        if jar.frame.insetBy(dx: -6, dy: -6).contains(location) {
+        // Released back over (or never left) the box: put the treat away.
+        if treatBoxFrame().contains(location) {
             treat.removeFromParent()
             return
         }
@@ -1301,6 +1398,7 @@ final class PetScene: SKScene {
         if let trick = trickTrainer.recordTreat(at: lastTime), trickTrainer.isUnlocked(trick) {
             dog.celebrate()
             showHearts()
+            showSparkles()
         }
     }
 
@@ -1316,22 +1414,92 @@ final class PetScene: SKScene {
     /// On-screen pile cap: when a 6th appears the oldest fades away.
     private static let maxPiles = 5
 
-    /// Pile art: the roadmap's hand-made piles (deposit_1..3) win when they
-    /// exist; the generated two-variant strip is the stand-in. Same
-    /// drop-the-file-in upgrade path as the bed catalog.
+    /// How long a fresh pile stays fresh. Past this it dries out — the art
+    /// swaps to the pale crusted variant and the flies find it.
+    private static let pileDryAge: TimeInterval = 120
+
+    /// Pile art: one of Alex's three hand-made variants, picked at random so
+    /// no two piles in a row are the same lump.
     private static func pileNode() -> SKSpriteNode {
         if let real = SpriteLibrary.shared.singleProp(named: "deposit_\(Int.random(in: 1...3))") {
             let node = SKSpriteNode(texture: real.textures[0])
             node.size = real.nodeSize
             return node
         }
-        if let anim = SpriteLibrary.shared.prop(named: "deposit", frameWidth: 12, fps: 1),
-           let texture = anim.textures.randomElement() {
-            let node = SKSpriteNode(texture: texture)
-            node.size = anim.nodeSize
-            return node
-        }
         return SKSpriteNode(color: .systemBrown, size: CGSize(width: 36, height: 30))
+    }
+
+    /// How long a fresh pile steams for.
+    private static let pileSteamDuration: TimeInterval = 20
+    /// Gap between wisps.
+    private static let pileSteamInterval: TimeInterval = 0.55
+
+    /// It is fresh, and the desktop is cold. Wisps rise out of the pile for
+    /// the first twenty seconds and then it's just a pile. The emitter is an
+    /// action on the pile node, so it stops the moment the pile is binned.
+    private func startSteaming(_ pile: SKSpriteNode) {
+        guard let anim = SpriteLibrary.shared.propSequence(named: "steam", frames: 1, fps: 1),
+              let texture = anim.textures.first
+        else { return }
+        let emit = SKAction.run { [weak pile] in
+            guard let pile else { return }
+            let wisp = SKSpriteNode(texture: texture)
+            wisp.size = CGSize(width: 24, height: 24)
+            wisp.zPosition = 1
+            wisp.alpha = 0
+            wisp.position = CGPoint(x: CGFloat.random(in: -7...7), y: 6)
+            pile.addChild(wisp)
+            wisp.run(.sequence([
+                .group([
+                    .moveBy(x: CGFloat.random(in: -7...7), y: 28, duration: 1.7),
+                    .sequence([
+                        .fadeAlpha(to: 0.7, duration: 0.4),
+                        .wait(forDuration: 0.5),
+                        .fadeOut(withDuration: 0.8),
+                    ]),
+                ]),
+                .removeFromParent(),
+            ]))
+        }
+        pile.run(.repeat(
+            .sequence([emit, .wait(forDuration: Self.pileSteamInterval)]),
+            count: Int(Self.pileSteamDuration / Self.pileSteamInterval)
+        ), withKey: "steam")
+    }
+
+    /// Two minutes on the carpet and it isn't fresh any more: the pile crusts
+    /// over and picks up an escort. The timer rides on the pile node itself,
+    /// so a pile that gets dragged, evicted or binned takes its own schedule
+    /// (and its flies, which are children) with it.
+    private func startAging(_ pile: SKSpriteNode) {
+        guard let dry = SpriteLibrary.shared.singleProp(named: "deposit_dry") else { return }
+        pile.run(.sequence([
+            .wait(forDuration: Self.pileDryAge),
+            .run { [weak self] in
+                pile.texture = dry.textures[0]
+                pile.size = dry.nodeSize
+                self?.addFlies(to: pile)
+            },
+        ]), withKey: "age")
+    }
+
+    /// A couple of flies orbiting an old pile, half a turn out of phase.
+    private func addFlies(to pile: SKSpriteNode) {
+        guard let anim = SpriteLibrary.shared.propSequence(named: "fly", frames: 2, fps: 8) else { return }
+        for (index, phase) in [CGFloat(0), .pi].enumerated() {
+            let fly = SKSpriteNode(texture: anim.textures[0])
+            fly.size = CGSize(width: 18, height: 18)
+            fly.zPosition = 1 // above the pile it's sitting on
+            fly.run(.repeatForever(.animate(with: anim.textures, timePerFrame: 1 / anim.fps)))
+            // A slow lopsided orbit — wider than it is tall, so it reads as a
+            // circle seen at desk level rather than a spinning wheel.
+            let period: TimeInterval = 2.6 + 0.4 * Double(index)
+            fly.run(.repeatForever(.customAction(withDuration: period) { node, elapsed in
+                let angle = phase + 2 * .pi * CGFloat(TimeInterval(elapsed) / period)
+                node.position = CGPoint(x: cos(angle) * 22, y: 14 + sin(angle) * 9)
+            }))
+            pile.addChild(fly)
+        }
     }
 
     /// The hunch finished: a pile lands just behind him, on the ground line.
@@ -1345,6 +1513,8 @@ final class PetScene: SKScene {
         pile.zPosition = 4 // above furniture (2), below the dog (10)
         addChild(pile)
         piles.append(pile)
+        startSteaming(pile)
+        startAging(pile)
         if piles.count > Self.maxPiles {
             // Never evict the pile the user is currently dragging — it would
             // vanish out of their hand mid-gesture and leave mouseUp holding
@@ -1378,6 +1548,107 @@ final class PetScene: SKScene {
             .group([.scale(to: 0.1, duration: 0.25), .fadeOut(withDuration: 0.25)]),
             .removeFromParent(),
         ]))
+    }
+
+    // MARK: - Flourishes
+    //
+    // Small one-shot effects, all built the same way showHearts() is: spawn a
+    // node, give it an action that moves and fades it, have it delete itself.
+    // Nothing here holds a reference or needs cleaning up, so nothing here can
+    // leak into the next frame.
+
+    /// One flourish sprite: numbered frames played once across `duration`
+    /// while it drifts and fades, then gone. Returns nil (and does nothing) if
+    /// the art isn't in the bundle.
+    @discardableResult
+    private func spawnFlourish(
+        named name: String, frames: Int, at point: CGPoint, side: CGFloat,
+        drift: CGVector, duration: TimeInterval
+    ) -> SKSpriteNode? {
+        guard let anim = SpriteLibrary.shared.propSequence(
+            named: name, frames: frames, fps: Double(frames) / duration
+        ) else { return nil }
+        let node = SKSpriteNode(texture: anim.textures[0])
+        node.size = CGSize(width: side, height: side)
+        node.zPosition = 20 // with the hearts: above the dog and everything he owns
+        node.position = point
+        addChild(node)
+        node.run(.animate(with: anim.textures, timePerFrame: duration / Double(frames),
+                          resize: false, restore: false))
+        node.run(.sequence([
+            .group([
+                .moveBy(x: drift.dx, y: drift.dy, duration: duration),
+                .sequence([
+                    .wait(forDuration: duration * 0.5),
+                    .fadeOut(withDuration: duration * 0.5),
+                ]),
+            ]),
+            .removeFromParent(),
+        ]))
+        return node
+    }
+
+    /// His mouth, in scene coordinates.
+    private func mouthPoint() -> CGPoint {
+        CGPoint(x: dog.position.x + dog.mouthOffset.x, y: dog.position.y + dog.mouthOffset.y)
+    }
+
+    /// A puff of breath leaving his mouth on a bark. `renderedFacing`, not
+    /// `facing`: the bark art is east-only and mirrored, so the mouth he's
+    /// actually drawn with may not be pointing where he logically is.
+    private func showBarkPuff() {
+        let v = dog.renderedFacing.unitVector
+        spawnFlourish(
+            named: "bark_puff", frames: 3, at: mouthPoint(), side: 30,
+            drift: CGVector(dx: v.x * 26, dy: v.y * 14 + 6), duration: 0.45
+        )
+    }
+
+    /// Dust off the floor where his paws are: a landing, or a pounce leaving
+    /// the ground.
+    private func showDust() {
+        spawnFlourish(
+            named: "dust", frames: 4,
+            at: CGPoint(x: dog.position.x, y: dog.position.y - dog.size.height / 2 + 8),
+            side: 46, drift: CGVector(dx: 0, dy: 10), duration: 0.5
+        )
+    }
+
+    /// Sparkles over his head: the cursor caught, or a trick that just clicked.
+    private func showSparkles() {
+        // Varied sizes and lifetimes rather than a stagger — three identical
+        // sparkles firing together read as one flash.
+        for (side, duration) in [(34 as CGFloat, 0.45), (26, 0.6), (30, 0.75)] {
+            spawnFlourish(
+                named: "sparkle", frames: 4,
+                at: CGPoint(
+                    x: dog.position.x + CGFloat.random(in: -30...30),
+                    y: dog.position.y + dog.size.height / 2 + CGFloat.random(in: -8...16)
+                ),
+                side: side, drift: CGVector(dx: CGFloat.random(in: -8...8), dy: 20),
+                duration: duration
+            )
+        }
+    }
+
+    /// Ship it: confetti rains down over him.
+    ///
+    /// Two frames, not three — confetti_2 was delivered as a humanoid
+    /// character sprite rather than confetti and isn't imported. See
+    /// Tools/import_kit_props.py.
+    private func showConfetti() {
+        for _ in 0..<7 {
+            spawnFlourish(
+                named: "confetti", frames: 2,
+                at: CGPoint(
+                    x: dog.position.x + CGFloat.random(in: -54...54),
+                    y: dog.position.y + dog.size.height / 2 + CGFloat.random(in: 8...48)
+                ),
+                side: CGFloat.random(in: 26...38),
+                drift: CGVector(dx: CGFloat.random(in: -16...16), dy: CGFloat.random(in: -78...(-44))),
+                duration: Double.random(in: 1.0...1.6)
+            )
+        }
     }
 
     // MARK: - Petting feedback
@@ -1420,7 +1691,7 @@ final class PetScene: SKScene {
         guard let window = overlayWindow else { return }
         // A held press counts too: the dog can walk out from under a stationary
         // cursor, and the window must keep the mouseUp.
-        let dragging = mouseDownOnDog || isCarryingDog || pressedJar
+        let dragging = mouseDownOnDog || isCarryingDog || pressedTreatBox
             || treatInHand != nil || draggedFurniture != nil || draggedPile != nil
             || draggingRope
         let shouldAcceptClicks = armedForThrow || dragging
@@ -1431,7 +1702,7 @@ final class PetScene: SKScene {
     }
 
     private func interactiveFrames() -> [CGRect] {
-        [dogHoverFrame(), jar.frame.insetBy(dx: -6, dy: -6), bed.frame.insetBy(dx: -6, dy: -6)]
+        [dogHoverFrame(), treatBoxFrame(), bed.frame.insetBy(dx: -6, dy: -6)]
             + piles.map { $0.frame.insetBy(dx: -6, dy: -6) }
             // The free end of the rope is a grab target whenever it's loose.
             + (carryingRope ? [] : [rope?.freeEndFrame()].compactMap { $0 })
@@ -1457,7 +1728,7 @@ final class PetScene: SKScene {
     /// left of the primary moves that corner — and every entity would appear
     /// to leap sideways even though nothing about where they are in the world
     /// changed. Translating by the difference first keeps the dog, the bed and
-    /// the jar exactly where the user left them, on the display they left them
+    /// the treat box exactly where the user left them, on the display they left them
     /// on; only then does anything get clamped, and only if it now has nowhere
     /// to be.
     func apply(layout newLayout: ScreenLayout) {
@@ -1474,12 +1745,12 @@ final class PetScene: SKScene {
     ///
     /// Not here, deliberately: transient flourishes (hearts, the cam flash),
     /// anything parented to the dog (his hat, whatever is in his mouth), which
-    /// travels with him for free, the perch shadow, which is repositioned from
+    /// travels with him for free, the contact shadow, which is repositioned from
     /// scratch every frame — and the tug rope, whose own node sits at the
     /// origin while its segments hold scene coordinates, so moving it would
     /// shift the rope twice. The rope is handled through `ropeEnd` below.
     private func worldNodes() -> [SKNode] {
-        var nodes: [SKNode] = [dog, bed, jar]
+        var nodes: [SKNode] = [dog, bed, treatBox]
         nodes += piles
         for node in [ball, frisbee, squeaky, groundTreat, treatInHand] {
             if let node, node.parent === self { nodes.append(node) }
@@ -1522,16 +1793,16 @@ final class PetScene: SKScene {
     override func mouseDown(with event: NSEvent) {
         let location = event.location(in: self)
         pressLocation = location
-        // Props keep priority over an armed throw so the jar/bed stay usable
+        // Props keep priority over an armed throw so the box/bed stay usable
         // while the dog waits for a throw (dropping a treat cancels the fetch).
         if dogHoverFrame().contains(location) {
             mouseDownOnDog = true
             carryGrabOffset = CGPoint(x: dog.position.x - location.x, y: dog.position.y - location.y)
-        } else if jar.frame.insetBy(dx: -6, dy: -6).contains(location), treatInHand == nil {
+        } else if treatBoxFrame().contains(location), treatInHand == nil {
             if event.modifierFlags.contains(.option) {
-                draggedFurniture = jar  // ⌥-drag repositions the jar immediately
+                draggedFurniture = treatBox  // ⌥-drag repositions the box immediately
             } else {
-                pressedJar = true       // click takes a treat; a drag moves the jar
+                pressedTreatBox = true       // click takes a treat; a drag moves the box
             }
         } else if bed.frame.insetBy(dx: -6, dy: -6).contains(location) {
             draggedFurniture = bed
@@ -1568,13 +1839,13 @@ final class PetScene: SKScene {
             if isCarryingDog {
                 dog.position = CGPoint(x: location.x + carryGrabOffset.x, y: location.y + carryGrabOffset.y)
             }
-        } else if pressedJar {
+        } else if pressedTreatBox {
             // Same slop pattern as the dog: past the threshold the press
-            // becomes a jar drag instead of a treat click.
+            // becomes a box drag instead of a treat click.
             if hypot(location.x - pressLocation.x, location.y - pressLocation.y) > 8 {
-                pressedJar = false
-                draggedFurniture = jar
-                jar.position = location
+                pressedTreatBox = false
+                draggedFurniture = treatBox
+                treatBox.position = location
             }
         } else if let treat = treatInHand {
             treat.position = location
@@ -1600,7 +1871,7 @@ final class PetScene: SKScene {
             isCarryingDog = false
             draggedFurniture = nil
             draggedPile = nil
-            pressedJar = false
+            pressedTreatBox = false
             draggingRope = false
         }
         if wasDraggingRope {
@@ -1617,9 +1888,11 @@ final class PetScene: SKScene {
             } else {
                 send(.petted)
             }
-        } else if pressedJar {
-            // Released under the drag threshold: a plain click takes a treat.
+        } else if pressedTreatBox {
+            // Released under the drag threshold: a plain click takes a treat,
+            // and the box rocks as he digs one out.
             treatInHand = makeTreat(at: location)
+            wobbleTreatBox()
         } else if treatInHand != nil {
             dropTreat(at: location)
         } else if let pile = draggedPile {
@@ -1630,7 +1903,7 @@ final class PetScene: SKScene {
     override func rightMouseDown(with event: NSEvent) {
         // Never open the menu mid-drag: its tracking session would swallow the
         // mouseUp and wedge the drag state (stuck carry, leaked treat).
-        guard !mouseDownOnDog, !pressedJar, treatInHand == nil,
+        guard !mouseDownOnDog, !pressedTreatBox, treatInHand == nil,
               draggedFurniture == nil, draggedPile == nil, !draggingRope else { return }
         let location = event.location(in: self)
         if armedForThrow, !dogHoverFrame().contains(location) {
