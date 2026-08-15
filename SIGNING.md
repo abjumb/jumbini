@@ -168,7 +168,7 @@ SKIP_NOTARIZE=1 ./Scripts/release.sh
 ## Step 5 — Wire up GitHub Actions
 
 `.github/workflows/release.yml` does the same thing on a macOS runner when you
-push a tag. It needs six repository secrets
+push a tag. It needs seven repository secrets
 (Settings → Secrets and variables → Actions → New repository secret).
 
 Generate the two base64 blobs on your Mac:
@@ -187,6 +187,7 @@ base64 -i AuthKey_ABCD123456.p8 | pbcopy             # → APPLE_API_KEY_P8_BASE
 | `APPLE_API_KEY_P8_BASE64` | base64 of the `.p8` |
 | `APPLE_API_KEY_ID` | `ABCD123456` |
 | `APPLE_API_ISSUER_ID` | the issuer UUID |
+| `SPARKLE_ED25519_KEY` | the base64 seed in `.sparkle-ed25519-key` |
 
 Then:
 
@@ -314,11 +315,80 @@ here.
 
 ---
 
+## Auto-update (Sparkle)
+
+Jumbini updates itself with Sparkle. The app checks an appcast feed in the
+background once a day, offers the update, and Sparkle's `Autoupdate` helper
+installs it. Everything lives in three places:
+
+- **`Scripts/Info.plist`** — `SUFeedURL` (where the appcast lives), `SUPublicEDKey`
+  (the EdDSA public key that signs updates), and `SUEnableAutomaticChecks`.
+- **`Sources/Jumbini/AppDelegate.swift`** — creates the updater and wires a
+  "Check for Updates…" menu item to it.
+- **`Scripts/bundle.sh` / `Scripts/release.sh`** — embed `Sparkle.framework`
+  (from the SwiftPM artifact) and re-sign it inside-out. The framework ships
+  *ad-hoc* signed, so `release.sh` must re-sign it with the Developer ID —
+  Library Validation (part of the hardened runtime) refuses to load a framework
+  whose team doesn't match the app's.
+
+### The EdDSA key
+
+Sparkle signs every update archive with an ed25519 key so a compromised server
+can't substitute a fake update. There is one key pair:
+
+| Half | Where it lives | Never commit |
+|---|---|---|
+| Public | `SUPublicEDKey` in `Scripts/Info.plist` | (safe to commit) |
+| Private | `.sparkle-ed25519-key` (gitignored), or the login keychain, or the `SPARKLE_ED25519_KEY` GitHub secret | **never commit** |
+
+The private key is a base64 ed25519 seed. It was generated during setup and
+written to `.sparkle-ed25519-key`; the same value goes in the password manager
+alongside the `.p12`. To rotate or regenerate, Sparkle's `generate_keys` tool
+does the keychain dance:
+
+```bash
+.build/artifacts/sparkle/Sparkle/bin/generate_keys    # prints a new SUPublicEDKey
+```
+
+Put the new public key in `Info.plist` and the new seed in `.sparkle-ed25519-key`.
+
+### Publishing an update
+
+The release workflow does this automatically: after `release.sh` builds and
+signs the DMG, it copies it into the `gh-pages` history, runs `appcast.sh`
+(which signs the DMG and emits `appcast.xml` plus delta files), and pushes the
+result to GitHub Pages. `SUFeedURL` points at
+`https://abjumb.github.io/jumbini/appcast.xml`, so once Pages is enabled there
+is nothing to do beyond `git tag v4.1 && git push origin v4.1`.
+
+**One-time setup** (before the first release):
+
+1. Add `SPARKLE_ED25519_KEY` to the repository secrets (the value in
+   `.sparkle-ed25519-key`).
+2. Enable GitHub Pages: Settings → Pages → Source → **Deploy from a branch**,
+   branch `gh-pages`.
+
+To publish by hand instead (e.g. to a different host):
+
+```bash
+./Scripts/appcast.sh build/        # writes build/appcast.xml + *.delta files
+```
+
+`appcast.sh` signs the DMG with the key (env var first, then
+`.sparkle-ed25519-key`, then the keychain) and writes the appcast plus delta
+files for faster incremental updates. Upload `appcast.xml`, the `*.delta`
+files, and the DMG to whatever host `SUFeedURL` points at. Change `SUFeedURL`
+in `Info.plist` if you host it elsewhere.
+
+The feed URL must be HTTPS (Apple's App Transport Security) and the archive
+must be the same signed-and-notarized DMG you distribute, so Sparkle's
+signature check and Gatekeeper both pass.
+
+---
+
 ## What this does not do
 
 - It does not sandbox the app or prepare it for the Mac App Store. Those are a
   different, much larger piece of work, and sandboxing would likely break
   window-walking.
-- It does not add auto-update. Sparkle is the usual answer, and it wants a
-  signed appcast plus an EdDSA key of its own.
 - It does not remove the Apple Silicon restriction.

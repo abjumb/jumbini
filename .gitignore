@@ -5,3 +5,5 @@ build/
 .claude-flow/
 .swarm/
 __pycache__/
+.sparkle-ed25519-key
+.env.release

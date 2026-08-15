@@ -1,5 +1,6 @@
 import AppKit
 import Carbon.HIToolbox
+import Sparkle
 import SpriteKit
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -19,7 +20,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // System reactions: ambient machine watcher, stopped in applicationWillTerminate.
     private var systemMonitor: SystemMonitor?
 
+    // Auto-update: Sparkle's standard updater controller, which owns the
+    // background update checks and the "Check for Updates…" UI.
+    private var updaterController: SPUStandardUpdaterController?
+
     func applicationDidFinishLaunching(_ notification: Notification) {
+        setUpUpdater()
         setUpStatusItem()
         setUpOverlay()
         NotificationCenter.default.addObserver(
@@ -93,6 +99,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         scene.apply(layout: layout)
     }
 
+    // MARK: - Auto-update (Sparkle)
+
+    /// Create and start the Sparkle updater. The feed URL, public key and
+    /// automatic-check behaviour all live in Info.plist (SUFeedURL,
+    /// SUPublicEDKey, SUEnableAutomaticChecks); the controller just reads them.
+    /// A missing key or feed only disables updating — it never stops the dog.
+    private func setUpUpdater() {
+        updaterController = SPUStandardUpdaterController(
+            startingUpdater: true,
+            updaterDelegate: nil,
+            userDriverDelegate: nil
+        )
+    }
+
     // MARK: - Status item
 
     private func setUpStatusItem() {
@@ -146,6 +166,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pauseItem.target = self
         menu.addItem(pauseItem)
         menu.addItem(.separator())
+        // Auto-update: target/action point at the Sparkle controller, which
+        // also toggles the item's enabled state as canCheckForUpdates changes.
+        let updateItem = NSMenuItem(title: "Check for Updates…", action: #selector(SPUStandardUpdaterController.checkForUpdates(_:)), keyEquivalent: "")
+        updateItem.target = updaterController
+        menu.addItem(updateItem)
         let quitItem = NSMenuItem(title: "Leave Jumbini Behind", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         menu.addItem(quitItem)
         item.menu = menu

@@ -4,13 +4,18 @@ name: Release
 #
 #   git tag v4.1 && git push origin v4.1
 #
-# Requires six repository secrets — see SIGNING.md for how to create each:
+# Requires seven repository secrets — see SIGNING.md for how to create each:
 #   MACOS_CERT_P12_BASE64    Developer ID Application cert + key, .p12, base64
 #   MACOS_CERT_PASSWORD      the password you set when exporting that .p12
 #   SIGN_IDENTITY            "Developer ID Application: Your Name (TEAMID)"
 #   APPLE_API_KEY_P8_BASE64  App Store Connect .p8 private key, base64
 #   APPLE_API_KEY_ID         the key ID
 #   APPLE_API_ISSUER_ID      the issuer UUID
+#   SPARKLE_ED25519_KEY      base64 EdDSA seed from .sparkle-ed25519-key
+#
+# GitHub Pages must be enabled (Settings → Pages → Source: "Deploy from a
+# branch", branch gh-pages) — that is where the appcast and the DMGs live, and
+# what SUFeedURL in Scripts/Info.plist points at.
 
 on:
   push:
@@ -86,7 +91,7 @@ jobs:
           #
           # What is NOT recoverable is a genuinely non-base64 character, which
           # is what "error decoding base64 input stream" means. Bare, that
-          # message says nothing about which of the six secrets is wrong or why,
+          # message says nothing about which of the secrets is wrong or why,
           # so check the alphabet ourselves and say so.
           CLEAN="$(printf '%s' "$MACOS_CERT_P12_BASE64" | tr -d '[:space:]')"
 
@@ -200,6 +205,52 @@ jobs:
           set -euo pipefail
           export APPLE_API_KEY_PATH="$RUNNER_TEMP/apikey.p8"
           ./Scripts/release.sh
+
+      # Turn the DMG into a Sparkle update. Only meaningful for a tagged release
+      # (a manual workflow_dispatch has no tag to version the update with), which
+      # mirrors the gating on the version-stamp step above.
+      #
+      # The appcast is generated against the *whole* gh-pages history — previous
+      # DMGs plus the existing appcast.xml — so deltas are emitted against the
+      # last release and old entries are pruned rather than orphaned. On the
+      # first release there is no gh-pages yet; generate_appcast starts fresh.
+      - name: Generate Sparkle appcast
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          SPARKLE_ED25519_KEY: ${{ secrets.SPARKLE_ED25519_KEY }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "$SPARKLE_ED25519_KEY" ]; then
+            echo "::error::SPARKLE_ED25519_KEY secret is not set. Add the base64" \
+                 "EdDSA seed from .sparkle-ed25519-key as a repository secret" \
+                 "(Settings → Secrets and variables → Actions)."
+            exit 1
+          fi
+
+          V="${GITHUB_REF_NAME#v}"
+          PAGES="build/pages"
+          rm -rf "$PAGES"
+          mkdir -p "$PAGES"
+
+          # Bring in whatever gh-pages already holds (previous DMGs, appcast.xml,
+          # delta files, old_updates/) so the feed stays contiguous.
+          if git fetch origin gh-pages:refs/remotes/origin/gh-pages 2>/dev/null; then
+            git archive refs/remotes/origin/gh-pages | tar -x -C "$PAGES"
+          fi
+
+          cp build/Jumbini.dmg "$PAGES/Jumbini-$V.dmg"
+          SPARKLE_ED25519_KEY="$SPARKLE_ED25519_KEY" ./Scripts/appcast.sh "$PAGES"
+
+      - name: Deploy appcast to GitHub Pages
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./build/pages
+          publish_branch: gh-pages
+          force_orphan: false
+          commit_message: "Publish appcast for ${{ github.ref_name }}"
 
       # Always runs, including after a failed build, so the key never survives
       # the job even if something above blew up.

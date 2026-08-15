@@ -150,6 +150,40 @@ if [ -d "$RESOURCE_BUNDLE" ]; then
   fi
 fi
 
+# The Sparkle framework ships ad-hoc signed from SwiftPM, so it must be re-signed
+# with our Developer ID — not just for tidiness, but because Library Validation
+# (part of the hardened runtime we sign the app with) refuses to load a
+# framework whose Team ID doesn't match the app's. An ad-hoc signature has no
+# team at all, so leaving it would crash the app on launch.
+#
+# Signed inside-out: the XPC services and helper tools first, the framework
+# bundle last so it seals them. --preserve-metadata keeps Sparkle's identifiers
+# and entitlements (the Autoupdate helper carries a com.apple.application-
+# identifier) while the signature itself is replaced. Requirements are NOT
+# preserved — an ad-hoc signature's designated requirement is anchored to its
+# cdhash, which a re-sign changes, so preserving it would make the result fail
+# its own verification.
+SPARKLE="$APP/Contents/Frameworks/Sparkle.framework"
+if [ -d "$SPARKLE" ]; then
+  for xpc in "$SPARKLE"/Versions/B/XPCServices/*.xpc; do
+    [ -d "$xpc" ] || continue
+    codesign --force --timestamp --options runtime \
+      --preserve-metadata=identifier,entitlements \
+      --sign "$SIGN_IDENTITY" "$xpc"
+  done
+  codesign --force --timestamp --options runtime \
+    --preserve-metadata=identifier,entitlements \
+    --sign "$SIGN_IDENTITY" "$SPARKLE/Versions/B/Autoupdate"
+  if [ -d "$SPARKLE/Versions/B/Updater.app" ]; then
+    codesign --force --timestamp --options runtime \
+      --preserve-metadata=identifier,entitlements \
+      --sign "$SIGN_IDENTITY" "$SPARKLE/Versions/B/Updater.app"
+  fi
+  codesign --force --timestamp --options runtime \
+    --preserve-metadata=identifier,entitlements \
+    --sign "$SIGN_IDENTITY" "$SPARKLE"
+fi
+
 # Signing the bundle re-signs Contents/MacOS/Jumbini in place — that is where the
 # bundle's CodeDirectory lives. Signing the executable separately first would be
 # overwritten here anyway, and would cost an extra timestamp round trip.
