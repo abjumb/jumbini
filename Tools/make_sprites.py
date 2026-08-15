@@ -724,11 +724,10 @@ def main():
         "rope_left": [rope_cap_frame()],
         "rope_mid": [rope_mid_frame()],
         "rope_right": [rope_cap_frame().hflip()],
-        "wardrobe_partyhat": [partyhat_frame()],
-        "wardrobe_tophat": [tophat_frame()],
-        "wardrobe_cowboyhat": [cowboyhat_frame()],
-        "wardrobe_bandana": [bandana_frame()],
-        "wardrobe_sunglasses": [sunglasses_frame()],
+        # The wardrobe placeholders this used to emit (wardrobe_partyhat and
+        # friends) are retired: the app wears Alex's real per-direction art
+        # now, imported by Tools/import_kit_art.py. The *_frame() generators
+        # below are kept only as a record of what the stand-ins looked like.
     }
     if "--all" in sys.argv:
         sheets.update({
