@@ -1375,6 +1375,8 @@ final class PetScene: SKScene {
         if let trick = trickTrainer.recordTreat(at: lastTime), trickTrainer.isUnlocked(trick) {
             dog.celebrate()
             showHearts()
+            showTrickBadge()
+            playSound(named: "chime")
         }
     }
 
@@ -1483,6 +1485,31 @@ final class PetScene: SKScene {
                 .removeFromParent(),
             ]))
         }
+    }
+
+    /// A trick just stuck: the badge pops over his head for a moment. The
+    /// hearts say he enjoyed the treat; this says the lesson landed. Rises on
+    /// the opposite side from the emotes, so a build finishing mid-lesson
+    /// doesn't stack two bubbles on top of each other.
+    private func showTrickBadge() {
+        guard let art = SpriteLibrary.shared.singleProp(named: "badge_trick") else { return }
+        let badge = SKSpriteNode(texture: art.textures[0])
+        badge.size = CGSize(width: 34, height: 34)
+        badge.position = CGPoint(
+            x: dog.position.x - 30,
+            y: dog.position.y + dog.size.height / 2 + 14
+        )
+        badge.zPosition = 21
+        badge.alpha = 0
+        badge.setScale(0.3)
+        addChild(badge)
+        badge.run(.sequence([
+            .group([.fadeIn(withDuration: 0.12), .scale(to: 1.15, duration: 0.18)]),
+            .scale(to: 1, duration: 0.1),
+            .wait(forDuration: 1.0),
+            .group([.moveBy(x: 0, y: 26, duration: 0.45), .fadeOut(withDuration: 0.45)]),
+            .removeFromParent(),
+        ]))
     }
 
     // MARK: - Click-through
@@ -1887,7 +1914,8 @@ final class PetScene: SKScene {
     /// Compose dog-above-caption on a transparent canvas. Everything is laid
     /// out in device pixels (points x camScale) with nearest-neighbor
     /// sampling so the pixel art never picks up a smoothing blur; the caption
-    /// is white with a 1px dark outline so it reads on any background.
+    /// sits on the kit's plate, white with a 1px dark outline so it reads
+    /// whatever the plate is doing underneath.
     private static func composeCamImage(
         dogImage: CGImage, dogPointSize: CGSize, date: Date
     ) -> NSImage? {
@@ -1906,25 +1934,26 @@ final class PetScene: SKScene {
         )
         let textSize = captionFace.size()
 
-        // Optional paw-print glyph before the text (skipped if the symbol is
-        // unavailable). Rasterized here, then drawn via clip-to-alpha-mask so
-        // it gets the same white-with-dark-outline treatment as the caption.
-        let pawSide = (font.capHeight * 1.2).rounded()
-        let pawGap = 5 * scale
-        var pawMask: CGImage?
-        if let paw = NSImage(systemSymbolName: "pawprint.fill", accessibilityDescription: nil) {
-            var pawRect = CGRect(x: 0, y: 0, width: pawSide, height: pawSide)
-            pawMask = paw.cgImage(forProposedRect: &pawRect, context: nil, hints: nil)
-        }
+        // The caption rides on the kit's plate — a rounded pixel slab, wider
+        // than the text by a margin on each side. It replaces the bare
+        // outlined text, and the SF Symbol paw that used to sit in front of
+        // it: there's a hand-drawn paw in the corner now instead.
+        let plate = camSprite(named: "caption_plate")
+        let platePadX = 11 * scale
+        let platePadY = 7 * scale
+        let plateSize = CGSize(
+            width: textSize.width.rounded(.up) + platePadX * 2,
+            height: textSize.height.rounded(.up) + platePadY * 2
+        )
+        let captionHeight = plate == nil ? textSize.height.rounded(.up) : plateSize.height
 
         let dogPixelSize = CGSize(
             width: (dogPointSize.width * scale).rounded(),
             height: (dogPointSize.height * scale).rounded()
         )
-        let captionWidth = (pawMask != nil ? pawSide + pawGap : 0) + textSize.width.rounded(.up)
-        let contentWidth = max(dogPixelSize.width, captionWidth)
+        let contentWidth = max(dogPixelSize.width, plate == nil ? textSize.width.rounded(.up) : plateSize.width)
         let canvasWidth = Int((contentWidth + pad * 2).rounded(.up))
-        let canvasHeight = Int((pad + textSize.height + gap + dogPixelSize.height + pad).rounded(.up))
+        let canvasHeight = Int((pad + captionHeight + gap + dogPixelSize.height + pad).rounded(.up))
 
         guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB),
               let context = CGContext(
@@ -1939,23 +1968,23 @@ final class PetScene: SKScene {
         // The dog, centered, above the caption line.
         let dogRect = CGRect(
             x: ((CGFloat(canvasWidth) - dogPixelSize.width) / 2).rounded(),
-            y: (pad + textSize.height + gap).rounded(),
+            y: (pad + captionHeight + gap).rounded(),
             width: dogPixelSize.width, height: dogPixelSize.height
         )
         context.draw(dogImage, in: dogRect)
 
-        // Caption row, centered under the dog.
-        var cursorX = ((CGFloat(canvasWidth) - captionWidth) / 2).rounded()
-        if let pawMask {
-            // Bottom of the glyph on the text baseline (descender is negative).
-            let pawRect = CGRect(
-                x: cursorX, y: (pad - font.descender).rounded(), width: pawSide, height: pawSide
+        // Caption row, centered under the dog: plate first, text on top.
+        if let plate {
+            let plateRect = CGRect(
+                x: ((CGFloat(canvasWidth) - plateSize.width) / 2).rounded(), y: pad,
+                width: plateSize.width, height: plateSize.height
             )
-            drawCamGlyph(pawMask, in: pawRect, context: context, fill: outlineColor, outlinePass: true)
-            drawCamGlyph(pawMask, in: pawRect, context: context, fill: .white, outlinePass: false)
-            cursorX += pawSide + pawGap
+            drawCamPlate(plate, in: plateRect, corner: 9 * scale, context: context)
         }
-        let textOrigin = CGPoint(x: cursorX, y: pad)
+        let textOrigin = CGPoint(
+            x: ((CGFloat(canvasWidth) - textSize.width) / 2).rounded(),
+            y: (pad + (captionHeight - textSize.height) / 2).rounded()
+        )
         let appKitContext = NSGraphicsContext(cgContext: context, flipped: false)
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = appKitContext
@@ -1967,6 +1996,21 @@ final class PetScene: SKScene {
         captionFace.draw(at: textOrigin)
         NSGraphicsContext.restoreGraphicsState()
 
+        // Signed top-right, at half strength — a maker's mark, not a sticker.
+        // Top rather than bottom: the caption plate is as wide as the canvas
+        // allows down there, and the corner beside his ears is always empty.
+        if let paw = camSprite(named: "paw_watermark") {
+            let side = 16 * scale
+            context.saveGState()
+            context.setAlpha(0.55)
+            context.draw(paw, in: CGRect(
+                x: CGFloat(canvasWidth) - side - pad / 2,
+                y: CGFloat(canvasHeight) - side - pad / 2,
+                width: side, height: side
+            ))
+            context.restoreGState()
+        }
+
         guard let composed = context.makeImage() else { return nil }
         // Point size = pixels / camScale, so the image self-reports as retina
         // (2x) content on the pasteboard.
@@ -1976,33 +2020,62 @@ final class PetScene: SKScene {
         )
     }
 
-    /// Fill `mask`'s alpha silhouette with a color — the classic clip-to-mask
-    /// tinting recipe. `outlinePass` stamps the 8 one-pixel offsets (the same
-    /// halo the caption text gets); otherwise a single centered fill.
-    private static func drawCamGlyph(
-        _ mask: CGImage, in rect: CGRect, context: CGContext, fill: NSColor, outlinePass: Bool
+    /// A sprite from Resources/sprites as a CGImage. The cam composes
+    /// offscreen in Core Graphics, where an SKTexture is no use.
+    private static func camSprite(named name: String) -> CGImage? {
+        guard let url = Bundle.module.url(forResource: name, withExtension: "png", subdirectory: "sprites"),
+              let image = NSImage(contentsOf: url)
+        else { return nil }
+        var rect = CGRect(origin: .zero, size: image.size)
+        return image.cgImage(forProposedRect: &rect, context: nil, hints: nil)
+    }
+
+    /// Stretch a small square plate across `rect` as a nine-slice: the four
+    /// corners keep their size, the edges stretch along one axis, the middle
+    /// fills the rest. Scaling the whole 48x48 plate to a caption-shaped
+    /// oblong instead would smear its border and flatten its corners.
+    ///
+    /// Source rows/columns run top-down (`cropping(to:)` is in image space);
+    /// destination rows are laid out from the top edge down, because the
+    /// context's y grows upwards.
+    private static func drawCamPlate(
+        _ plate: CGImage, in rect: CGRect, corner: CGFloat, context: CGContext
     ) {
-        let offsets: [CGPoint] = outlinePass
-            ? [CGPoint(x: -1, y: -1), CGPoint(x: -1, y: 0), CGPoint(x: -1, y: 1),
-               CGPoint(x: 0, y: -1), CGPoint(x: 0, y: 1),
-               CGPoint(x: 1, y: -1), CGPoint(x: 1, y: 0), CGPoint(x: 1, y: 1)]
-            : [.zero]
-        for offset in offsets {
-            let shifted = rect.offsetBy(dx: offset.x, dy: offset.y)
-            context.saveGState()
-            context.clip(to: shifted, mask: mask)
-            context.setFillColor(fill.cgColor)
-            context.fill(shifted)
-            context.restoreGState()
+        let sw = CGFloat(plate.width), sh = CGFloat(plate.height)
+        // A quarter of the plate per corner: enough to carry the border and
+        // the rounding, and it leaves a middle band to stretch.
+        let slice = (min(sw, sh) / 4).rounded()
+        let cornerW = min(corner.rounded(), (rect.width / 2).rounded())
+        let cornerH = min(corner.rounded(), (rect.height / 2).rounded())
+        let columns: [(sx: CGFloat, sw: CGFloat, dx: CGFloat, dw: CGFloat)] = [
+            (0, slice, rect.minX, cornerW),
+            (slice, sw - slice * 2, rect.minX + cornerW, rect.width - cornerW * 2),
+            (sw - slice, slice, rect.maxX - cornerW, cornerW),
+        ]
+        let rows: [(sy: CGFloat, sh: CGFloat, top: CGFloat, dh: CGFloat)] = [
+            (0, slice, rect.maxY, cornerH),
+            (slice, sh - slice * 2, rect.maxY - cornerH, rect.height - cornerH * 2),
+            (sh - slice, slice, rect.minY + cornerH, cornerH),
+        ]
+        for row in rows where row.dh > 0 && row.sh > 0 {
+            for column in columns where column.dw > 0 && column.sw > 0 {
+                guard let piece = plate.cropping(to: CGRect(
+                    x: column.sx, y: row.sy, width: column.sw, height: row.sh
+                )) else { continue }
+                context.draw(piece, in: CGRect(
+                    x: column.dx, y: row.top - row.dh, width: column.dw, height: row.dh
+                ))
+            }
         }
     }
 
-    /// Shutter feedback: a quick white flash over everything (alpha
-    /// 0 -> 0.7 -> 0 over ~0.25s). Skipped while the view is paused: SKActions
-    /// don't run then, and a stale flash firing on resume would be confusing.
-    /// No shutter sound for now — make_audio.py is contested by sibling
-    /// branches; noted as future work.
+    /// Shutter feedback: the shutter click, plus a quick white flash over
+    /// everything (alpha 0 -> 0.7 -> 0 over ~0.25s). The flash is skipped
+    /// while the view is paused — SKActions don't run then, and a stale flash
+    /// firing on resume would be confusing — but the click still fires, since
+    /// the capture itself worked.
     private func flashCamFeedback() {
+        playSound(named: "shutter")
         guard let view, !view.isPaused, !isPaused else { return }
         // Only the display he's standing on. The scene spans the whole desk,
         // and whiting out three monitors to photograph one dog is a jump
