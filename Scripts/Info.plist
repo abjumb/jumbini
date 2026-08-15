@@ -26,5 +26,11 @@
 	<true/>
 	<key>NSHighResolutionCapable</key>
 	<true/>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUFeedURL</key>
+	<string>https://abjumb.github.io/jumbini/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>/GvNyDt/YBx9424z9tVLdkqTTrsFcdtzXR15yTICmUk=</string>
 </dict>
 </plist>
