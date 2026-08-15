@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="icon/app-icon-final/icon_256x256" width="128" alt="Jumbini app icon">
+<img src="icon/app-icon-final/transparent_128x128.png" width="128" alt="Jumbini app icon">
 
 # Jumbini
 
