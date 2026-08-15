@@ -67,6 +67,35 @@ def main():
     here = os.path.dirname(os.path.abspath(__file__))
     out = os.path.join(here, "..", "Sources", "Jumbini", "Resources", "audio")
     write_wav(os.path.join(out, "borf.wav"), borf())
+    write_wav(os.path.join(out, "squeak.wav"), squeak())
+
+
+# ---------------------------------------------------------------- squeaky toy
+
+
+def squeak_tone(duration, f_start, f_end, duty=0.22, volume=0.11):
+    """One chirp: a thin (low duty) square gliding LINEARLY up in pitch —
+    the sound of air forced through a rubber toy's reed, not a bark."""
+    samples = []
+    phase = 0.0
+    for i in range(int(duration * RATE)):
+        t = i / RATE
+        freq = f_start + (f_end - f_start) * (t / duration)
+        phase += freq / RATE
+        s = square(phase, duty) * envelope(t, duration, attack=0.006, release=0.03) * volume
+        samples.append(round(s * 127) / 127)
+    return samples
+
+
+def squeak():
+    """The rubber chicken: EEK-eek, ~230ms. Two rising chirps, the second
+    shorter, lower and quieter — the toy re-inflating after the first bite.
+    Deliberately quieter than the bark; he does this a lot."""
+    return (
+        squeak_tone(0.11, 1150, 1750)
+        + [0.0] * int(0.04 * RATE)
+        + squeak_tone(0.08, 980, 1300, volume=0.075)
+    )
 
 
 if __name__ == "__main__":

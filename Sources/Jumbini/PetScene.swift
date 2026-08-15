@@ -9,6 +9,26 @@ final class PetScene: SKScene {
 
     private let dog = Dog()
     private var ball: Ball?
+
+    // The toy box: one node per toy, nil when that toy isn't out.
+    private var frisbee: Frisbee?
+    private var squeaky: SKSpriteNode?
+    private var rope: TugRope?
+
+    // Tug-of-war drag state.
+    /// The user has hold of the free end.
+    private var draggingRope = false
+    /// He won and is trotting off with the rope trailing from his mouth.
+    private var carryingRope = false
+    /// Where the cursor last was during the drag (scene coords).
+    private var ropePull: CGPoint = .zero
+    /// The RENDERED free end, which lags the cursor — that lag is the drag.
+    private var ropeEnd: CGPoint = .zero
+    /// Throttle clock for `.tugMoved` (~10/s).
+    private var lastTugSent: TimeInterval = 0
+    /// When the next yank fires, and how far through the current one we are.
+    private var nextYank: TimeInterval = 0
+    private var yankPhase: CGFloat = 0
     private var brain: DogBrain!
     private var lastTime: TimeInterval = 0
 
@@ -53,6 +73,8 @@ final class PetScene: SKScene {
 
     /// Fetch was chosen: the next left-click anywhere throws the ball.
     private var armedForThrow = false
+    /// Which toy the armed throw will launch; nil = the fetch ball.
+    private var armedToy: ToyKind?
     /// Dog arrived at the landing spot before the ball finished bouncing.
     private var pendingChaseArrival = false
 
@@ -101,6 +123,7 @@ final class PetScene: SKScene {
         dog.onFacingChanged = { [weak self] in
             self?.reseatCarriedBall()
             self?.reseatCarriedRabbit()
+            self?.reseatCarriedToy()
             self?.reseatWornItem()
         }
         if let stored = UserDefaults.standard.string(forKey: Self.wardrobeItemKey) {
@@ -298,6 +321,8 @@ final class PetScene: SKScene {
         stepZoomies(dt: dt)
         stepSniffing(dt: dt)
         brain.position = dog.position
+        stepFrisbeeCatch()
+        stepTug(dt: dt)
         send(.tick)
         trackHover(at: currentTime)
         // Every frame (cheap): the anchor depends on the dog's node size,
@@ -343,6 +368,12 @@ final class PetScene: SKScene {
             pendingChaseArrival = true
             return
         }
+        if brain.state == .chasingFrisbee, let frisbee, !frisbee.isLanded {
+            // He beat the disc to the landing spot without catching it —
+            // wait for it to settle, then grab it off the ground.
+            pendingChaseArrival = true
+            return
+        }
         send(.arrived)
     }
 
@@ -361,6 +392,7 @@ final class PetScene: SKScene {
                 armedForThrow = true
             case .disarmThrow:
                 armedForThrow = false
+                armedToy = nil
             case .pickUpBall:
                 attachBallToDog()
             case .dropBall:
@@ -393,8 +425,16 @@ final class PetScene: SKScene {
                 playSound(named: name)
             case .nudgeCursor:
                 nudgeRealCursor()
-            case .pickUpToy, .dropToy, .removeToy, .startTug, .stopTug:
-                break // vocabulary stubs — wired by feature branches
+            case .pickUpToy(let kind):
+                attachToyToDog(kind)
+            case .dropToy(let kind):
+                dropToyAtDog(kind)
+            case .removeToy(let kind):
+                removeToy(kind)
+            case .startTug:
+                beginTug()
+            case .stopTug:
+                endTug()
             }
         }
     }
@@ -424,6 +464,7 @@ final class PetScene: SKScene {
 
     private func throwBall(to landing: CGPoint) {
         armedForThrow = false
+        armedToy = nil
         pendingChaseArrival = false
         let margin: CGFloat = 30
         let clamped = CGPoint(
@@ -471,6 +512,357 @@ final class PetScene: SKScene {
         // The dropped ball rests a while, then tidies itself away.
         ball.run(.sequence([.wait(forDuration: 8), .fadeOut(withDuration: 0.6), .removeFromParent()]))
         self.ball = nil
+    }
+
+    // MARK: - Toy box
+
+    /// How close his nose has to get to the disc's CURRENT position for the
+    /// catch to count. Generous: the disc is 36pt wide and he is not subtle.
+    private static let frisbeeCatchRadius: CGFloat = 40
+    /// How long a dropped toy lies around before it tidies itself away.
+    private static let toyLingerDuration: TimeInterval = 4
+
+    private func throwFrisbee(to landing: CGPoint) {
+        armedForThrow = false
+        armedToy = nil
+        pendingChaseArrival = false
+        let margin: CGFloat = 30
+        let clamped = CGPoint(
+            x: min(max(landing.x, margin), size.width - margin),
+            y: min(max(landing.y, margin), size.height - margin)
+        )
+
+        frisbee?.removeFromParent()
+        let disc = Frisbee()
+        addChild(disc)
+        disc.onLanded = { [weak self] in
+            // He beat the disc to the spot and it never got caught: the
+            // pick-up waits for it to stop skidding (same as the ball).
+            guard let self, self.pendingChaseArrival else { return }
+            self.pendingChaseArrival = false
+            self.send(.arrived)
+        }
+        frisbee = disc
+
+        let origin = dog.position
+        disc.throwArc(from: CGPoint(x: origin.x, y: origin.y + 20), to: clamped)
+        send(.toyThrown(kind: .frisbee, landing: clamped, origin: origin))
+    }
+
+    /// THE moment: while the disc is still in the air, check every frame
+    /// whether he has run under it. Close enough and the chase ends early —
+    /// he takes it out of the sky instead of off the floor.
+    private func stepFrisbeeCatch() {
+        guard brain.state == .chasingFrisbee,
+              let disc = frisbee, !disc.isLanded, disc.parent === self
+        else { return }
+        let gap = hypot(disc.position.x - dog.position.x, disc.position.y - dog.position.y)
+        guard gap <= Self.frisbeeCatchRadius else { return }
+        pendingChaseArrival = false
+        // The brain answers with .pickUpToy + a fresh .moveTo, which replaces
+        // the in-flight run action, so the stale arrival never fires.
+        send(.arrived)
+    }
+
+    // The squeaky: no aiming, just a short hop to somewhere nearby.
+    private static let squeakyHopRange: ClosedRange<CGFloat> = 130...240
+
+    private func makeSqueakyNode() -> SKSpriteNode {
+        if let anim = SpriteLibrary.shared.prop(named: "squeaky", frameWidth: 16, fps: 9) {
+            let node = SKSpriteNode(texture: anim.textures[0])
+            node.size = CGSize(width: 36, height: 36)
+            return node
+        }
+        return SKSpriteNode(color: .systemYellow, size: CGSize(width: 36, height: 36))
+    }
+
+    /// Somewhere near him and on screen. A few tries, then just clamp — a dog
+    /// wedged in a corner still gets a toy, it's simply closer than usual.
+    private func squeakyHopTarget() -> CGPoint {
+        let margin: CGFloat = 40
+        for _ in 0..<8 {
+            let angle = CGFloat.random(in: 0..<(2 * .pi))
+            let distance = CGFloat.random(in: Self.squeakyHopRange)
+            let point = CGPoint(
+                x: dog.position.x + cos(angle) * distance,
+                y: dog.position.y + sin(angle) * distance
+            )
+            if (margin...(size.width - margin)).contains(point.x),
+               (margin...(size.height - margin)).contains(point.y) {
+                return point
+            }
+        }
+        return CGPoint(
+            x: min(max(dog.position.x + Self.squeakyHopRange.lowerBound, margin), size.width - margin),
+            y: min(max(dog.position.y, margin), size.height - margin)
+        )
+    }
+
+    private func tossSqueaky() {
+        squeaky?.removeFromParent()
+        let toy = makeSqueakyNode()
+        toy.zPosition = 5
+        let origin = dog.position
+        let start = CGPoint(x: origin.x, y: origin.y + 20)
+        toy.position = start
+        addChild(toy)
+        squeaky = toy
+
+        let landing = squeakyHopTarget()
+        // Same "flight" key as the disc, so attachToyToDog kills the hop if he
+        // gets there before it lands.
+        toy.run(Self.hopArc(from: start, to: landing, height: 70, duration: 0.5), withKey: "flight")
+        send(.toyThrown(kind: .squeaky, landing: landing, origin: origin))
+    }
+
+    /// Ball.swift's parabola, for toys that don't need a node class of their own.
+    private static func hopArc(
+        from start: CGPoint, to end: CGPoint, height: CGFloat, duration: TimeInterval
+    ) -> SKAction {
+        SKAction.customAction(withDuration: duration) { node, elapsed in
+            let u = CGFloat(min(1, TimeInterval(elapsed) / duration))
+            node.position = CGPoint(
+                x: start.x + (end.x - start.x) * u,
+                y: start.y + (end.y - start.y) * u + height * 4 * u * (1 - u)
+            )
+        }
+    }
+
+    // MARK: - Tug of war
+
+    /// How much of the user's pull the rope actually gives up. Under 1 means
+    /// the free end never reaches the cursor: the gap IS the resistance, and
+    /// the harder you pull the further behind your cursor the rope sits.
+    private static let tugResistGain: CGFloat = 0.55
+    /// Spring rate of the free end chasing its resisted target (per second).
+    /// Low enough to feel elastic, high enough not to feel broken.
+    private static let tugSpringRate: CGFloat = 11
+    /// Rope length at rest, and how much further you can stretch it before
+    /// `force` reads as a maximum-effort pull.
+    private static let ropeRestLength: CGFloat = 140
+    private static let ropePullSpan: CGFloat = 220
+    /// Yanks: a hard pull back toward him, roughly this often, this far.
+    private static let yankInterval: ClosedRange<TimeInterval> = 0.9...1.7
+    private static let yankDuration: TimeInterval = 0.26
+    private static let yankDistance: CGFloat = 34
+
+    /// The dog's end of the rope — his mouth, in scene coordinates.
+    private func ropeAnchor() -> CGPoint {
+        CGPoint(x: dog.position.x + dog.mouthOffset.x, y: dog.position.y + dog.mouthOffset.y)
+    }
+
+    /// Toys > Tug Rope: the rope lands in front of him, free end out. No
+    /// brain event yet — the game starts when the user grabs that end.
+    private func dropTugRope() {
+        rope?.removeFromParent()
+        draggingRope = false
+        carryingRope = false
+        let rope = TugRope()
+        addChild(rope)
+        self.rope = rope
+
+        let anchor = ropeAnchor()
+        let v = dog.facing.unitVector
+        let margin: CGFloat = 30
+        ropeEnd = CGPoint(
+            x: min(max(anchor.x + v.x * Self.ropeRestLength, margin), size.width - margin),
+            y: min(max(anchor.y + v.y * Self.ropeRestLength, margin), size.height - margin)
+        )
+        ropePull = ropeEnd
+        rope.layout(from: anchor, to: ropeEnd)
+        settleRope()
+    }
+
+    /// A rope nobody is holding lies there a while, then tidies itself away.
+    /// Grabbing it again cancels the countdown (see `mouseDown`).
+    private func settleRope() {
+        guard let rope else { return }
+        rope.removeAction(forKey: "linger")
+        rope.alpha = 1
+        rope.run(.sequence([
+            .wait(forDuration: Self.toyLingerDuration * 2),
+            .fadeOut(withDuration: 0.6),
+            .run { [weak self] in self?.rope = nil },
+            .removeFromParent(),
+        ]), withKey: "linger")
+    }
+
+    /// Per-frame rope work: resist the pull, throw the occasional yank, keep
+    /// him facing whoever is pulling, and feed the brain a throttled force.
+    private func stepTug(dt: TimeInterval) {
+        guard let rope else { return }
+        let anchor = ropeAnchor()
+
+        if carryingRope {
+            // Victory lap: it trails behind him as he swaggers off.
+            let v = dog.facing.unitVector
+            ropeEnd = CGPoint(
+                x: anchor.x - v.x * Self.ropeRestLength * 0.8,
+                y: anchor.y - v.y * Self.ropeRestLength * 0.8
+            )
+            rope.layout(from: anchor, to: ropeEnd)
+            return
+        }
+        guard draggingRope, dt > 0 else { return }
+
+        // Resisted target: only a fraction of the pull is conceded.
+        var target = CGPoint(
+            x: anchor.x + (ropePull.x - anchor.x) * Self.tugResistGain,
+            y: anchor.y + (ropePull.y - anchor.y) * Self.tugResistGain
+        )
+
+        // A yank drags the end back toward him for a fraction of a second.
+        if lastTime >= nextYank {
+            yankPhase = 1
+            nextYank = lastTime + TimeInterval.random(in: Self.yankInterval)
+        }
+        if yankPhase > 0 {
+            yankPhase = max(0, yankPhase - CGFloat(dt / Self.yankDuration))
+            let pulse = sin(.pi * (1 - yankPhase)) * Self.yankDistance
+            let dx = target.x - anchor.x
+            let dy = target.y - anchor.y
+            let length = max(hypot(dx, dy), 1)
+            target = CGPoint(x: target.x - dx / length * pulse, y: target.y - dy / length * pulse)
+        }
+
+        // Springy follow, so the rope arrives at the target with some give.
+        let ease = min(1, CGFloat(dt) * Self.tugSpringRate)
+        ropeEnd = CGPoint(
+            x: ropeEnd.x + (target.x - ropeEnd.x) * ease,
+            y: ropeEnd.y + (target.y - ropeEnd.y) * ease
+        )
+        rope.layout(from: anchor, to: ropeEnd)
+        dog.face(towards: ropeEnd) // brace against the pull
+
+        if lastTime - lastTugSent >= 0.1 { // ~10/s
+            lastTugSent = lastTime
+            send(.tugMoved(to: ropeEnd, force: tugForce()))
+        }
+    }
+
+    /// How hard they're pulling, 0...1: slack rope reads 0, an arm's-length
+    /// haul reads 1.
+    private func tugForce() -> CGFloat {
+        let anchor = ropeAnchor()
+        let stretch = hypot(ropePull.x - anchor.x, ropePull.y - anchor.y) - Self.ropeRestLength
+        return min(1, max(0, stretch / (Self.ropePullSpan - Self.ropeRestLength)))
+    }
+
+    /// `.startTug`: the brain accepted the grab.
+    private func beginTug() {
+        nextYank = lastTime + TimeInterval.random(in: Self.yankInterval)
+        yankPhase = 0
+        lastTugSent = lastTime
+        rope?.removeAction(forKey: "linger")
+        rope?.alpha = 1
+    }
+
+    /// `.stopTug`: the game is over however it ended. The user's drag is
+    /// dropped on the spot — a won rope is his now, and there's nothing left
+    /// to waggle.
+    private func endTug() {
+        draggingRope = false
+        yankPhase = 0
+    }
+
+    private func removeRope() {
+        carryingRope = false
+        draggingRope = false
+        rope?.fadeOutAndRemove()
+        rope = nil
+    }
+
+    private func toyNode(_ kind: ToyKind) -> SKSpriteNode? {
+        switch kind {
+        case .frisbee: return frisbee
+        case .squeaky: return squeaky
+        case .rope: return nil
+        }
+    }
+
+    private func attachToyToDog(_ kind: ToyKind) {
+        if kind == .rope {
+            // He won it. It trails from his mouth for the victory lap.
+            carryingRope = true
+            draggingRope = false
+            return
+        }
+        guard let toy = toyNode(kind) else { return }
+        toy.removeAction(forKey: "flight")
+        if let disc = toy as? Frisbee { disc.clampInMouth() }
+        toy.removeFromParent()
+        dog.addChild(toy)
+        reseatCarriedToy()
+        if kind == .squeaky { startSqueakySqueezing() }
+    }
+
+    /// The 3-frame strip is a rest pose plus two squeeze frames — looping it
+    /// only while he has it in his jaws makes the toy look worried.
+    private func startSqueakySqueezing() {
+        guard let squeaky,
+              let anim = SpriteLibrary.shared.prop(named: "squeaky", frameWidth: 16, fps: 9)
+        else { return }
+        squeaky.run(
+            .repeatForever(.animate(with: anim.textures, timePerFrame: 1 / anim.fps)),
+            withKey: "squeeze"
+        )
+    }
+
+    /// Keep a carried toy at the dog's mouth as he turns. The dog's own
+    /// xScale (±1, mirrored bark art) is divided back out, same as the rabbit.
+    private func reseatCarriedToy() {
+        for kind in [ToyKind.frisbee, .squeaky] {
+            guard let toy = toyNode(kind), toy.parent === dog else { continue }
+            let parentFlip: CGFloat = dog.xScale < 0 ? -1 : 1
+            toy.position = CGPoint(x: dog.mouthOffset.x * parentFlip, y: dog.mouthOffset.y)
+            toy.zPosition = dog.mouthZOffset
+            toy.xScale = parentFlip
+        }
+    }
+
+    private func dropToyAtDog(_ kind: ToyKind) {
+        if kind == .rope {
+            // Dropped where it lies, and still grabbable for a rematch.
+            carryingRope = false
+            draggingRope = false
+            settleRope()
+            return
+        }
+        guard let toy = toyNode(kind) else { return }
+        toy.removeAction(forKey: "squeeze") // back to the rest frame
+        toy.removeFromParent()
+        let v = dog.facing.unitVector
+        toy.position = CGPoint(x: dog.position.x + v.x * 34, y: dog.position.y + v.y * 34 - 10)
+        toy.zPosition = 5
+        toy.xScale = 1
+        addChild(toy)
+        toy.run(.sequence([
+            .wait(forDuration: Self.toyLingerDuration),
+            .fadeOut(withDuration: 0.6),
+            .removeFromParent(),
+        ]))
+        forgetToy(kind)
+    }
+
+    private func removeToy(_ kind: ToyKind) {
+        if kind == .rope {
+            removeRope()
+            return
+        }
+        guard let toy = toyNode(kind) else { return }
+        toy.removeAllActions()
+        toy.run(.sequence([.fadeOut(withDuration: 0.25), .removeFromParent()]))
+        forgetToy(kind)
+        pendingChaseArrival = false
+    }
+
+    /// Let go of our reference — the node keeps running its own fade-out.
+    private func forgetToy(_ kind: ToyKind) {
+        switch kind {
+        case .frisbee: frisbee = nil
+        case .squeaky: squeaky = nil
+        case .rope: break
+        }
     }
 
     // MARK: - Zoomies
@@ -796,6 +1188,7 @@ final class PetScene: SKScene {
         // cursor, and the window must keep the mouseUp.
         let dragging = mouseDownOnDog || isCarryingDog || pressedJar
             || treatInHand != nil || draggedFurniture != nil || draggedPile != nil
+            || draggingRope
         let shouldAcceptClicks = armedForThrow || dragging
             || interactiveFrames().contains { $0.contains(mouseLocationInScene()) }
         if window.ignoresMouseEvents == shouldAcceptClicks {
@@ -806,6 +1199,8 @@ final class PetScene: SKScene {
     private func interactiveFrames() -> [CGRect] {
         [dogHoverFrame(), jar.frame.insetBy(dx: -6, dy: -6), bed.frame.insetBy(dx: -6, dy: -6)]
             + piles.map { $0.frame.insetBy(dx: -6, dy: -6) }
+            // The free end of the rope is a grab target whenever it's loose.
+            + (carryingRope ? [] : [rope?.freeEndFrame()].compactMap { $0 })
     }
 
     private func dogHoverFrame() -> CGRect {
@@ -848,10 +1243,24 @@ final class PetScene: SKScene {
             }
         } else if bed.frame.insetBy(dx: -6, dy: -6).contains(location) {
             draggedFurniture = bed
+        } else if let rope, rope.freeEndFrame().contains(location), !carryingRope {
+            // Grabbing the free end starts (or restarts) the tug immediately —
+            // no drag threshold: a rope you have to shake first feels dead.
+            rope.removeAction(forKey: "linger")
+            rope.alpha = 1
+            draggingRope = true
+            ropePull = location
+            ropeEnd = rope.freeEnd
+            send(.tugStarted(at: location))
+            if brain.state != .tugging { draggingRope = false } // he declined
         } else if let pile = piles.last(where: { $0.frame.insetBy(dx: -6, dy: -6).contains(location) }) {
             draggedPile = pile // newest first when piles overlap
         } else if armedForThrow {
-            throwBall(to: location)
+            if armedToy == .frisbee {
+                throwFrisbee(to: location)
+            } else {
+                throwBall(to: location)
+            }
         }
     }
 
@@ -884,17 +1293,27 @@ final class PetScene: SKScene {
             }
         } else if let pile = draggedPile {
             pile.position = location
+        } else if draggingRope {
+            // Only the cursor is recorded here; the rope's own position is
+            // resolved in stepTug, which is what makes it resist.
+            ropePull = location
         }
     }
 
     override func mouseUp(with event: NSEvent) {
         let location = event.location(in: self)
+        let wasDraggingRope = draggingRope
         defer {
             mouseDownOnDog = false
             isCarryingDog = false
             draggedFurniture = nil
             draggedPile = nil
             pressedJar = false
+            draggingRope = false
+        }
+        if wasDraggingRope {
+            send(.tugEnded) // you let go, so there's no showdown to resolve
+            return
         }
         if mouseDownOnDog {
             if isCarryingDog {
@@ -916,7 +1335,7 @@ final class PetScene: SKScene {
         // Never open the menu mid-drag: its tracking session would swallow the
         // mouseUp and wedge the drag state (stuck carry, leaked treat).
         guard !mouseDownOnDog, !pressedJar, treatInHand == nil,
-              draggedFurniture == nil, draggedPile == nil else { return }
+              draggedFurniture == nil, draggedPile == nil, !draggingRope else { return }
         let location = event.location(in: self)
         if armedForThrow, !dogHoverFrame().contains(location) {
             // Right-click while waiting for a throw = change your mind.
@@ -954,6 +1373,7 @@ final class PetScene: SKScene {
         }
         menu.addItem(.separator())
         menu.addItem(tricksMenuItem())
+        menu.addItem(toysMenuItem())
         let wardrobe = NSMenuItem(title: "Wardrobe", action: nil, keyEquivalent: "")
         wardrobe.submenu = wardrobeSelectionMenu()
         menu.addItem(wardrobe)
@@ -981,6 +1401,53 @@ final class PetScene: SKScene {
         }
         tricksItem.submenu = submenu
         return tricksItem
+    }
+
+    /// The Toys submenu, between Tricks and Wardrobe: fetch is one ball, this
+    /// is the rest of the box. Each toy plays differently — the frisbee is
+    /// aimed and thrown, the squeaky is lobbed nearby, the rope is tugged.
+    private func toysMenuItem() -> NSMenuItem {
+        let toysItem = NSMenuItem(title: "Toys", action: nil, keyEquivalent: "")
+        let submenu = NSMenu()
+        for (title, kind) in Self.toyMenuEntries {
+            let item = NSMenuItem(title: title, action: #selector(toyChosen(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = ToyChoice(kind: kind)
+            submenu.addItem(item)
+        }
+        toysItem.submenu = submenu
+        return toysItem
+    }
+
+    /// `representedObject` needs a class, and ToyKind is an enum.
+    private final class ToyChoice: NSObject {
+        let kind: ToyKind
+        init(kind: ToyKind) { self.kind = kind }
+    }
+
+    private static let toyMenuEntries: [(String, ToyKind)] = [
+        ("Frisbee", .frisbee),
+        ("Squeaky Toy", .squeaky),
+        ("Tug Rope", .rope),
+    ]
+
+    @objc private func toyChosen(_ sender: NSMenuItem) {
+        guard let choice = sender.representedObject as? ToyChoice else { return }
+        switch choice.kind {
+        case .frisbee:
+            // Arms the throw: the next left-click anywhere sails the disc
+            // there. Only remember the kind if he actually took the toy —
+            // he ignores commands while he's in your arms, and a stale
+            // armedToy would turn the NEXT plain fetch into a frisbee.
+            send(.command(.toy(.frisbee)))
+            armedToy = brain.state == .awaitingThrow ? .frisbee : nil
+        case .squeaky:
+            // No aiming — it just goes somewhere near him and he goes after it.
+            tossSqueaky()
+        case .rope:
+            // Dropped in front of him, free end out. Grab it to start.
+            dropTugRope()
+        }
     }
 
     @objc private func commandChosen(_ sender: NSMenuItem) {
