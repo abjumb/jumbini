@@ -19,6 +19,9 @@ final class PetScene: SKScene {
     private var treatInHand: SKSpriteNode?
     private var groundTreat: SKSpriteNode?
 
+    /// Trick progression, persisted under "trick.<name>.reps" / ".unlocked".
+    private let trickTrainer = TrickTrainer(store: UserDefaultsTrickStore())
+
     // Zoomies: manual bounce integration; nil while he isn't zooming.
     private var zoomiesVelocity: CGPoint?
     /// The fur rabbit he carries during zoomies (a child of the dog).
@@ -424,6 +427,13 @@ final class PetScene: SKScene {
         ]))
         // The menu bar's hunger meter counts these.
         NotificationCenter.default.post(name: Notification.Name("JumbiniAteTreat"), object: nil)
+        // A treat soon after a trick attempt is training. recordTreat only
+        // ever returns a trick that was locked when attempted, so unlocked
+        // here means this very rep completed the training — celebrate.
+        if let trick = trickTrainer.recordTreat(at: lastTime), trickTrainer.isUnlocked(trick) {
+            dog.celebrate()
+            showHearts()
+        }
     }
 
     /// A chase was abandoned (command, petting, pickup): the treat vanishes.
@@ -622,11 +632,46 @@ final class PetScene: SKScene {
             item.representedObject = command
             menu.addItem(item)
         }
+        menu.addItem(.separator())
+        menu.addItem(tricksMenuItem())
+        // Integration note: the Wardrobe section goes BELOW Tricks, at the
+        // very bottom of this menu.
         NSMenu.popUpContextMenu(menu, with: event, for: view)
+    }
+
+    /// The Tricks submenu: unlocked tricks by name, locked ones as
+    /// "Teach Shake (1/3)". Either way the item sends the trick command —
+    /// attempting IS the training (rewarded if a treat follows).
+    private func tricksMenuItem() -> NSMenuItem {
+        let tricksItem = NSMenuItem(title: "Tricks", action: nil, keyEquivalent: "")
+        let submenu = NSMenu()
+        for trick in Trick.allCases {
+            let title: String
+            if trickTrainer.isUnlocked(trick) {
+                title = trick.rawValue
+            } else {
+                let progress = trickTrainer.progress(trick)
+                title = "Teach \(trick.rawValue) (\(progress.reps)/\(progress.needed))"
+            }
+            let item = NSMenuItem(title: title, action: #selector(trickChosen(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = trick
+            submenu.addItem(item)
+        }
+        tricksItem.submenu = submenu
+        return tricksItem
     }
 
     @objc private func commandChosen(_ sender: NSMenuItem) {
         guard let command = sender.representedObject as? DogCommand else { return }
         send(.command(command))
+    }
+
+    @objc private func trickChosen(_ sender: NSMenuItem) {
+        guard let trick = sender.representedObject as? Trick else { return }
+        // recordAttempt no-ops for unlocked tricks, so this is safe for both
+        // "Teach …" items and plain performances.
+        trickTrainer.recordAttempt(trick, at: lastTime)
+        send(.command(.trick(trick)))
     }
 }
