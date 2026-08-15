@@ -143,6 +143,9 @@ struct BrainTuning {
     var barkEdgeStep: CGFloat = 12
     var stalkDuration: TimeInterval = 3.0
     var pounceDuration: TimeInterval = 0.5
+    /// Odds that a finished sniff escalates into a stalk-and-pounce hunt
+    /// instead of ending quietly.
+    var pounceChance: Double = 0.6
     var trickDuration: TimeInterval = 1.5
     var shakeToyDuration: TimeInterval = 2.0
     var tugTimeout: TimeInterval = 12
@@ -265,7 +268,22 @@ final class DogBrain {
         case .zoomies:
             return [.stopZoomies] + enterIdle(at: now)
         case .sniffingMouse:
+            // The trail's gone cold — or has it? Sometimes the sniff escalates
+            // into a full hunt: stalk low and slow, then pounce.
+            if Double.random(in: 0..<1, using: &rng) < tuning.pounceChance {
+                state = .stalkingMouse
+                self.deadline = now + tuning.stalkDuration
+                // No .stopSniffing: the scene keeps tracking the cursor.
+                return [.play(.stalk)]
+            }
             return [.stopSniffing] + enterIdle(at: now)
+        case .stalkingMouse:
+            state = .pouncing
+            self.deadline = now + tuning.pounceDuration
+            return [.play(.pounce)]
+        case .pouncing:
+            // The catch: jitter the real cursor, celebrate, trot off proud.
+            return [.stopSniffing, .nudgeCursor, .celebrate] + enterIdle(at: now)
         default:
             return []
         }
@@ -539,7 +557,9 @@ final class DogBrain {
             return [.removeBall]
         case .zoomies:
             return [.stopZoomies]
-        case .sniffingMouse:
+        case .sniffingMouse, .stalkingMouse, .pouncing:
+            // The whole hunt keeps cursor tracking live, so any interruption
+            // at any escalation stage must switch it off.
             return [.stopSniffing]
         case .chasingTreat:
             return keepTreat ? [] : [.removeTreat]

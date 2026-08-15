@@ -16,6 +16,7 @@ private func makeBrain(
     tuning.sniffChance = 0
     tuning.hunchChance = 0
     tuning.barkAtNothingChance = 0
+    tuning.pounceChance = 0
     tune(&tuning)
     return DogBrain(
         bounds: CGSize(width: 800, height: 600),
@@ -639,6 +640,149 @@ private func moveTarget(in effects: [DogEffect]) -> (point: CGPoint, speed: CGFl
     let effects = brain.handle(.throwCancelled, at: 1)
     #expect(effects == [])
     #expect(brain.state == .sitting)
+}
+
+// MARK: - Cursor hunting (sniff → stalk → pounce → catch)
+
+/// Drive a fresh brain into .stalkingMouse. Sniff runs 3s…103s; the deadline
+/// tick at 103.1 rolls pounceChance = 1 and escalates. Returns the brain and
+/// the stalk start time.
+private func makeStalkingBrain(seed: UInt64 = 42) -> (brain: DogBrain, stalkStart: Double) {
+    let brain = makeBrain(seed: seed) {
+        $0.sniffChance = 1.0
+        $0.pounceChance = 1.0
+        $0.sniffDuration = 100...100
+    }
+    _ = brain.handle(.tick, at: 0)     // arm the idle timer (3s)
+    _ = brain.handle(.tick, at: 3)     // idle → sniffingMouse (deadline 103)
+    _ = brain.handle(.tick, at: 103.1) // sniffingMouse → stalkingMouse
+    return (brain, 103.1)
+}
+
+/// Drive a fresh brain all the way into .pouncing. Returns the brain and the
+/// pounce start time.
+private func makePouncingBrain(seed: UInt64 = 42) -> (brain: DogBrain, pounceStart: Double) {
+    let (brain, stalkStart) = makeStalkingBrain(seed: seed)
+    let pounceStart = stalkStart + brain.tuning.stalkDuration + 0.1
+    _ = brain.handle(.tick, at: pounceStart) // stalkingMouse → pouncing
+    return (brain, pounceStart)
+}
+
+@Test func sniffEscalatesToStalkWhenPounceChanceRollsIt() {
+    let brain = makeBrain { $0.sniffChance = 1.0; $0.pounceChance = 1.0; $0.sniffDuration = 100...100 }
+    _ = brain.handle(.tick, at: 0)
+    _ = brain.handle(.tick, at: 3)
+    #expect(brain.state == .sniffingMouse)
+
+    let effects = brain.handle(.tick, at: 103.1)
+    #expect(brain.state == .stalkingMouse)
+    #expect(effects.contains(.play(.stalk)))
+    #expect(!effects.contains(.stopSniffing), "cursor tracking must stay live through the stalk")
+    #expect(!effects.contains(.play(.idle)))
+}
+
+@Test func sniffEndsQuietlyWhenPounceChanceMisses() {
+    let brain = makeBrain { $0.sniffChance = 1.0; $0.pounceChance = 0.0; $0.sniffDuration = 100...100 }
+    _ = brain.handle(.tick, at: 0)
+    _ = brain.handle(.tick, at: 3)
+    #expect(brain.state == .sniffingMouse)
+
+    let effects = brain.handle(.tick, at: 103.1)
+    #expect(brain.state == .idle)
+    #expect(effects.contains(.stopSniffing))
+    #expect(effects.contains(.play(.idle)))
+    #expect(!effects.contains(.play(.stalk)))
+}
+
+@Test func stalkHoldsForStalkDurationThenPounces() {
+    let (brain, stalkStart) = makeStalkingBrain()
+    let stalkEnd = stalkStart + brain.tuning.stalkDuration
+
+    #expect(brain.handle(.tick, at: stalkEnd - 0.1) == [], "still stalking before stalkDuration")
+    #expect(brain.state == .stalkingMouse)
+
+    let effects = brain.handle(.tick, at: stalkEnd + 0.1)
+    #expect(brain.state == .pouncing)
+    #expect(effects.contains(.play(.pounce)))
+    #expect(!effects.contains(.stopSniffing), "cursor tracking must stay live through the pounce")
+}
+
+@Test func pounceEndsWithCatchThenProudIdle() {
+    let (brain, pounceStart) = makePouncingBrain()
+    let pounceEnd = pounceStart + brain.tuning.pounceDuration
+
+    #expect(brain.handle(.tick, at: pounceEnd - 0.1) == [], "still mid-leap before pounceDuration")
+    #expect(brain.state == .pouncing)
+
+    let effects = brain.handle(.tick, at: pounceEnd + 0.1)
+    #expect(brain.state == .idle)
+    #expect(effects.contains(.stopSniffing))
+    #expect(effects.contains(.nudgeCursor), "the catch jitters the real cursor")
+    #expect(effects.contains(.celebrate))
+    #expect(effects.contains(.play(.idle)))
+}
+
+// Interruptions during the hunt mirror the sniffing ones: anything that
+// breaks in must emit .stopSniffing so the scene stops tracking the cursor.
+
+@Test func stalkInterruptedByCommand() {
+    let (brain, stalkStart) = makeStalkingBrain()
+    let effects = brain.handle(.command(.sit), at: stalkStart + 1)
+    #expect(brain.state == .sitting)
+    #expect(effects.contains(.stopSniffing))
+    #expect(effects.contains(.play(.sit)))
+}
+
+@Test func treatBeatsStalking() {
+    let (brain, stalkStart) = makeStalkingBrain()
+    let effects = brain.handle(.treatDropped(at: CGPoint(x: 100, y: 100)), at: stalkStart + 1)
+    #expect(brain.state == .chasingTreat)
+    #expect(effects.contains(.stopSniffing))
+    #expect(effects.contains(.play(.run)))
+}
+
+@Test func pettingInterruptsStalking() {
+    let (brain, stalkStart) = makeStalkingBrain()
+    let effects = brain.handle(.petted, at: stalkStart + 1)
+    #expect(brain.state == .beingPetted)
+    #expect(effects.contains(.stopSniffing))
+    #expect(effects.contains(.showHearts))
+}
+
+@Test func pickupInterruptsStalking() {
+    let (brain, stalkStart) = makeStalkingBrain()
+    let effects = brain.handle(.pickedUp, at: stalkStart + 1)
+    #expect(brain.state == .carried)
+    #expect(effects.contains(.stopSniffing))
+    #expect(effects.contains(.play(.dangle)))
+}
+
+@Test func pounceInterruptedByCommand() {
+    let (brain, pounceStart) = makePouncingBrain()
+    let effects = brain.handle(.command(.sit), at: pounceStart + 0.2)
+    #expect(brain.state == .sitting)
+    #expect(effects.contains(.stopSniffing))
+}
+
+@Test func treatBeatsPouncing() {
+    let (brain, pounceStart) = makePouncingBrain()
+    let effects = brain.handle(.treatDropped(at: CGPoint(x: 100, y: 100)), at: pounceStart + 0.2)
+    #expect(brain.state == .chasingTreat)
+    #expect(effects.contains(.stopSniffing))
+}
+
+@Test func pettingInterruptsPouncing() {
+    let (brain, pounceStart) = makePouncingBrain()
+    let effects = brain.handle(.petted, at: pounceStart + 0.2)
+    #expect(brain.state == .beingPetted)
+    #expect(effects.contains(.stopSniffing))
+}
+
+@Test func pickupInterruptsPouncing() {
+    let (brain, pounceStart) = makePouncingBrain()
+    let effects = brain.handle(.pickedUp, at: pounceStart + 0.2)
+    #expect(brain.state == .carried)
+    #expect(effects.contains(.stopSniffing))
 }
 
 // MARK: - Hunching (the poopchini special)
