@@ -449,8 +449,63 @@ final class PetScene: SKScene {
     /// Ambient machine news from the app layer's SystemMonitor. Goes through
     /// the same path as a click or a menu command, so the brain's own rules
     /// about what outranks what apply unchanged. Main thread only.
+    ///
+    /// This is also where the emote is decided, and it has to be: `DogEffect`
+    /// is deliberately signal-agnostic, so by the time the effects come back
+    /// nothing in them says WHY he did that. Here — the one place that still
+    /// knows the signal's name — the scene can caption it without teaching
+    /// the brain a word of UI.
     func receive(_ signal: SystemSignal) {
-        send(.system(signal))
+        let effects = brain.handle(.system(signal), at: lastTime)
+        apply(effects: effects)
+        emote(for: signal, acted: !effects.isEmpty)
+    }
+
+    // MARK: - Emotes
+
+    /// The icon for news he acts on. nil for the all-clear signals, which
+    /// only get an emote when they actually rouse him (see `emote(for:)`).
+    private static func emoteIcon(for signal: SystemSignal) -> String? {
+        switch signal {
+        case .buildFinished: "icon_party"
+        case .batteryLow: "icon_battery"
+        case .fansUp: "icon_flame"
+        case .dndOn: "icon_moon"
+        case .idleBegan: "icon_sleep"
+        case .idleEnded, .batteryNormal, .dndOff: nil
+        }
+    }
+
+    /// Caption a system signal, going by what he did with it:
+    ///
+    /// - news he acted on gets its own icon — the party for a finished build,
+    ///   the flame for the fans, the moon for Focus, the battery, the zeds
+    ///   for the idle nap;
+    /// - news that arrived while he was mid-fetch gets the gear: the brain
+    ///   parks it (`deferSignal`) and comes back to it, and the gear says so
+    ///   rather than leaving the user wondering why nothing happened;
+    /// - the all-clear signals (the human's back, the charger's in, Focus
+    ///   off) stay silent unless they genuinely got him up, and then it's
+    ///   the alert perk-up.
+    private func emote(for signal: SystemSignal, acted: Bool) {
+        guard let icon = Self.emoteIcon(for: signal) else {
+            if acted { showEmote("icon_alert") }
+            return
+        }
+        showEmote(acted ? icon : "icon_gear")
+    }
+
+    /// Float an emote off the top of his head. Offset to one side so it
+    /// doesn't fight the hearts, which rise straight up from the same line.
+    private func showEmote(_ icon: String) {
+        guard let bubble = EmoteBubble(icon: icon) else { return }
+        bubble.position = CGPoint(
+            x: dog.position.x + 30,
+            y: dog.position.y + dog.size.height / 2 + 14
+        )
+        bubble.zPosition = 21 // just above the hearts (20)
+        addChild(bubble)
+        bubble.play()
     }
 
     private func dogArrived() {
@@ -1767,7 +1822,12 @@ final class PetScene: SKScene {
 
     @objc private func commandChosen(_ sender: NSMenuItem) {
         guard let command = sender.representedObject as? DogCommand else { return }
-        send(.command(command))
+        let effects = brain.handle(.command(command), at: lastTime)
+        apply(effects: effects)
+        // `handleCommand` returns nothing for exactly one reason: he's in
+        // your arms and taking no orders. A shrug beats a menu item that
+        // silently does nothing.
+        if effects.isEmpty { showEmote("icon_question") }
     }
 
     @objc private func trickChosen(_ sender: NSMenuItem) {
