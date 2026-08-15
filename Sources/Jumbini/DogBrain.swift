@@ -231,8 +231,13 @@ final class DogBrain {
         switch state {
         case .idle:
             return leaveIdleForAutonomy(at: now)
-        case .sitting, .lyingDown, .spinning, .sleeping, .hunching:
+        case .sitting, .lyingDown, .spinning, .sleeping:
             return enterIdle(at: now)
+        case .hunching:
+            // Hunch complete: the pile is the only thing the hunger meter
+            // ever produces. Both roads lead here — the autonomous roll and
+            // the eating → hunching digestion pipeline.
+            return [.leaveDeposit] + enterIdle(at: now)
         case .eating:
             // Treats go straight through him; the hunger meter never budges.
             state = .hunching
