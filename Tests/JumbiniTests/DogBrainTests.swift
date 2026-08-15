@@ -1985,6 +1985,24 @@ private func hopTarget(in effects: [DogEffect]) -> CGPoint? {
     #expect(moveTarget(in: effects)?.speed == brain.tuning.walkSpeed)
 }
 
+@Test func withoutThePerchChanceHeIgnoresYourWindowsEntirely() {
+    let brain = makeBrain() // perchChance is zeroed, like every other band
+    brain.surfaces = [perchable]
+    _ = brain.handle(.tick, at: 0)
+    _ = brain.handle(.tick, at: 3.1)
+    #expect(brain.state == .wandering)
+}
+
+@Test func thePerchBandSitsBeneathTheOlderAutonomyBands() {
+    // Both bands certain: the one that was there first still wins, so adding
+    // the perch can't quietly steal a nap.
+    let brain = makeBrain { $0.sleepChance = 1; $0.perchChance = 1; $0.sleepDuration = 10...10 }
+    brain.surfaces = [perchable]
+    _ = brain.handle(.tick, at: 0)
+    _ = brain.handle(.tick, at: 3.1)
+    #expect(brain.state == .sleeping)
+}
+
 @Test func withNoWindowsThePerchRollFallsThroughToWandering() {
     let brain = makePercher(surfaces: [])
     _ = brain.handle(.tick, at: 0)
@@ -2309,4 +2327,45 @@ private func hopTarget(in effects: [DogEffect]) -> CGPoint? {
     _ = brain.handle(.pickedUp, at: 1)
     _ = brain.handle(.dropped(at: CGPoint(x: 500, y: 200)), at: 2)
     #expect(brain.state == .idle)
+}
+
+// MARK: The whole adventure
+
+@Test func theWholeAdventureRunsFromDesktopToLedgeAndBack() {
+    let brain = makePercher { $0.perchDuration = 20...20 }
+    _ = brain.handle(.tick, at: 0)
+    #expect(brain.handle(.tick, at: 3.1).contains(.play(.walk)))
+    #expect(brain.state == .headingToSurface(surfaceID: 1))
+
+    brain.position = CGPoint(x: 300, y: 300)
+    _ = brain.handle(.arrived, at: 4)
+    #expect(brain.state == .hoppingUp(surfaceID: 1))
+
+    brain.position = CGPoint(x: 324, y: 420)
+    _ = brain.handle(.arrived, at: 5)
+    #expect(brain.state == .perched(surfaceID: 1))
+
+    // Trot to the far end, look over the drop, trot back.
+    brain.position = CGPoint(x: 676, y: 420)
+    #expect(brain.handle(.arrived, at: 8).contains(.play(.peek)))
+    let back = brain.handle(.tick, at: 9.5)
+    #expect(moveTarget(in: back)?.point == CGPoint(x: 324, y: 420))
+    brain.position = CGPoint(x: 324, y: 420)
+    #expect(brain.handle(.arrived, at: 12).contains(.play(.peek)))
+
+    // Bored: the perch began at t=5 and lasts 20 seconds.
+    let down = brain.handle(.tick, at: 25.1)
+    #expect(brain.state == .falling)
+    #expect(down.contains(.startFalling(toY: 300)))
+
+    // The scene walks him down; he absorbs the landing and gets on with it.
+    brain.position = CGPoint(x: 324, y: 300)
+    let landed = brain.handle(.tick, at: 25.6)
+    #expect(landed.contains(.absorbLanding))
+    #expect(brain.state == .idle)
+
+    // And he's a normal dog again: the idle timer runs, no ghost of the perch.
+    #expect(brain.handle(.tick, at: 28.0) == [], "the ordinary idle timer, ticking again")
+    _ = brain.handle(.tick, at: 28.8)
+    #expect(brain.state == .headingToSurface(surfaceID: 1), "and off he goes again")
 }
