@@ -247,7 +247,7 @@ final class DogBrain {
         switch state {
         case .idle:
             return leaveIdleForAutonomy(at: now)
-        case .sitting, .lyingDown, .spinning, .sleeping:
+        case .sitting, .lyingDown, .spinning, .sleeping, .performingTrick:
             return enterIdle(at: now)
         case .hunching:
             // Hunch complete: the pile is the only thing the hunger meter
@@ -359,9 +359,10 @@ final class DogBrain {
             effects.append(contentsOf: [.play(.run), .startZoomies])
         case .relax:
             effects.append(contentsOf: enterIdle(at: now))
-        case .trick:
-            // Vocabulary stub — the trick-training branch wires performingTrick.
-            break
+        case .trick(let trick):
+            state = .performingTrick(trick)
+            deadline = now + tuning.trickDuration
+            effects.append(.play(Self.animation(for: trick)))
         }
         return effects
     }
@@ -586,6 +587,16 @@ final class DogBrain {
         if nearest == toRight { return CGPoint(x: position.x + step, y: position.y) }
         if nearest == toBottom { return CGPoint(x: position.x, y: position.y - step) }
         return CGPoint(x: position.x, y: position.y + step)
+    }
+
+    /// Which animation performs a given trick.
+    private static func animation(for trick: Trick) -> DogAnimation {
+        switch trick {
+        case .shake: return .shakePaw
+        case .highFive: return .highFive
+        case .playDead: return .playDead
+        case .rollOver: return .rollOver
+        }
     }
 
     private func random(in range: ClosedRange<TimeInterval>) -> TimeInterval {
