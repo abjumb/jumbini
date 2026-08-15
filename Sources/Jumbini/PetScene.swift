@@ -61,8 +61,11 @@ final class PetScene: SKScene {
 
     /// The wardrobe item he's wearing (a child of the dog); nil = nothing.
     private var wornItem: SKSpriteNode?
-    /// Sprite file of the current wardrobe selection (mirrors UserDefaults).
-    private var currentWardrobeFile: String?
+    /// Catalog name of the current wardrobe selection (mirrors UserDefaults).
+    private var currentWardrobeItem: String?
+    /// Which of the four front directions the worn piece is currently drawn
+    /// in, so the texture is only swapped when he actually turns.
+    private var wornDirection: String?
 
     // Mouse sniffing: he tracks the cursor while the brain's timer runs.
     private var isSniffing = false
@@ -235,69 +238,125 @@ final class PetScene: SKScene {
         applyBedVariant(index >= 0 ? index : nil)
     }
 
-    // MARK: - Wardrobe
+    // MARK: - Wardrobe  (region owned by the wardrobe work; ends at "Wardrobe end")
 
-    /// Wardrobe catalog, menu order. Seating is per-item because the pieces
-    /// live at different heights: `dy` shifts the crown anchor by a fraction
-    /// of the dog's height (negative = down towards face/neck), `lift` raises
-    /// by a fraction of the item's own height (so hats perch on the head
-    /// instead of swallowing it). All placement lives here, not in the art,
-    /// so the placeholder sprites can swap for real 48x48 art untouched.
-    private static let wardrobeItems:
-        [(title: String, file: String, dy: CGFloat, lift: CGFloat, isEyewear: Bool)] = [
-            ("Party Hat", "wardrobe_partyhat", 0, 0.30, false),
-            ("Top Hat", "wardrobe_tophat", 0, 0.30, false),
-            ("Cowboy Hat", "wardrobe_cowboyhat", 0.02, 0.10, false),
-            ("Bandana", "wardrobe_bandana", -0.34, 0, false),
-            ("Sunglasses", "wardrobe_sunglasses", -0.10, 0, true),
-        ]
+    /// One wearable. Two numbers, both meaningful: `slot` is the place on him
+    /// the piece hangs from, `frontWidth` is how wide the front view is on
+    /// screen in points (he stands ~115pt tall with a ~45pt-wide head).
+    ///
+    /// Everything else is derived from the art: which of the four front
+    /// directions to draw, where the ink sits inside its canvas, the mirror
+    /// for the west side. The old per-item `dy`/`lift` nudges are gone — see
+    /// `SpriteLibrary.WardrobeArt` for why one number still has to stay.
+    private struct WardrobeSpec {
+        let title: String
+        /// Catalog name; the files are `wardrobe_<item>_<direction>.png`.
+        let item: String
+        let slot: Dog.WearSlot
+        let frontWidth: CGFloat
+    }
+
+    /// The wardrobe catalog, menu order.
+    private static let wardrobeItems: [WardrobeSpec] = [
+        WardrobeSpec(title: "Party Hat", item: "party", slot: .crown, frontWidth: 34),
+        WardrobeSpec(title: "Top Hat", item: "tophat", slot: .crown, frontWidth: 40),
+        WardrobeSpec(title: "Cowboy Hat", item: "cowboy", slot: .crown, frontWidth: 52),
+        WardrobeSpec(title: "Beanie", item: "beanie", slot: .crown, frontWidth: 34),
+        WardrobeSpec(title: "Bandana", item: "bandana", slot: .neck, frontWidth: 42),
+        WardrobeSpec(title: "Sunglasses", item: "shades", slot: .eyes, frontWidth: 40),
+        WardrobeSpec(title: "Raincoat", item: "raincoat", slot: .body, frontWidth: 54),
+    ]
     private static let wardrobeItemKey = "wardrobeItem"
 
-    private func applyWardrobeItem(_ file: String?) {
+    /// How far a hat sinks past the crown line, as a fraction of its own
+    /// height — otherwise it balances on his scalp instead of being worn.
+    private static let wardrobeHatSink: CGFloat = 0.15
+
+    /// The four front directions the art ships in, plus whether to mirror.
+    /// There is deliberately no west-side art (same as the bark frames), and
+    /// no straight-from-behind art either — the north-east three-quarter view
+    /// reads correctly when he's walking away.
+    private static func wardrobeDirection(for facing: Facing) -> (key: String, mirrored: Bool) {
+        switch facing {
+        case .south: ("s", false)
+        case .southEast: ("se", false)
+        case .southWest: ("se", true)
+        case .east: ("e", false)
+        case .west: ("e", true)
+        case .northEast, .north: ("ne", false)
+        case .northWest: ("ne", true)
+        }
+    }
+
+    private func applyWardrobeItem(_ item: String?) {
         wornItem?.removeFromParent()
         wornItem = nil
-        currentWardrobeFile = nil
-        guard let file, Self.wardrobeItems.contains(where: { $0.file == file }) else {
+        currentWardrobeItem = nil
+        wornDirection = nil
+        guard let item, Self.wardrobeItems.contains(where: { $0.item == item }) else {
             UserDefaults.standard.removeObject(forKey: Self.wardrobeItemKey)
             return
         }
-        let node: SKSpriteNode
-        if let anim = SpriteLibrary.shared.singleProp(named: file) {
-            node = SKSpriteNode(texture: anim.textures[0])
-            node.size = anim.nodeSize
-        } else {
-            node = SKSpriteNode(color: .systemPink, size: CGSize(width: 36, height: 24))
-        }
+        let node = SKSpriteNode()
         dog.addChild(node)
         wornItem = node
-        currentWardrobeFile = file
-        UserDefaults.standard.set(file, forKey: Self.wardrobeItemKey)
+        currentWardrobeItem = item
+        UserDefaults.standard.set(item, forKey: Self.wardrobeItemKey)
         reseatWornItem()
     }
 
-    /// Keep the worn item seated as he turns and as his node size changes
-    /// between poses (sit art is taller than idle). The dog's own xScale
-    /// (±1, mirrored bark art) is divided back out because a child node
-    /// inherits its parent's scale — same gotcha as reseatCarriedRabbit().
+    /// Keep the worn piece seated: swap in the art for whichever way he is
+    /// rendered facing, then hang it off its slot on him. Called on every
+    /// turn and every frame, because the anchor moves with his node size as
+    /// well as his facing (sit art is taller than idle).
+    ///
+    /// The dog's own xScale (±1 — the bark art is mirrored art, not a turn)
+    /// is divided back out of the child's position and scale, because a child
+    /// inherits its parent's transform. Same gotcha as reseatCarriedRabbit().
     private func reseatWornItem() {
-        guard let item = wornItem, item.parent === dog,
-              let spec = Self.wardrobeItems.first(where: { $0.file == currentWardrobeFile })
+        guard let node = wornItem, node.parent === dog,
+              let spec = Self.wardrobeItems.first(where: { $0.item == currentWardrobeItem })
         else { return }
-        let parentFlip: CGFloat = dog.xScale < 0 ? -1 : 1
-        let anchor = dog.hatOffset
-        item.position = CGPoint(
-            x: anchor.x * parentFlip,
-            y: anchor.y + spec.dy * dog.size.height + spec.lift * item.size.height
-        )
-        item.zPosition = dog.hatZOffset
-        // Facing away, glasses would float on the back of his head — hide
-        // them; hats and the bandana still read and just tuck behind (-1).
-        // renderedFacing, not facing: the dangle/bark poses draw him facing
-        // somewhere his logical facing disagrees with.
-        item.isHidden = spec.isEyewear && dog.renderedFacing.isNorthish
-        // Any lean in the art follows the facing (and cancels the parent flip).
-        let westish = dog.renderedFacing.unitVector.x < 0
-        item.xScale = (westish ? -1 : 1) * parentFlip
+        // renderedFacing, not facing: the dangle and bark poses draw him
+        // looking somewhere his logical facing disagrees with.
+        let facing = dog.renderedFacing
+        let direction = Self.wardrobeDirection(for: facing)
+        guard let art = SpriteLibrary.shared.wardrobe(item: spec.item, direction: direction.key),
+              let front = SpriteLibrary.shared.wardrobe(item: spec.item, direction: "s"),
+              front.ink.width > 0
+        else {
+            node.isHidden = true
+            return
+        }
+        node.isHidden = false
+        if wornDirection != direction.key {
+            wornDirection = direction.key
+            node.texture = art.texture
+        }
+
+        // Points per art pixel, fixed per item by its front view, so the side
+        // views come out narrower on their own instead of being stretched.
+        // `wearScale` keeps the piece the same size on him across poses.
+        let scale = spec.frontWidth / front.ink.width * dog.wearScale
+        node.size = CGSize(width: art.canvas.width * scale, height: art.canvas.height * scale)
+
+        // Where the ink sits inside the node, measured from the node centre.
+        let inkX = (art.ink.midX - art.canvas.width / 2) * scale
+        let inkCentreY = (art.canvas.height / 2 - art.ink.midY) * scale
+        let inkBottomY = (art.canvas.height / 2 - art.ink.maxY) * scale
+
+        let anchor = dog.wearAnchor(spec.slot)
+        let flip: CGFloat = dog.xScale < 0 ? -1 : 1
+        let mirror: CGFloat = facing.unitVector.x < 0 ? -1 : 1
+        // A hat hangs by the bottom edge of its ink (the brim lands on his
+        // crown); everything else hangs by the middle of its ink.
+        let y = spec.slot == .crown
+            ? anchor.y - art.ink.height * scale * Self.wardrobeHatSink - inkBottomY
+            : anchor.y - inkCentreY
+        node.position = CGPoint(x: flip * (anchor.x - mirror * inkX), y: y)
+        node.xScale = mirror * flip
+        node.yScale = 1
+        node.zPosition = dog.wearZOffset
     }
 
     private func wardrobeSelectionMenu() -> NSMenu {
@@ -305,18 +364,21 @@ final class PetScene: SKScene {
         let nothing = NSMenuItem(title: "Nothing", action: #selector(wardrobeChosen(_:)), keyEquivalent: "")
         nothing.target = self
         nothing.representedObject = ""
-        nothing.state = currentWardrobeFile == nil ? .on : .off
+        nothing.state = currentWardrobeItem == nil ? .on : .off
         menu.addItem(nothing)
         menu.addItem(.separator())
         for spec in Self.wardrobeItems {
             let item = NSMenuItem(title: spec.title, action: #selector(wardrobeChosen(_:)), keyEquivalent: "")
             item.target = self
-            item.representedObject = spec.file
-            item.state = currentWardrobeFile == spec.file ? .on : .off
-            if let url = Bundle.module.url(forResource: spec.file, withExtension: "png", subdirectory: "sprites"),
-               let image = NSImage(contentsOf: url) {
-                // x2, not a fixed height: the items' aspects vary too much.
-                image.size = NSSize(width: image.size.width * 2, height: image.size.height * 2)
+            item.representedObject = spec.item
+            item.state = currentWardrobeItem == spec.item ? .on : .off
+            // The real front-view art, at a common size: every piece is drawn
+            // on the same 48x48 canvas, so they line up in the menu the way
+            // they line up on the dog.
+            if let url = Bundle.module.url(
+                forResource: "wardrobe_\(spec.item)_s", withExtension: "png", subdirectory: "sprites"
+            ), let image = NSImage(contentsOf: url) {
+                image.size = NSSize(width: 26, height: 26)
                 item.image = image
             }
             menu.addItem(item)
@@ -325,9 +387,11 @@ final class PetScene: SKScene {
     }
 
     @objc private func wardrobeChosen(_ sender: NSMenuItem) {
-        guard let file = sender.representedObject as? String else { return }
-        applyWardrobeItem(file.isEmpty ? nil : file)
+        guard let item = sender.representedObject as? String else { return }
+        applyWardrobeItem(item.isEmpty ? nil : item)
     }
+
+    // MARK: - Wardrobe end
 
     // MARK: - Frame loop
 

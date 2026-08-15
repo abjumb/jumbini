@@ -66,8 +66,10 @@ final class SpriteLibrary {
         let flipX: Bool
     }
 
-    /// Base pixel scale: 48px art renders at ×2.4.
-    private static let baseScale: CGFloat = 2.4
+    /// Base pixel scale: 48px art renders at ×2.4. Not private: `Dog` sizes
+    /// wardrobe overlays against it, so a piece stays the same size on him
+    /// whichever pose's art is on screen.
+    static let baseScale: CGFloat = 2.4
     /// The sit set was exported at a smaller pixel density than idle — upscale
     /// it so Jumba doesn't shrink when he sits (idle content 46px vs sit 38px).
     private static let sitScale: CGFloat = 2.9
@@ -202,6 +204,83 @@ final class SpriteLibrary {
         )
         propCache[name] = animation
         return animation
+    }
+
+    // MARK: - Wardrobe overlays
+
+    /// One direction of one wardrobe piece, plus where its ink actually sits
+    /// on the canvas.
+    ///
+    /// The kit ships these as "48x48 overlay canvases", but they are NOT
+    /// registered to Jumba's frame: each piece is drawn to fill its own
+    /// canvas (the top hat spans all 48 rows, the party hat all 44). So the
+    /// scene still has to place them — and the ink box is what lets it hang a
+    /// piece off a named point on the dog (his crown, his eye line) instead
+    /// of carrying a hand-tuned nudge per item per direction.
+    struct WardrobeArt {
+        let texture: SKTexture
+        /// Canvas size in art pixels (48x48 for every kit piece).
+        let canvas: CGSize
+        /// Opaque bounds in art pixels, y measured DOWN from the canvas top.
+        let ink: CGRect
+    }
+
+    private var wardrobeCache: [String: WardrobeArt] = [:]
+
+    /// Load `wardrobe_<item>_<direction>.png`. Only the four front directions
+    /// (s / se / e / ne) exist — the caller mirrors them for the west side,
+    /// exactly as `animation(for:facing:)` mirrors the east-only bark frames.
+    func wardrobe(item: String, direction: String) -> WardrobeArt? {
+        let name = "wardrobe_\(item)_\(direction)"
+        if let cached = wardrobeCache[name] { return cached }
+        guard
+            let url = Bundle.module.url(forResource: name, withExtension: "png", subdirectory: "sprites"),
+            let image = NSImage(contentsOf: url),
+            let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
+        else { return nil }
+        let texture = SKTexture(cgImage: cg)
+        texture.filteringMode = .nearest
+        let canvas = CGSize(width: CGFloat(cg.width), height: CGFloat(cg.height))
+        let art = WardrobeArt(
+            texture: texture,
+            canvas: canvas,
+            ink: Self.inkBounds(of: cg) ?? CGRect(origin: .zero, size: canvas)
+        )
+        wardrobeCache[name] = art
+        return art
+    }
+
+    /// The opaque bounding box of a sprite, in art pixels with y measured
+    /// down from the top (a bitmap context stores its rows top-first, which
+    /// is the same way the art is drawn and read).
+    private static func inkBounds(of cg: CGImage) -> CGRect? {
+        let width = cg.width, height = cg.height
+        guard width > 0, height > 0 else { return nil }
+        var alpha = [UInt8](repeating: 0, count: width * height)
+        let drawn: Bool = alpha.withUnsafeMutableBytes { buffer -> Bool in
+            guard let context = CGContext(
+                data: buffer.baseAddress, width: width, height: height,
+                bitsPerComponent: 8, bytesPerRow: width, space: CGColorSpaceCreateDeviceGray(),
+                bitmapInfo: CGImageAlphaInfo.alphaOnly.rawValue
+            ) else { return false }
+            context.draw(cg, in: CGRect(x: 0, y: 0, width: width, height: height))
+            return true
+        }
+        guard drawn else { return nil }
+        var minX = width, minY = height, maxX = -1, maxY = -1
+        for y in 0..<height {
+            for x in 0..<width where alpha[y * width + x] >= 128 {
+                if x < minX { minX = x }
+                if x > maxX { maxX = x }
+                if y < minY { minY = y }
+                if y > maxY { maxY = y }
+            }
+        }
+        guard maxX >= minX, maxY >= minY else { return nil }
+        return CGRect(
+            x: CGFloat(minX), y: CGFloat(minY),
+            width: CGFloat(maxX - minX + 1), height: CGFloat(maxY - minY + 1)
+        )
     }
 
     private func make(_ files: [String], fps: Double, scale: CGFloat, flipX: Bool = false) -> Animation? {
