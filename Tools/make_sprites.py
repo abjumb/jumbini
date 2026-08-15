@@ -38,10 +38,11 @@ PAL = {
     "j": (150, 170, 185, 220),   # jar glass edge
     "U": (178, 170, 158, 255),   # rabbit toy plush fur (warm grey-tan)
     "u": (132, 124, 114, 255),   # rabbit toy fur shadow / floppy ear
+    "Y": (247, 205, 70, 255),    # party-hat yellow
     ".": (0, 0, 0, 0),           # transparent
 }
 
-LIGHTS = set("WwtTPpVU")  # colors that get a dark rim where they meet transparency
+LIGHTS = set("WwtTPpVUYR")  # colors that get a dark rim where they meet transparency
 
 
 class Grid:
@@ -393,6 +394,84 @@ def heart_frame():
     return g
 
 
+# ---------------------------------------------------------------- wardrobe
+# Placeholder accessories (single frame each). Drawn front-facing and roughly
+# symmetric; the app owns ALL positioning (anchor code in PetScene/Dog), so
+# nothing here bakes in an offset — real 48x48 art can swap in later.
+
+def partyhat_frame():
+    """Striped birthday cone with a pompom on top."""
+    g = Grid(12, 16)
+    for y in range(4, 16):                              # cone widens downward
+        hw = 0.6 + (y - 4) * 0.38
+        for x in range(int(round(5.5 - hw)), int(round(5.5 + hw)) + 1):
+            g.px(x, y, "Y" if ((x + y) // 3) % 2 == 0 else "R")
+    g.ellipse(5.5, 2, 1.8, 1.8, "V")                    # pompom
+    g.rim()
+    return g
+
+
+def tophat_frame():
+    """Black silk top hat with a red ribbon band."""
+    g = Grid(14, 14)
+    g.rect(3, 0, 10, 10, "K")                           # crown
+    g.rect(3, 0, 10, 0, "k")                            # silk sheen on top
+    g.rect(9, 1, 9, 7, "k")                             # side sheen
+    g.rect(3, 8, 10, 10, "R")                           # ribbon band
+    g.px(3, 9, "r"); g.px(10, 9, "r")
+    g.rect(1, 11, 12, 12, "K")                          # brim
+    g.px(0, 11, "k"); g.px(13, 11, "k")                 # upturned brim tips
+    g.rect(2, 12, 11, 12, "D")                          # brim underside
+    g.rim()
+    return g
+
+
+def cowboyhat_frame():
+    """Tan felt hat: dented crown, wide brim curled up at the edges."""
+    g = Grid(18, 10)
+    g.rect(6, 1, 11, 5, "T")                            # crown
+    g.px(7, 0, "T"); g.px(10, 0, "T")                   # dented top
+    g.rect(7, 1, 8, 3, "t")                             # felt highlight
+    g.rect(6, 6, 11, 6, "O")                            # hat band
+    g.rect(1, 7, 16, 8, "T")                            # wide brim
+    g.px(0, 6, "T"); g.px(17, 6, "T")                   # curled-up edges
+    g.px(0, 7, "T"); g.px(17, 7, "T")
+    g.rect(2, 7, 6, 7, "t")                             # brim sheen
+    g.rim()
+    return g
+
+
+def bandana_frame():
+    """Red neck kerchief: rolled band up top, polka-dot triangle hanging below."""
+    g = Grid(16, 10)
+    g.rect(1, 0, 14, 1, "R")                            # rolled band
+    g.px(0, 1, "R"); g.px(15, 1, "R")                   # band wrapping back
+    for y in range(2, 9):                               # hanging triangle
+        g.rect(y - 1, y, 15 - (y - 1), y, "R")
+    g.px(7, 9, "R"); g.px(8, 9, "R")                    # tip
+    for x, y in ((12, 3), (11, 4), (10, 5), (9, 6), (8, 7)):
+        g.px(x, y, "r")                                 # fold shading
+    for x, y in ((4, 3), (9, 3), (6, 5), (11, 2), (7, 7)):
+        g.px(x, y, "W")                                 # polka dots
+    g.rim()
+    return g
+
+
+def sunglasses_frame():
+    """Two dark lenses, browline bridge, temple arms out to the sides."""
+    g = Grid(16, 6)
+    g.rect(0, 0, 15, 0, "O")                            # browline + temple arms
+    g.rect(2, 0, 6, 4, "O")                             # left lens
+    g.rect(9, 0, 13, 4, "O")                            # right lens
+    for x in (2, 6, 9, 13):                             # rounded lens bottoms
+        g.px(x, 4, ".")
+    g.rect(7, 1, 8, 1, "O")                             # bridge
+    g.px(3, 1, "j"); g.px(10, 1, "j")                   # glass sheen
+    g.px(4, 2, "j"); g.px(11, 2, "j")
+    g.px(3, 2, "V"); g.px(10, 2, "V")                   # glint
+    return g
+
+
 # ---------------------------------------------------------------- output
 
 def to_rgba_rows(grids):
@@ -444,6 +523,11 @@ def main():
         "jar": [jar_frame()],
         "treat": [treat_frame()],
         "rabbit": [rabbit_frame()],
+        "wardrobe_partyhat": [partyhat_frame()],
+        "wardrobe_tophat": [tophat_frame()],
+        "wardrobe_cowboyhat": [cowboyhat_frame()],
+        "wardrobe_bandana": [bandana_frame()],
+        "wardrobe_sunglasses": [sunglasses_frame()],
     }
     if "--all" in sys.argv:
         sheets.update({
