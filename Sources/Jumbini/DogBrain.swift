@@ -203,6 +203,11 @@ final class DogBrain {
     private var barkReturn: DogState?
     /// When the last bark started — provocations inside `barkCooldown` are ignored.
     private var lastBark: TimeInterval?
+    /// Which system signal parked him in a rest state (nap, conserve lie,
+    /// DND sleep). Wake-up signals only act when their counterpart caused the
+    /// state — a nap or lie-down he chose on his own is never interrupted.
+    private enum RestReason { case userIdle, batteryLow, doNotDisturb }
+    private var restReason: RestReason?
 
     func handle(_ event: DogEvent, at now: TimeInterval) -> [DogEffect] {
         switch event {
@@ -229,7 +234,9 @@ final class DogBrain {
             return handleDropped(at: point, now: now)
         case .provoked:
             return handleProvoked(at: now)
-        case .system, .toyThrown, .tugStarted, .tugMoved, .tugEnded:
+        case .system(let signal):
+            return handleSystemSignal(signal, at: now)
+        case .toyThrown, .tugStarted, .tugMoved, .tugEnded:
             // Vocabulary landed ahead of behavior — feature branches wire these.
             return []
         }
@@ -308,7 +315,9 @@ final class DogBrain {
                 return [.play(.lie)]
             case .sleep:
                 state = .sleeping
-                deadline = now + random(in: tuning.sleepDuration)
+                // A DND-caused bedtime has no wake deadline — he sleeps
+                // until the humans lift the signal.
+                deadline = restReason == .doNotDisturb ? nil : now + random(in: tuning.sleepDuration)
                 return [.play(.sleep)]
             }
         case .chasingTreat:
@@ -323,6 +332,9 @@ final class DogBrain {
     private func handleCommand(_ command: DogCommand, at now: TimeInterval) -> [DogEffect] {
         // No commands while he's in your arms (matches petted/treatDropped).
         guard state != .carried else { return [] }
+        // An explicit command overrides any machine-caused rest: whatever he
+        // does next is user-caused, so wake-up signals must not act on it.
+        restReason = nil
         var effects: [DogEffect] = [.stopMoving] + interruptionCleanup()
         switch command {
         case .sit:
@@ -447,11 +459,101 @@ final class DogBrain {
         }
     }
 
+    // MARK: - System reactions (ambient machine status as a dog)
+
+    /// States mellow enough for machine news to matter. Anything with
+    /// momentum — chases, tricks, the arms, an armed throw — outranks the
+    /// machine; sleeping is special-cased by the wake-up signals only.
+    private var isCalm: Bool {
+        switch state {
+        case .idle, .wandering, .sitting, .lyingDown: return true
+        default: return false
+        }
+    }
+
+    private func handleSystemSignal(_ signal: SystemSignal, at now: TimeInterval) -> [DogEffect] {
+        switch signal {
+        case .buildFinished:
+            // Ship it! A brief party — celebrate overlays the current art.
+            guard isCalm else { return [] }
+            return [.stopMoving, .celebrate, .showHearts] + enterIdle(at: now)
+        case .idleBegan:
+            // Human's wandered off — nap time, same path as an autonomous nap.
+            guard isCalm else { return [] }
+            restReason = .userIdle
+            return [.stopMoving] + restfulSleep(at: now)
+        case .idleEnded:
+            return riseFromRest(ended: .userIdle, at: now)
+        case .fansUp:
+            // The machine's working hard; so should he.
+            guard isCalm else { return [] }
+            state = .zoomies
+            deadline = now + tuning.zoomiesDuration
+            return [.stopMoving, .play(.run), .startZoomies]
+        case .batteryLow:
+            // Conserve energy: lie down (in the bed when he has one).
+            guard isCalm else { return [] }
+            restReason = .batteryLow
+            return [.stopMoving] + restfulLie(at: now)
+        case .batteryNormal:
+            return riseFromRest(ended: .batteryLow, at: now)
+        case .dndOn:
+            // Do Not Disturb means exactly that: off to bed, no wake deadline.
+            guard isCalm else { return [] }
+            restReason = .doNotDisturb
+            return [.stopMoving] + restfulSleep(at: now)
+        case .dndOff:
+            return riseFromRest(ended: .doNotDisturb, at: now)
+        }
+    }
+
+    /// The existing sleep path (bed-aware), used by system-caused naps.
+    /// A DND sleep gets no wake deadline — it lasts until the signal lifts.
+    private func restfulSleep(at now: TimeInterval) -> [DogEffect] {
+        if let bed = bedPosition {
+            state = .goingToBed(.sleep)
+            deadline = nil
+            return [.play(.walk), .moveTo(bed, speed: tuning.walkSpeed)]
+        }
+        state = .sleeping
+        deadline = restReason == .doNotDisturb ? nil : now + random(in: tuning.sleepDuration)
+        return [.play(.sleep)]
+    }
+
+    /// The existing lie-down path (bed-aware), used by the battery conserve.
+    private func restfulLie(at now: TimeInterval) -> [DogEffect] {
+        if let bed = bedPosition {
+            state = .goingToBed(.lie)
+            deadline = nil
+            return [.play(.walk), .moveTo(bed, speed: tuning.walkSpeed)]
+        }
+        state = .lyingDown
+        deadline = now + tuning.lieTimeout
+        return [.play(.lie)]
+    }
+
+    /// A wake-up signal arrived: get up only if its counterpart put him
+    /// there. Covers the walk to bed too — the trip is cancelled mid-stride.
+    private func riseFromRest(ended reason: RestReason, at now: TimeInterval) -> [DogEffect] {
+        guard restReason == reason else { return [] }
+        switch state {
+        case .sleeping, .lyingDown:
+            return enterIdle(at: now)
+        case .goingToBed:
+            return [.stopMoving] + enterIdle(at: now)
+        default:
+            // The reason is stale only until something re-idles him;
+            // meanwhile he's busy with whatever interrupted the rest.
+            return []
+        }
+    }
+
     // MARK: - Transitions
 
     private func enterIdle(at now: TimeInterval) -> [DogEffect] {
         state = .idle
         deadline = now + random(in: tuning.idleDuration)
+        restReason = nil // every road back to idle ends a signal-caused rest
         return [.play(.idle)]
     }
 
