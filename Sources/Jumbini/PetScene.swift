@@ -250,9 +250,11 @@ final class PetScene: SKScene {
         item.zPosition = dog.hatZOffset
         // Facing away, glasses would float on the back of his head — hide
         // them; hats and the bandana still read and just tuck behind (-1).
-        item.isHidden = spec.isEyewear && dog.facing.isNorthish
+        // renderedFacing, not facing: the dangle/bark poses draw him facing
+        // somewhere his logical facing disagrees with.
+        item.isHidden = spec.isEyewear && dog.renderedFacing.isNorthish
         // Any lean in the art follows the facing (and cancels the parent flip).
-        let westish = dog.facing.unitVector.x < 0
+        let westish = dog.renderedFacing.unitVector.x < 0
         item.xScale = (westish ? -1 : 1) * parentFlip
     }
 
@@ -718,7 +720,11 @@ final class PetScene: SKScene {
         addChild(pile)
         piles.append(pile)
         if piles.count > Self.maxPiles {
-            let oldest = piles.removeFirst()
+            // Never evict the pile the user is currently dragging — it would
+            // vanish out of their hand mid-gesture and leave mouseUp holding
+            // an orphaned node. Retire the oldest one they aren't holding.
+            guard let index = piles.firstIndex(where: { $0 !== draggedPile }) else { return }
+            let oldest = piles.remove(at: index)
             oldest.run(.sequence([.fadeOut(withDuration: 0.4), .removeFromParent()]))
         }
     }
