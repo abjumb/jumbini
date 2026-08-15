@@ -237,6 +237,9 @@ final class PetScene: SKScene {
                 sniffingClose = false
             case .removeTreat:
                 removeGroundTreat()
+            case .playSound, .leaveDeposit, .nudgeCursor,
+                 .pickUpToy, .dropToy, .removeToy, .startTug, .stopTug:
+                break // vocabulary stubs — wired by feature branches
             }
         }
     }
