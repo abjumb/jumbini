@@ -6,7 +6,6 @@ telling off the Dock. Quiet by design; he lives on your desktop all day.
 
 Outputs 16-bit mono WAVs into Sources/Jumbini/Resources/audio/.
 """
-import math
 import os
 import struct
 import wave
