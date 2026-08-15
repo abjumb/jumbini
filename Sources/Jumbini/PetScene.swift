@@ -1428,9 +1428,12 @@ final class PetScene: SKScene {
         guard let choice = sender.representedObject as? ToyChoice else { return }
         switch choice.kind {
         case .frisbee:
-            // Arms the throw: the next left-click anywhere sails the disc there.
-            armedToy = .frisbee
+            // Arms the throw: the next left-click anywhere sails the disc
+            // there. Only remember the kind if he actually took the toy —
+            // he ignores commands while he's in your arms, and a stale
+            // armedToy would turn the NEXT plain fetch into a frisbee.
             send(.command(.toy(.frisbee)))
+            armedToy = brain.state == .awaitingThrow ? .frisbee : nil
         case .squeaky:
             // No aiming — it just goes somewhere near him and he goes after it.
             tossSqueaky()
