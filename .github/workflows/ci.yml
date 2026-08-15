@@ -1,0 +1,57 @@
+name: CI
+
+# Jumbini is macOS-only — AppKit and SpriteKit throughout — so there is no
+# useful build to run anywhere else. This exists because the package went a
+# long stretch with no CI at all, which meant nothing caught a compile error
+# until someone happened to build on a Mac.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A new push supersedes the run in flight for the same ref.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    # `macos-latest` rather than a pinned image: the package only needs
+    # macOS 14+ to build for, and nothing here is sensitive to which host
+    # version compiles it, so tracking GitHub's default avoids the workflow
+    # rotting when an image is retired.
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Printed unconditionally: when a build breaks after a runner image
+      # rolls forward, the toolchain version is the first thing worth seeing.
+      - name: Toolchain
+        run: |
+          swift --version
+          xcodebuild -version
+
+      - name: Build
+        run: swift build
+
+      # Deliberately `swift test` and not `Scripts/test.sh`. That script
+      # exists for developers on Command Line Tools *without* Xcode, where
+      # Swift Testing needs an explicit macro plugin path and two rpaths into
+      # /Library/Developer/CommandLineTools. Runners have full Xcode, where
+      # those flags are unnecessary and point at a toolchain that isn't the
+      # one compiling. Contributors should keep using the script locally.
+      - name: Test
+        run: swift test
+
+      # The ship path: a release build, the .app assembled around it, the
+      # SwiftPM resource bundle copied in. Catches breakage that a debug
+      # build and the test suite both miss — a resource declaration that
+      # doesn't survive `-c release`, or an Info.plist that stops matching.
+      - name: Bundle the app
+        run: ./Scripts/bundle.sh
