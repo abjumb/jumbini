@@ -11,6 +11,8 @@ final class Dog: SKSpriteNode {
 
     private(set) var facing: Facing = .south
     private var lastRequested: DogAnimation = .idle
+    /// What's actually on screen — `lastRequested` unless a flourish is over it.
+    private var current: DogAnimation = .idle
     private var celebrating = false
 
     /// Tint fallback per animation if a sprite file is missing.
@@ -51,15 +53,17 @@ final class Dog: SKSpriteNode {
 
     /// The direction the art on screen ACTUALLY faces, which is not always the
     /// logical `facing`: the dangle pose always draws `sit_south`, and the
-    /// bark/happy art only exists facing east (mirrored for westish facings).
-    /// Wardrobe placement keys off this, so sunglasses don't vanish while he's
-    /// dangling from the cursor looking straight at you.
+    /// legacy bark/happy art only exists facing east (mirrored for westish
+    /// facings). Wardrobe placement keys off this, so sunglasses don't vanish
+    /// while he's dangling from the cursor looking straight at you.
     var renderedFacing: Facing {
         switch lastRequested {
         case .dangle:
             return .south
         case .happy, .bark:
-            // Matches SpriteLibrary's mirror rule for the east-only bark art.
+            // The 8-rotation barking art draws him where he's looking. Only the
+            // old east-only strip needs SpriteLibrary's mirror rule mirrored here.
+            guard !SpriteLibrary.shared.hasDirectionalBark else { return facing }
             return facing.unitVector.x < 0 ? .west : .east
         default:
             return facing
@@ -73,6 +77,11 @@ final class Dog: SKSpriteNode {
         guard !celebrating else { return } // applied when the celebration ends
         apply(animation)
     }
+
+    /// Re-render the pose he's already in. The art files behind an animation
+    /// can change under him (a coat swap), and the textures only reach the
+    /// screen when something asks for them again.
+    func refreshAnimation() { apply(current) }
 
     /// One-shot happy flourish that overlays the current animation briefly.
     func celebrate() { flourish(.happy, duration: 0.9) }
@@ -98,6 +107,7 @@ final class Dog: SKSpriteNode {
     }
 
     private func apply(_ animation: DogAnimation) {
+        current = animation
         removeAction(forKey: "anim")
         if let anim = SpriteLibrary.shared.animation(for: animation, facing: facing) {
             size = anim.nodeSize
