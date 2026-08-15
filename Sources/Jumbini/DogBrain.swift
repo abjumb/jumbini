@@ -1267,6 +1267,13 @@ final class DogBrain {
         for surface in surfaces {
             let rise = (surface.topY + footOffset) - position.y
             guard rise > 0, rise <= tuning.perchReach else { continue }
+            // A window can straddle a dead zone on an uneven multi-display
+            // desk — half of its title bar over a display and half over
+            // nothing. Climbing onto the half that is nowhere is climbing out
+            // of sight. The ledge point itself is tested, not where his head
+            // ends up, which is legitimately above the top of a display when
+            // he stands on a window near the top of one.
+            guard isRoamable(CGPoint(x: perchLanding(on: surface).x, y: surface.topY)) else { continue }
             let approach = approachPoint(for: surface)
             let distance = hypot(approach.x - position.x, approach.y - position.y)
             guard distance <= tuning.perchSearchRadius else { continue }

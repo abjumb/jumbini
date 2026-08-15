@@ -2591,20 +2591,59 @@ private func isSomewhereReal(_ point: CGPoint, _ rects: [CGRect] = lShapedWorld)
     }
 }
 
-@Test func thePerchApproachStaysOutOfTheDeadZone() {
-    // A window whose left edge is out in the dead zone: he must not walk to a
-    // patch of nothing to look up at it.
+@Test func aWindowWhoseNearEndHangsInTheDeadZoneIsNotClimbed() {
+    // A window straddling the boundary: its left half is over the tall display
+    // and its right half is in the void above the short one. Standing at the
+    // right-hand end, the end he'd jump to is the one that isn't there.
     let brain = makeBrain { $0.perchChance = 1.0 }
     brain.roamableRects = lShapedWorld
-    brain.position = CGPoint(x: 380, y: 480)
+    brain.position = CGPoint(x: 700, y: 250)
     brain.footOffset = 20
     brain.surfaces = [Surface(
-        id: 1, rect: CGRect(x: 500, y: 400, width: 260, height: 180), title: "Notes", ownerPID: 900
+        id: 1, rect: CGRect(x: 300, y: 200, width: 480, height: 180), title: "Notes", ownerPID: 900
+    )]
+    _ = brain.handle(.tick, at: 0)
+    _ = brain.handle(.tick, at: 3.1)
+    #expect(brain.state == .wandering, "no climbable window, so the roll becomes an ordinary wander")
+
+    // From the other side the same window's left end is over real screen, and
+    // up he goes.
+    let fromTheLeft = makeBrain { $0.perchChance = 1.0 }
+    fromTheLeft.roamableRects = lShapedWorld
+    fromTheLeft.position = CGPoint(x: 320, y: 250)
+    fromTheLeft.footOffset = 20
+    fromTheLeft.surfaces = brain.surfaces
+    _ = fromTheLeft.handle(.tick, at: 0)
+    _ = fromTheLeft.handle(.tick, at: 3.1)
+    #expect(fromTheLeft.state == .headingToSurface(surfaceID: 1))
+}
+
+@Test func thePerchApproachStaysOutOfTheDeadZone() {
+    // The mirror image of the L: a full-height display on the left and a
+    // TOP-aligned short one on the right, so the void is at floor level on the
+    // right-hand side. He stands on the left display, low down; the window he
+    // fancies is up on the right display, and the patch of floor directly
+    // below its near edge does not exist. He must walk to the edge of his own
+    // display instead of into the hole.
+    let steppedWorld = [
+        CGRect(x: 0, y: 0, width: 400, height: 600),
+        CGRect(x: 400, y: 300, width: 400, height: 300),
+    ]
+    let brain = makeBrain { $0.perchChance = 1.0 }
+    brain.roamableRects = steppedWorld
+    brain.position = CGPoint(x: 380, y: 100)
+    brain.footOffset = 20
+    brain.surfaces = [Surface(
+        id: 1, rect: CGRect(x: 450, y: 200, width: 300, height: 180), title: "Notes", ownerPID: 900
     )]
     _ = brain.handle(.tick, at: 0)
     let effects = brain.handle(.tick, at: 3.1)
-    #expect(brain.state == .headingToSurface(surfaceID: 1))
-    if let target = moveTarget(in: effects)?.point {
-        #expect(isSomewhereReal(target), "approached the window from the void at \(target)")
+    #expect(brain.state == .headingToSurface(surfaceID: 1), "the ledge itself is over a real display")
+    let target = moveTarget(in: effects)?.point
+    #expect(target != nil)
+    if let target {
+        #expect(isSomewhereReal(target, steppedWorld),
+                "approached the window from the void at \(target)")
+        #expect(target == CGPoint(x: 400, y: 100), "stopped at the edge of his own display")
     }
 }

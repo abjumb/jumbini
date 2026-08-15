@@ -1880,9 +1880,14 @@ final class PetScene: SKScene {
     /// branches; noted as future work.
     private func flashCamFeedback() {
         guard let view, !view.isPaused, !isPaused else { return }
-        let flash = SKSpriteNode(color: .white, size: size)
+        // Only the display he's standing on. The scene spans the whole desk,
+        // and whiting out three monitors to photograph one dog is a jump
+        // scare, not feedback.
+        let area = layout.sceneFrame(containing: dog.position)
+            ?? CGRect(origin: .zero, size: size)
+        let flash = SKSpriteNode(color: .white, size: area.size)
         flash.anchorPoint = .zero
-        flash.position = .zero
+        flash.position = area.origin
         flash.zPosition = 1_000 // above the dog (10), hearts (20), everything
         flash.alpha = 0
         addChild(flash)
