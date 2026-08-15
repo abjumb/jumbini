@@ -118,8 +118,12 @@ final class PetScene: SKScene {
         // look the way it always did — bed and treat box by the Dock.
         // Before anything asks for dog art: the coat decides which files that
         // resolves to, and the first pose is played at the end of this method.
+        // A coat whose folder has since been deleted simply isn't in the
+        // catalog, so this leaves the classic art in place. Silently: the user
+        // threw the folder away, and a dialog at launch would be telling them
+        // something they already know.
         if let stored = UserDefaults.standard.string(forKey: Self.coatKey),
-           let coat = Coat(rawValue: stored) {
+           let coat = availableCoats().first(where: { $0.id == stored }) {
             SpriteLibrary.shared.coat = coat
         }
         let home = layout.primarySceneFrame
@@ -403,27 +407,43 @@ final class PetScene: SKScene {
 
     private static let coatKey = "coat"
 
+    /// The bundled coats plus whatever is installed in Application Support.
+    ///
+    /// Rescanned each time rather than cached at launch, so dropping a coat
+    /// folder in and opening the menu is enough to see it — installing art is
+    /// a file drop, and requiring a relaunch to notice would be a poor trade
+    /// for one directory listing on a menu open.
+    private func availableCoats() -> [Coat] {
+        CoatCatalog.available(coatsDirectory: CoatCatalog.defaultCoatsDirectory())
+    }
+
     /// Swap which set of dog art SpriteLibrary resolves. The texture cache is
-    /// keyed by filename so there's nothing to evict, but the dog is holding
-    /// textures from the old coat — he has to be told to re-render, and the
-    /// worn item re-seated in case the new pose art is a different size.
+    /// keyed by coat and filename so there's nothing to evict, but the dog is
+    /// holding textures from the old coat — he has to be told to re-render,
+    /// and the worn item re-seated in case the new pose art is a different
+    /// size. Both are immediate, which is what makes going back to Jumba a
+    /// single click with no relaunch.
     private func applyCoat(_ coat: Coat) {
         SpriteLibrary.shared.coat = coat
-        UserDefaults.standard.set(coat.rawValue, forKey: Self.coatKey)
+        UserDefaults.standard.set(coat.id, forKey: Self.coatKey)
         dog.refreshAnimation()
         reseatWornItem()
     }
 
     private func coatSelectionMenu() -> NSMenu {
         let menu = NSMenu()
-        for coat in Coat.allCases {
+        for coat in availableCoats() {
             let item = NSMenuItem(title: coat.title, action: #selector(coatChosen(_:)), keyEquivalent: "")
             item.target = self
-            item.representedObject = coat.rawValue
+            item.representedObject = coat.id
             item.state = SpriteLibrary.shared.coat == coat ? .on : .off
-            if let url = Bundle.module.url(
-                forResource: "\(coat.filePrefix)idle_south", withExtension: "png", subdirectory: "jumba"
-            ), let image = NSImage(contentsOf: url) {
+            // Every coat is required to have an `idle_south`, so each row gets
+            // a thumbnail of the dog it actually installs.
+            let url = coat.fileURL(named: "idle_south")
+                ?? Bundle.module.url(
+                    forResource: "\(coat.prefix)idle_south", withExtension: "png", subdirectory: "jumba"
+                )
+            if let url, let image = NSImage(contentsOf: url) {
                 let height: CGFloat = 30
                 image.size = NSSize(width: image.size.width / image.size.height * height, height: height)
                 item.image = image
@@ -434,7 +454,9 @@ final class PetScene: SKScene {
     }
 
     @objc private func coatChosen(_ sender: NSMenuItem) {
-        guard let raw = sender.representedObject as? String, let coat = Coat(rawValue: raw) else { return }
+        guard let id = sender.representedObject as? String,
+              let coat = availableCoats().first(where: { $0.id == id })
+        else { return }
         applyCoat(coat)
     }
 

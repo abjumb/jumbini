@@ -52,24 +52,6 @@ enum Facing: CaseIterable {
     }
 }
 
-/// Which coat Jumba is wearing. The raw value is the sprite-file prefix the
-/// importer writes (classic art is unprefixed) and the value persisted under
-/// the "coat" default.
-enum Coat: String, CaseIterable {
-    case classic
-    case shaggy
-
-    var title: String {
-        switch self {
-        case .classic: "Classic"
-        case .shaggy: "Shaggy"
-        }
-    }
-
-    /// Prefix applied to every sprite name in this coat, "" for classic.
-    var filePrefix: String { self == .classic ? "" : "\(rawValue)_" }
-}
-
 /// Loads Jumba's hand-made 8-directional sprites (imported by Tools/import_jumba.py)
 /// plus the generated props (ball, heart). Nearest-neighbor keeps pixels crisp.
 final class SpriteLibrary {
@@ -77,20 +59,24 @@ final class SpriteLibrary {
 
     /// The active coat. Every dog animation is resolved through this first and
     /// falls back to the classic art when the coat can't cover a pose. Nothing
-    /// to invalidate on a change: `textureCache` is keyed by the full filename,
-    /// so the two coats simply occupy different keys. The scene still has to
+    /// to invalidate on a change: `textureCache` is keyed by coat id *and*
+    /// filename, so coats simply occupy different keys. The scene still has to
     /// re-`play` the current animation to put the new textures on screen.
+    ///
+    /// The id has to be part of the cache key now that coats can bring their
+    /// own folders: two installed coats both hold an `idle_south`, and keying
+    /// on the filename alone would serve the first one's art to the second.
     var coat: Coat = .classic
 
-    /// Poses the shaggy art doesn't include, and what it borrows instead.
-    /// The kit ships one shaggy sprint pose where classic has two, so the
-    /// second run frame uses the shaggy pounce (legs gathered, body compressed)
-    /// — together they read as a gallop. Letting run2 fall through to the
-    /// classic art instead would swap his coat on every other frame at 13fps,
-    /// and dropping the whole run cycle to classic would un-shag him for most
-    /// of his waking life.
-    private static let coatSubstitutes: [Coat: [String: String]] = [
-        .shaggy: ["run2": "pounce"],
+    /// Poses a coat doesn't include, and what it borrows instead, keyed by
+    /// coat id. The kit ships one shaggy sprint pose where classic has two, so
+    /// the second run frame uses the shaggy pounce (legs gathered, body
+    /// compressed) — together they read as a gallop. Letting run2 fall through
+    /// to the classic art instead would swap his coat on every other frame at
+    /// 13fps, and dropping the whole run cycle to classic would un-shag him for
+    /// most of his waking life.
+    private static let coatSubstitutes: [String: [String: String]] = [
+        Coat.shaggy.id: ["run2": "pounce"],
     ]
 
     struct Animation {
@@ -191,8 +177,13 @@ final class SpriteLibrary {
 
     /// True once the 8-rotation barking art is present. `Dog.renderedFacing`
     /// asks, so wardrobe placement stops pretending he's facing east.
+    /// Asked of the active coat first, then classic — the same order `make`
+    /// resolves in, so a coat that draws its own bark set answers for itself
+    /// and one that doesn't inherits classic's answer.
     var hasDirectionalBark: Bool {
-        texture(named: "bark_\(Facing.south.fileSuffix)") != nil
+        let name = "bark_\(Facing.south.fileSuffix)"
+        return texture(named: coated(name), in: coat) != nil
+            || texture(named: name, in: .classic) != nil
     }
 
     /// The bark cycle: the open-mouthed bark pose alternating with the
@@ -384,23 +375,37 @@ final class SpriteLibrary {
 
     private func make(_ files: [String], fps: Double, scale: CGFloat, flipX: Bool = false) -> Animation? {
         if coat != .classic,
-           let themed = build(files.map { coated($0) }, fps: fps, scale: scale, flipX: flipX) {
+           let themed = build(files.map { coated($0) }, fps: fps,
+                              scale: coat.scales[Self.state(of: files)] ?? scale,
+                              flipX: flipX, in: coat) {
             return themed
         }
-        return build(files, fps: fps, scale: scale, flipX: flipX)
+        return build(files, fps: fps, scale: scale, flipX: flipX, in: .classic)
+    }
+
+    /// The state a set of frames belongs to, for looking up a coat's scale
+    /// override. Taken from the first frame: the only multi-state cycle is the
+    /// yap (bark alternating with idle), whose two poses are drawn on the same
+    /// canvas, so either answer picks the same scale.
+    private static func state(of files: [String]) -> String {
+        String(files.first?.prefix { $0 != "_" } ?? "")
     }
 
     /// `"run1_north-east"` in the shaggy coat -> `"shaggy_run1_north-east"`.
     /// The state is everything before the first underscore; the direction (or
-    /// the legacy bark frame index) rides along untouched.
+    /// the legacy bark frame index) rides along untouched. An installed coat
+    /// has its own folder and so an empty prefix — for those this only applies
+    /// the substitute map, and usually returns the name unchanged.
     private func coated(_ file: String) -> String {
         let state = file.prefix { $0 != "_" }
-        let substituted = Self.coatSubstitutes[coat]?[String(state)] ?? String(state)
-        return coat.filePrefix + substituted + file.dropFirst(state.count)
+        let substituted = Self.coatSubstitutes[coat.id]?[String(state)] ?? String(state)
+        return coat.prefix + substituted + file.dropFirst(state.count)
     }
 
-    private func build(_ files: [String], fps: Double, scale: CGFloat, flipX: Bool) -> Animation? {
-        let textures = files.compactMap(texture(named:))
+    private func build(
+        _ files: [String], fps: Double, scale: CGFloat, flipX: Bool, in coat: Coat
+    ) -> Animation? {
+        let textures = files.compactMap { texture(named: $0, in: coat) }
         guard textures.count == files.count, let first = textures.first else { return nil }
         return Animation(
             textures: textures,
@@ -410,16 +415,23 @@ final class SpriteLibrary {
         )
     }
 
-    private func texture(named name: String) -> SKTexture? {
-        if let cached = textureCache[name] { return cached }
+    /// Resolve one sprite in one coat: the coat's own folder if it has one,
+    /// the bundled `jumba/` otherwise. A coat that is missing the file simply
+    /// returns nil, which `build` turns into "this coat can't do this
+    /// animation" and `make` answers with the classic art.
+    private func texture(named name: String, in coat: Coat) -> SKTexture? {
+        let key = "\(coat.id)/\(name)"
+        if let cached = textureCache[key] { return cached }
+        let url = coat.fileURL(named: name)
+            ?? Bundle.module.url(forResource: name, withExtension: "png", subdirectory: "jumba")
         guard
-            let url = Bundle.module.url(forResource: name, withExtension: "png", subdirectory: "jumba"),
+            let url,
             let image = NSImage(contentsOf: url),
             let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
         else { return nil }
         let texture = SKTexture(cgImage: cg)
         texture.filteringMode = .nearest
-        textureCache[name] = texture
+        textureCache[key] = texture
         return texture
     }
 }

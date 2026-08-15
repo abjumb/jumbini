@@ -209,6 +209,17 @@ for west-facing poses. It lives in `Sources/Jumbini/Resources/jumba/` as
 python3 Tools/import_jumba.py /path/to/export
 ```
 
+### Drawing your own dog
+
+The app can load dog art from a folder instead of the bundle, so you can put your own
+dog on the desktop without touching the source. Drop a folder of sprites into
+`~/Library/Application Support/Jumbini/coats/` and it shows up in the **Coat** menu;
+pick **Classic** to get Jumba back in one click. The format — filenames, the 17 states,
+the manifest — is documented in [COATS.md](COATS.md).
+
+Nothing about this involves generation. The app reads PNGs off disk; how they were drawn
+is up to you, and it still makes no network calls.
+
 `import_jumba.py` takes AI-export folders shaped like `<state>/rotations/<direction>.png`,
 strips the baked-in white background with a border flood fill (the dark outline protects
 interior whites like his chest blaze and socks), and flattens everything into the resource
