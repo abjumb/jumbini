@@ -1162,3 +1162,380 @@ func trickCommandPerformsItsAnimation(trick: Trick) {
     #expect(effects == [])
     #expect(brain.state == .idle)
 }
+
+// MARK: - System reactions (he reacts to your machine)
+
+/// Every system signal, for the "ignored wholesale" tests.
+private let allSystemSignals: [SystemSignal] = [
+    .buildFinished, .idleBegan, .idleEnded, .fansUp,
+    .batteryLow, .batteryNormal, .dndOn, .dndOff,
+]
+
+/// Drive a fresh brain into a self-chosen (autonomous) nap at t = 3.1.
+private func makeNaturallySleepingBrain() -> DogBrain {
+    let brain = makeBrain { $0.sleepChance = 1.0; $0.sleepDuration = 10...10 }
+    _ = brain.handle(.tick, at: 0)
+    _ = brain.handle(.tick, at: 3.1)
+    precondition(brain.state == .sleeping)
+    return brain
+}
+
+// buildFinished → a brief party.
+
+@Test func buildFinishedThrowsAPartyWhileIdle() {
+    let brain = makeBrain()
+    let effects = brain.handle(.system(.buildFinished), at: 1)
+    #expect(brain.state == .idle)
+    #expect(effects == [.stopMoving, .celebrate, .showHearts, .play(.idle)])
+}
+
+@Test func buildFinishedInterruptsWandering() {
+    let brain = makeBrain()
+    _ = brain.handle(.tick, at: 0)
+    _ = brain.handle(.tick, at: 3.1)
+    #expect(brain.state == .wandering)
+
+    let effects = brain.handle(.system(.buildFinished), at: 4)
+    #expect(brain.state == .idle)
+    #expect(effects.contains(.stopMoving), "the in-flight wander walk must be cancelled")
+    #expect(effects.contains(.celebrate))
+    #expect(effects.contains(.showHearts))
+}
+
+@Test func buildFinishedIgnoredWhileEating() {
+    let brain = makeBrain()
+    _ = brain.handle(.treatDropped(at: CGPoint(x: 640, y: 200)), at: 0)
+    _ = brain.handle(.arrived, at: 1)
+    #expect(brain.state == .eating)
+    let effects = brain.handle(.system(.buildFinished), at: 1.5)
+    #expect(effects == [])
+    #expect(brain.state == .eating)
+}
+
+@Test func buildFinishedIgnoredWhileSleeping() {
+    let brain = makeNaturallySleepingBrain()
+    let effects = brain.handle(.system(.buildFinished), at: 4)
+    #expect(effects == [], "no party wakes a sleeping dog")
+    #expect(brain.state == .sleeping)
+}
+
+@Test func buildFinishedIgnoredDuringFetchChase() {
+    let brain = makeBrain()
+    _ = brain.handle(.command(.fetch), at: 0)
+    _ = brain.handle(.ballThrown(landing: CGPoint(x: 700, y: 100), origin: CGPoint(x: 400, y: 300)), at: 1)
+    #expect(brain.state == .chasingBall)
+    let effects = brain.handle(.system(.buildFinished), at: 2)
+    #expect(effects == [])
+    #expect(brain.state == .chasingBall)
+}
+
+// idleBegan / idleEnded → nap while you're away, up when you're back.
+
+@Test func idleBeganNapsOnTheSpotWithoutBed() {
+    let brain = makeBrain { $0.sleepDuration = 10...10 }
+    let effects = brain.handle(.system(.idleBegan), at: 5)
+    #expect(brain.state == .sleeping)
+    #expect(effects.contains(.stopMoving))
+    #expect(effects.contains(.play(.sleep)))
+
+    // An idle nap uses the normal sleep duration — he can wake on his own.
+    #expect(brain.handle(.tick, at: 14.9) == [])
+    _ = brain.handle(.tick, at: 15.1)
+    #expect(brain.state == .idle)
+}
+
+@Test func idleBeganRoutesNapThroughBed() {
+    let brain = makeBrain { $0.sleepDuration = 10...10 }
+    let bed = CGPoint(x: 700, y: 500)
+    brain.bedPosition = bed
+
+    let effects = brain.handle(.system(.idleBegan), at: 5)
+    #expect(brain.state == .goingToBed(.sleep))
+    #expect(effects.contains(.play(.walk)))
+    #expect(moveTarget(in: effects)?.point == bed)
+    #expect(moveTarget(in: effects)?.speed == brain.tuning.walkSpeed)
+
+    let arrived = brain.handle(.arrived, at: 7)
+    #expect(brain.state == .sleeping)
+    #expect(arrived.contains(.play(.sleep)))
+
+    // Still a normal-length nap, not the indefinite DND kind.
+    _ = brain.handle(.tick, at: 17.2)
+    #expect(brain.state == .idle)
+}
+
+@Test func idleEndedWakesAnIdleNap() {
+    let brain = makeBrain { $0.sleepDuration = 100...100 }
+    _ = brain.handle(.system(.idleBegan), at: 5)
+    #expect(brain.state == .sleeping)
+
+    let effects = brain.handle(.system(.idleEnded), at: 10)
+    #expect(brain.state == .idle)
+    #expect(effects.contains(.play(.idle)))
+}
+
+@Test func idleEndedCancelsWalkToBedForIdleNap() {
+    let brain = makeBrain()
+    brain.bedPosition = CGPoint(x: 700, y: 500)
+    _ = brain.handle(.system(.idleBegan), at: 5)
+    #expect(brain.state == .goingToBed(.sleep))
+
+    let effects = brain.handle(.system(.idleEnded), at: 6)
+    #expect(brain.state == .idle)
+    #expect(effects.contains(.stopMoving), "the in-flight walk to bed must be cancelled")
+    #expect(effects.contains(.play(.idle)))
+}
+
+@Test func idleEndedDoesNotWakeSelfChosenNap() {
+    let brain = makeNaturallySleepingBrain()
+    let effects = brain.handle(.system(.idleEnded), at: 4)
+    #expect(effects == [], "a nap he chose on his own is not interrupted")
+    #expect(brain.state == .sleeping)
+}
+
+@Test func idleEndedIgnoredWhenNotSleeping() {
+    let brain = makeBrain()
+    _ = brain.handle(.command(.sit), at: 0)
+    let effects = brain.handle(.system(.idleEnded), at: 1)
+    #expect(effects == [])
+    #expect(brain.state == .sitting)
+}
+
+@Test func idleBeganIgnoredWhileAwaitingThrow() {
+    let brain = makeBrain()
+    _ = brain.handle(.command(.fetch), at: 0)
+    #expect(brain.state == .awaitingThrow)
+    let effects = brain.handle(.system(.idleBegan), at: 1)
+    #expect(effects == [], "no nap, and definitely no accidental disarm")
+    #expect(brain.state == .awaitingThrow)
+}
+
+// fansUp → zoomies.
+
+@Test func fansUpStartsZoomies() {
+    let brain = makeBrain { $0.zoomiesDuration = 10 }
+    let effects = brain.handle(.system(.fansUp), at: 1)
+    #expect(brain.state == .zoomies)
+    #expect(effects.contains(.play(.run)))
+    #expect(effects.contains(.startZoomies))
+
+    #expect(brain.handle(.tick, at: 10.9) == [])
+    let done = brain.handle(.tick, at: 11.1)
+    #expect(brain.state == .idle)
+    #expect(done.contains(.stopZoomies))
+}
+
+@Test func fansUpIgnoredDuringZoomies() {
+    let brain = makeBrain { $0.zoomiesDuration = 10 }
+    _ = brain.handle(.command(.zoomies), at: 0)
+    let effects = brain.handle(.system(.fansUp), at: 1)
+    #expect(effects == [], "already zooming — no restart, no deadline extension")
+    #expect(brain.state == .zoomies)
+    _ = brain.handle(.tick, at: 10.1)
+    #expect(brain.state == .idle, "original zoomies deadline still stands")
+}
+
+@Test func fansUpIgnoredWhileBeingPetted() {
+    let brain = makeBrain()
+    _ = brain.handle(.petted, at: 0)
+    let effects = brain.handle(.system(.fansUp), at: 0.5)
+    #expect(effects == [])
+    #expect(brain.state == .beingPetted)
+}
+
+// batteryLow / batteryNormal → conserve energy lying down.
+
+@Test func batteryLowLiesDownOnTheSpotWithoutBed() {
+    let brain = makeBrain { $0.lieTimeout = 90 }
+    let effects = brain.handle(.system(.batteryLow), at: 1)
+    #expect(brain.state == .lyingDown)
+    #expect(effects.contains(.stopMoving))
+    #expect(effects.contains(.play(.lie)))
+
+    // Even without a batteryNormal he eventually gets up, like any lie-down.
+    _ = brain.handle(.tick, at: 91.2)
+    #expect(brain.state == .idle)
+}
+
+@Test func batteryLowRoutesThroughBed() {
+    let brain = makeBrain()
+    let bed = CGPoint(x: 120, y: 80)
+    brain.bedPosition = bed
+
+    let effects = brain.handle(.system(.batteryLow), at: 1)
+    #expect(brain.state == .goingToBed(.lie))
+    #expect(effects.contains(.play(.walk)))
+    #expect(moveTarget(in: effects)?.point == bed)
+
+    let arrived = brain.handle(.arrived, at: 3)
+    #expect(brain.state == .lyingDown)
+    #expect(arrived.contains(.play(.lie)))
+}
+
+@Test func batteryLowIgnoredDuringTrick() {
+    let brain = makeBrain()
+    _ = brain.handle(.command(.trick(.playDead)), at: 0)
+    let effects = brain.handle(.system(.batteryLow), at: 0.5)
+    #expect(effects == [])
+    #expect(brain.state == .performingTrick(.playDead))
+}
+
+@Test func batteryNormalRaisesABatteryLie() {
+    let brain = makeBrain()
+    _ = brain.handle(.system(.batteryLow), at: 1)
+    #expect(brain.state == .lyingDown)
+
+    let effects = brain.handle(.system(.batteryNormal), at: 10)
+    #expect(brain.state == .idle)
+    #expect(effects.contains(.play(.idle)))
+}
+
+@Test func batteryNormalLeavesACommandedLieAlone() {
+    let brain = makeBrain()
+    _ = brain.handle(.command(.lieDown), at: 0)
+    #expect(brain.state == .lyingDown)
+    let effects = brain.handle(.system(.batteryNormal), at: 1)
+    #expect(effects == [], "he's lying because you asked, not because of the battery")
+    #expect(brain.state == .lyingDown)
+}
+
+@Test func batteryNormalCancelsWalkToBedForBatteryLie() {
+    let brain = makeBrain()
+    brain.bedPosition = CGPoint(x: 120, y: 80)
+    _ = brain.handle(.system(.batteryLow), at: 1)
+    #expect(brain.state == .goingToBed(.lie))
+
+    let effects = brain.handle(.system(.batteryNormal), at: 2)
+    #expect(brain.state == .idle)
+    #expect(effects.contains(.stopMoving))
+}
+
+@Test func batteryNormalAfterCommandsReplacedBatteryLieDoesNothing() {
+    // battery lie → user commands sit, then lieDown: the lie is now
+    // user-caused, so batteryNormal must not raise him.
+    let brain = makeBrain()
+    _ = brain.handle(.system(.batteryLow), at: 1)
+    _ = brain.handle(.command(.sit), at: 2)
+    _ = brain.handle(.command(.lieDown), at: 3)
+    #expect(brain.state == .lyingDown)
+
+    let effects = brain.handle(.system(.batteryNormal), at: 4)
+    #expect(effects == [])
+    #expect(brain.state == .lyingDown)
+}
+
+@Test func barkDuringBatteryLieResumesLyingAndBatteryNormalStillRaisesHim() {
+    // A bark round-trip returns him to the battery lie without erasing why
+    // he's lying there.
+    let brain = makeBrain { $0.barkDuration = 1.2 }
+    _ = brain.handle(.system(.batteryLow), at: 1)
+    _ = brain.handle(.provoked(at: .zero), at: 2)
+    #expect(brain.state == .barking)
+    _ = brain.handle(.tick, at: 3.3)
+    #expect(brain.state == .lyingDown)
+
+    let effects = brain.handle(.system(.batteryNormal), at: 5)
+    #expect(brain.state == .idle)
+    #expect(effects.contains(.play(.idle)))
+}
+
+// dndOn / dndOff → lights out until the humans say otherwise.
+
+@Test func dndOnSleepsIndefinitelyWithoutBed() {
+    let brain = makeBrain { $0.sleepDuration = 10...10 }
+    let effects = brain.handle(.system(.dndOn), at: 1)
+    #expect(brain.state == .sleeping)
+    #expect(effects.contains(.stopMoving))
+    #expect(effects.contains(.play(.sleep)))
+
+    // No wake deadline: still out cold ages later.
+    #expect(brain.handle(.tick, at: 10_000) == [])
+    #expect(brain.state == .sleeping)
+}
+
+@Test func dndOnRoutesThroughBedAndSleepsUntilLifted() {
+    let brain = makeBrain { $0.sleepDuration = 10...10 }
+    let bed = CGPoint(x: 700, y: 500)
+    brain.bedPosition = bed
+
+    let effects = brain.handle(.system(.dndOn), at: 1)
+    #expect(brain.state == .goingToBed(.sleep))
+    #expect(moveTarget(in: effects)?.point == bed)
+
+    let arrived = brain.handle(.arrived, at: 3)
+    #expect(brain.state == .sleeping)
+    #expect(arrived.contains(.play(.sleep)))
+
+    // The in-bed DND sleep is indefinite too, not sleepDuration-bounded.
+    #expect(brain.handle(.tick, at: 10_000) == [])
+    #expect(brain.state == .sleeping)
+
+    let woke = brain.handle(.system(.dndOff), at: 10_001)
+    #expect(brain.state == .idle)
+    #expect(woke.contains(.play(.idle)))
+}
+
+@Test func dndOffWakesADndSleep() {
+    let brain = makeBrain()
+    _ = brain.handle(.system(.dndOn), at: 1)
+    #expect(brain.state == .sleeping)
+
+    let effects = brain.handle(.system(.dndOff), at: 50)
+    #expect(brain.state == .idle)
+    #expect(effects.contains(.play(.idle)))
+}
+
+@Test func dndOffCancelsWalkToBedForDndSleep() {
+    let brain = makeBrain()
+    brain.bedPosition = CGPoint(x: 700, y: 500)
+    _ = brain.handle(.system(.dndOn), at: 1)
+    #expect(brain.state == .goingToBed(.sleep))
+
+    let effects = brain.handle(.system(.dndOff), at: 2)
+    #expect(brain.state == .idle)
+    #expect(effects.contains(.stopMoving))
+}
+
+@Test func dndOffLeavesASelfChosenNapAlone() {
+    let brain = makeNaturallySleepingBrain()
+    let effects = brain.handle(.system(.dndOff), at: 4)
+    #expect(effects == [])
+    #expect(brain.state == .sleeping)
+}
+
+@Test func dndOffAfterTreatBrokeTheDndSleepDoesNotWakeALaterNap() {
+    // The treat ends the DND sleep; a later self-chosen nap must not be
+    // woken by the (stale) dndOff.
+    let brain = makeBrain { $0.sleepChance = 1.0; $0.sleepDuration = 10...10; $0.eatDuration = 1 }
+    _ = brain.handle(.system(.dndOn), at: 0)
+    #expect(brain.state == .sleeping)
+    _ = brain.handle(.treatDropped(at: CGPoint(x: 100, y: 100)), at: 1)
+    _ = brain.handle(.arrived, at: 2)                        // eating
+    _ = brain.handle(.tick, at: 3.1)                         // hunching
+    _ = brain.handle(.tick, at: 3.1 + brain.tuning.hunchDuration) // idle (3s timer)
+    _ = brain.handle(.tick, at: 9)                           // idle timer fires → nap
+    #expect(brain.state == .sleeping)
+
+    let effects = brain.handle(.system(.dndOff), at: 10)
+    #expect(effects == [], "this nap is his own, not DND's")
+    #expect(brain.state == .sleeping)
+}
+
+@Test func dndOnIgnoredWhileStalking() {
+    let (brain, stalkStart) = makeStalkingBrain()
+    let effects = brain.handle(.system(.dndOn), at: stalkStart + 1)
+    #expect(effects == [])
+    #expect(brain.state == .stalkingMouse)
+}
+
+// The arms outrank the machine entirely.
+
+@Test func systemSignalsIgnoredWhileCarried() {
+    for signal in allSystemSignals {
+        let brain = makeBrain()
+        _ = brain.handle(.pickedUp, at: 0)
+        let effects = brain.handle(.system(signal), at: 1)
+        #expect(effects == [], "\(signal) must be ignored while carried")
+        #expect(brain.state == .carried, "\(signal) must not move him out of your arms")
+    }
+}
