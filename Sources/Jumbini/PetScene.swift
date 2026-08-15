@@ -988,4 +988,183 @@ final class PetScene: SKScene {
         trickTrainer.recordAttempt(trick, at: lastTime)
         send(.command(.trick(trick)))
     }
+
+    // MARK: - Jumbini Cam
+
+    /// Device pixels per scene point in the composed cam image: 2x keeps the
+    /// pixel art crisp on retina displays.
+    private static let camScale: CGFloat = 2
+
+    /// Snapshot the dog onto a transparent canvas with a "Jumbini, 3:42 PM"
+    /// caption below, and play the shutter flash. Worn hats and carried toys
+    /// are child nodes of the dog, so texture(from:) brings them along free.
+    /// Works while the view is paused too — the offscreen render doesn't need
+    /// the window on screen (the flash is skipped then; see flashCamFeedback).
+    /// Returns nil only if the render pipeline fails (no SKView yet, or the
+    /// offscreen render came back empty).
+    func captureJumbini() -> NSImage? {
+        guard let view else { return nil }
+        let dogFrame = dog.calculateAccumulatedFrame()
+        guard dogFrame.width > 0, dogFrame.height > 0,
+              let texture = view.texture(from: dog)
+        else { return nil }
+        guard let image = Self.composeCamImage(
+            dogImage: texture.cgImage(), dogPointSize: dogFrame.size, date: Date()
+        ) else { return nil }
+        flashCamFeedback()
+        return image
+    }
+
+    /// "Jumbini, 3:42 PM" — real current time, localized short style.
+    private static func camCaption(for date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .none
+        formatter.timeStyle = .short
+        return "Jumbini, \(formatter.string(from: date))"
+    }
+
+    /// Rounded system font for the caption (Menlo, then plain system, as
+    /// fallbacks). `pixelSize` is in device pixels — all cam composition
+    /// happens in pixel space.
+    private static func camCaptionFont(pixelSize: CGFloat) -> NSFont {
+        let system = NSFont.systemFont(ofSize: pixelSize, weight: .semibold)
+        if let rounded = system.fontDescriptor.withDesign(.rounded),
+           let font = NSFont(descriptor: rounded, size: pixelSize) {
+            return font
+        }
+        return NSFont(name: "Menlo", size: pixelSize) ?? system
+    }
+
+    /// Compose dog-above-caption on a transparent canvas. Everything is laid
+    /// out in device pixels (points x camScale) with nearest-neighbor
+    /// sampling so the pixel art never picks up a smoothing blur; the caption
+    /// is white with a 1px dark outline so it reads on any background.
+    private static func composeCamImage(
+        dogImage: CGImage, dogPointSize: CGSize, date: Date
+    ) -> NSImage? {
+        let scale = camScale
+        let pad = 12 * scale
+        let gap = 8 * scale
+        let outlineColor = NSColor(white: 0.08, alpha: 0.9)
+
+        let font = camCaptionFont(pixelSize: 13 * scale)
+        let caption = camCaption(for: date)
+        let captionFace = NSAttributedString(
+            string: caption, attributes: [.font: font, .foregroundColor: NSColor.white]
+        )
+        let captionOutline = NSAttributedString(
+            string: caption, attributes: [.font: font, .foregroundColor: outlineColor]
+        )
+        let textSize = captionFace.size()
+
+        // Optional paw-print glyph before the text (skipped if the symbol is
+        // unavailable). Rasterized here, then drawn via clip-to-alpha-mask so
+        // it gets the same white-with-dark-outline treatment as the caption.
+        let pawSide = (font.capHeight * 1.2).rounded()
+        let pawGap = 5 * scale
+        var pawMask: CGImage?
+        if let paw = NSImage(systemSymbolName: "pawprint.fill", accessibilityDescription: nil) {
+            var pawRect = CGRect(x: 0, y: 0, width: pawSide, height: pawSide)
+            pawMask = paw.cgImage(forProposedRect: &pawRect, context: nil, hints: nil)
+        }
+
+        let dogPixelSize = CGSize(
+            width: (dogPointSize.width * scale).rounded(),
+            height: (dogPointSize.height * scale).rounded()
+        )
+        let captionWidth = (pawMask != nil ? pawSide + pawGap : 0) + textSize.width.rounded(.up)
+        let contentWidth = max(dogPixelSize.width, captionWidth)
+        let canvasWidth = Int((contentWidth + pad * 2).rounded(.up))
+        let canvasHeight = Int((pad + textSize.height + gap + dogPixelSize.height + pad).rounded(.up))
+
+        guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB),
+              let context = CGContext(
+                  data: nil, width: canvasWidth, height: canvasHeight,
+                  bitsPerComponent: 8, bytesPerRow: 0, space: colorSpace,
+                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+              )
+        else { return nil }
+        context.interpolationQuality = .none // nearest-neighbor for the pixel art
+        context.setShouldSmoothFonts(false)  // no subpixel fringing on transparency
+
+        // The dog, centered, above the caption line.
+        let dogRect = CGRect(
+            x: ((CGFloat(canvasWidth) - dogPixelSize.width) / 2).rounded(),
+            y: (pad + textSize.height + gap).rounded(),
+            width: dogPixelSize.width, height: dogPixelSize.height
+        )
+        context.draw(dogImage, in: dogRect)
+
+        // Caption row, centered under the dog.
+        var cursorX = ((CGFloat(canvasWidth) - captionWidth) / 2).rounded()
+        if let pawMask {
+            // Bottom of the glyph on the text baseline (descender is negative).
+            let pawRect = CGRect(
+                x: cursorX, y: (pad - font.descender).rounded(), width: pawSide, height: pawSide
+            )
+            drawCamGlyph(pawMask, in: pawRect, context: context, fill: outlineColor, outlinePass: true)
+            drawCamGlyph(pawMask, in: pawRect, context: context, fill: .white, outlinePass: false)
+            cursorX += pawSide + pawGap
+        }
+        let textOrigin = CGPoint(x: cursorX, y: pad)
+        let appKitContext = NSGraphicsContext(cgContext: context, flipped: false)
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = appKitContext
+        for dx: CGFloat in [-1, 0, 1] {
+            for dy: CGFloat in [-1, 0, 1] where !(dx == 0 && dy == 0) {
+                captionOutline.draw(at: CGPoint(x: textOrigin.x + dx, y: textOrigin.y + dy))
+            }
+        }
+        captionFace.draw(at: textOrigin)
+        NSGraphicsContext.restoreGraphicsState()
+
+        guard let composed = context.makeImage() else { return nil }
+        // Point size = pixels / camScale, so the image self-reports as retina
+        // (2x) content on the pasteboard.
+        return NSImage(
+            cgImage: composed,
+            size: NSSize(width: CGFloat(canvasWidth) / scale, height: CGFloat(canvasHeight) / scale)
+        )
+    }
+
+    /// Fill `mask`'s alpha silhouette with a color — the classic clip-to-mask
+    /// tinting recipe. `outlinePass` stamps the 8 one-pixel offsets (the same
+    /// halo the caption text gets); otherwise a single centered fill.
+    private static func drawCamGlyph(
+        _ mask: CGImage, in rect: CGRect, context: CGContext, fill: NSColor, outlinePass: Bool
+    ) {
+        let offsets: [CGPoint] = outlinePass
+            ? [CGPoint(x: -1, y: -1), CGPoint(x: -1, y: 0), CGPoint(x: -1, y: 1),
+               CGPoint(x: 0, y: -1), CGPoint(x: 0, y: 1),
+               CGPoint(x: 1, y: -1), CGPoint(x: 1, y: 0), CGPoint(x: 1, y: 1)]
+            : [.zero]
+        for offset in offsets {
+            let shifted = rect.offsetBy(dx: offset.x, dy: offset.y)
+            context.saveGState()
+            context.clip(to: shifted, mask: mask)
+            context.setFillColor(fill.cgColor)
+            context.fill(shifted)
+            context.restoreGState()
+        }
+    }
+
+    /// Shutter feedback: a quick white flash over everything (alpha
+    /// 0 -> 0.7 -> 0 over ~0.25s). Skipped while the view is paused: SKActions
+    /// don't run then, and a stale flash firing on resume would be confusing.
+    /// No shutter sound for now — make_audio.py is contested by sibling
+    /// branches; noted as future work.
+    private func flashCamFeedback() {
+        guard let view, !view.isPaused, !isPaused else { return }
+        let flash = SKSpriteNode(color: .white, size: size)
+        flash.anchorPoint = .zero
+        flash.position = .zero
+        flash.zPosition = 1_000 // above the dog (10), hearts (20), everything
+        flash.alpha = 0
+        addChild(flash)
+        flash.run(.sequence([
+            .fadeAlpha(to: 0.7, duration: 0.08),
+            .fadeAlpha(to: 0, duration: 0.17),
+            .removeFromParent(),
+        ]))
+    }
 }
