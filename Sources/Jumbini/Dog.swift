@@ -37,6 +37,18 @@ final class Dog: SKSpriteNode {
     /// A carried ball hides behind him when he faces away from the viewer.
     var mouthZOffset: CGFloat { facing.isNorthish ? -1 : 1 }
 
+    /// Where a worn wardrobe item sits, relative to the dog (the crown of his
+    /// head). Uses the live node size so the anchor tracks pose changes
+    /// (sit art renders taller than idle) — positioning stays in code, never
+    /// baked into the item art.
+    var hatOffset: CGPoint {
+        let v = facing.unitVector
+        return CGPoint(x: v.x * 10, y: size.height * 0.32)
+    }
+
+    /// A worn item tucks behind him when he faces away from the viewer.
+    var hatZOffset: CGFloat { facing.isNorthish ? -1 : 1 }
+
     // MARK: - Animation
 
     func play(_ animation: DogAnimation) {
