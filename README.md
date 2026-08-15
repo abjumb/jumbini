@@ -4,17 +4,44 @@
 
 # Jumbini
 
-**A pixel-art dog who lives on your macOS desktop.**
+**A dog who actually lives on your Mac.**
 
-Jumba is a tricolor spaniel mix. He wanders across your screen, naps in his bed, chases a
-tennis ball, begs for peanut butter, gets the zoomies, and follows your cursor around
-sniffing it. He sits on top of every window and clicks straight through, so he never gets
-in the way of the app you are actually using.
+Jumba walks along the tops of your open windows. He gets the zoomies when your Mac runs
+hot, and goes to sleep when you walk away from it. He is a real dog — a tricolor spaniel
+mix — and every frame of him was drawn by hand from photographs.
+
+He sits above every window and clicks straight through, so he never gets in the way of the
+app you are actually using. No account, no network, no permissions, no AI. Free, and the
+code is open.
 
 [Download the latest release](https://github.com/abjumb/jumbini/releases/latest) ·
-[Build from source](#build-from-source) · [How it works](#architecture)
+[What he does](#meet-jumba) · [How it works](#architecture)
 
 </div>
+
+---
+
+## Three things that make him different
+
+**He walks on your windows.** Not the edge of the screen — your actual windows. He picks
+one, walks over, hops onto the title bar, patrols it, leans over the edge to look down,
+and rides along if you move the window gently. Drag it hard enough and he falls off, which
+is the joke. Most desktop pets pace along the bottom of the display; the ones that climb
+are Java, or Windows-only, or both.
+
+**He knows what your Mac is doing.** The machine gets hot and he gets the zoomies. Your
+battery goes low and he whines and lies down. Your build finishes and he celebrates. You
+step away for two minutes and he curls up; you come back and he wakes up. He never tells
+you any of this —
+there is no dashboard, no notification, no status bar. There is just a dog behaving oddly,
+and a second later you work out why. Every reading is ambient: nothing he watches requires
+a permission prompt, and a source that can't be read on your machine switches itself off
+permanently rather than nagging you.
+
+**He is one real dog, and the art is not generated.** 334 hand-drawn sprites across two
+coats — eight rotations for every state, drawn from photographs of an actual dog named
+Jumba. There is no catalog of ninety interchangeable pets, no marketplace, no "pick your
+character" screen. There is one dog. That is the entire point.
 
 ---
 
@@ -24,11 +51,17 @@ in the way of the app you are actually using.
 
 1. Grab `Jumbini.dmg` from the [latest release](https://github.com/abjumb/jumbini/releases/latest).
 2. Open the DMG and drag **Jumbini** to Applications.
-3. **First launch: right-click the app and choose Open**, then confirm.
+3. Open it. macOS will refuse the first time — see below.
 
-That third step matters. The app is ad-hoc signed, not notarized by Apple, so a plain
-double-click gets you a "cannot be opened" dialog instead of a dog. Right-click → Open is
-the one-time bypass; after that it launches normally.
+Jumbini is ad-hoc signed and not notarized by Apple, so the first launch needs one manual
+override. Which override depends on your macOS version, because Apple changed this:
+
+- **macOS 15 (Sequoia) and newer:** double-click Jumbini, let it get refused, then go to
+  **System Settings → Privacy & Security**, scroll to the bottom, and click **Open Anyway**.
+- **macOS 14 (Sonoma):** right-click the app and choose **Open**, then confirm.
+
+Either way it is a one-time thing; after that it launches normally. Nothing about the app
+changes, and you can read every line of what you just allowed in this repository.
 
 Jumbini has no Dock icon and no window. When it is running you get a dog on screen and a
 small pixel-dog icon in your menu bar. Everything else lives in that menu.
@@ -40,17 +73,64 @@ something to do:
 
 | What he does | How likely | How long |
 |---|---|---|
-| Wander somewhere new | 49% | until he arrives |
+| Wander somewhere new | 40% | until he arrives |
 | Nap (in his bed if he has one) | 15% | 10-20s |
-| Spin in place, for no reason | 10% | 0.9s |
 | Sniff your cursor around the screen | 12% | 100-140s |
+| Spin in place, for no reason | 10% | 0.9s |
 | Zoomies | 8% | 10s |
 | Hunch over and do his business | 6% | 2.5s |
+| Climb onto one of your windows | 5% | 18-36s |
+| Bark at nothing in particular | 4% | 1.2s |
 
 The sniffing one is the sleeper hit: he trots toward wherever your pointer is, and once he
 is within about 60 points he switches to the nose-down sniff pose and keeps tracking it.
-Zoomies means bouncing off the edges of your screen at 900 points per second with his
-fur rabbit in his mouth.
+Six times out of ten a finished sniff escalates — he drops into a stalk, freezes, and
+pounces on your cursor. Zoomies means bouncing off the edges of your screen at 900 points
+per second with his fur rabbit in his mouth.
+
+The piles he leaves behind stay where he left them, up to five at a time — a sixth makes
+the oldest fade away. Give one two minutes and it dries out, goes pale, and attracts a
+couple of flies.
+
+## He walks on your windows
+
+Climbing is close to the rarest thing he does on purpose — 5%, second only to barking at
+nothing — because it should feel like catching him at it rather than watching a routine.
+
+He looks for a window within about 700 points whose top edge is a climb of no more than
+420 points, walks to it, and hops up. Once he is up there he patrols the title bar,
+stopping at each end to put his nose over the edge and look down at whatever is underneath.
+
+Move that window and he rides it. Move it faster than about 180 points between two polls
+and the drag shakes him off — he falls, accelerating at 2000 points per second squared up
+to a terminal velocity that keeps him reading as a dog and not a meteor, and lands with a
+squash. He gets up and carries on.
+
+If you have no windows open, none of this happens and he never mentions it.
+
+## He knows what your Mac is doing
+
+Five ambient sources. Four are polled every five seconds — idle time, battery, build
+tools, Focus — and each of those switches itself off permanently if it can't be read on
+your machine. Thermal state arrives as a notification instead.
+
+| What he notices | How he takes it |
+|---|---|
+| A build tool finishes a real build | Celebration — a yip, hearts, confetti |
+| The machine gets thermally stressed | Zoomies. He is not helping |
+| Battery drops low while unplugged | He whines and lies down |
+| No input for two minutes | He goes to sleep |
+| Input comes back | He wakes up |
+
+Each of these puts a small thought bubble over his head — a flame, a battery, a party hat —
+so that a dog who suddenly loses his mind reads as a joke rather than a bug.
+
+Two deliberate restraints. A build has to run continuously for a while before its exit
+counts, and two celebrations can never land close together, so a rebuild storm gets one
+party rather than forty. And Do Not Disturb detection is best-effort: Focus has no public
+API, the private database is protected, and without Full Disk Access the very first read
+fails and that source switches itself off for good. That is the expected outcome, not a
+bug. Jumbini will never ask you for Full Disk Access.
 
 ## Controls
 
@@ -62,19 +142,46 @@ Everything is mouse-driven, directly on the dog and his stuff.
 |---|---|
 | Left-click him | Pet him. Hearts float up, then he settles back down |
 | Click and drag him | Pick him up. He dangles from the cursor until you let go |
-| Right-click him | Command menu: Sit, Lie Down, Spin, Spin Forever, Zoomies!, Fetch |
+| Hover over him a while | He takes it personally and barks at you |
+| Right-click him | Commands, Tricks, Toys, Wardrobe, Coat |
 
-While he is mid-Spin-Forever, the first menu item becomes **Stop Spinning**.
+The command list is Sit, Lie Down, Spin, Spin Forever, Zoomies!, and Fetch. Catch him
+mid-spin and the first item becomes **Stop Spinning**.
 
 ### Fetch
 
 1. Right-click him → **Fetch**. He sits and waits.
 2. **Left-click anywhere on screen.** The ball arcs to that spot.
 3. He sprints after it, picks it up, carries it back to where he was standing, drops it,
-   and does a little bark of celebration.
+   and does a little happy flourish about it.
 
 Changed your mind? Right-click anywhere while he is waiting and the fetch is off. He also
 gives up on his own after 10 seconds.
+
+### Toys
+
+Fetch is the ball. The toy box is the rest, and each one plays differently.
+
+| Toy | How it plays |
+|---|---|
+| **Frisbee** | Aimed and thrown. It floats — a long flat arc with real hang time, which is what makes the mid-air catch possible |
+| **Squeaky Toy** | Lobbed nearby. He grabs it and shakes it to death |
+| **Tug Rope** | Grab the free end and pull. The rope re-lays itself every frame between two moving points |
+
+Tug is a genuine contest with a coin-flip ending: he is a small dog with a lot of
+conviction.
+
+### Tricks
+
+Four tricks — Shake, High Five, Play Dead, Roll Over — and he does not know any of them
+yet.
+
+Asking for a locked trick is an attempt. Give him a treat within ten seconds and the
+attempt counts as a rep. Three reps and the trick is his permanently, saved between
+launches. The menu shows you where you are: **Teach Shake (1/3)**.
+
+Once a trick is learned, performing it is just showing off, and showing off is not
+training. Nothing further accumulates.
 
 ### The treat box (bottom-right)
 
@@ -85,7 +192,7 @@ gives up on his own after 10 seconds.
 | Drop it back on the box | Put it away, no harm done |
 | Drag the box | Move the box (hold ⌥ to start the drag instantly) |
 
-Treats outrank everything: naps, fetch, commands, all of it. He eats it, gets
+Treats outrank everything: naps, fetch, tricks, commands, all of it. He eats it, gets
 hearts, and then, about a second later, hunches over. Treats go straight through him.
 
 Only one treat exists at a time. Drop a second one and he switches targets. Interrupt him
@@ -101,13 +208,52 @@ mid-chase with a command and the abandoned treat quietly vanishes.
 Bed choice sticks between launches. **Lie Down** and naps both send him to the bed if he
 has one, and he settles into the cushion rather than standing on it.
 
+### Wardrobe and coat
+
+Right-click him → **Wardrobe** for a Party Hat, Top Hat, Cowboy Hat, Beanie, Bandana,
+Sunglasses, or a Raincoat. One at a time, and remembered between launches. Each piece is
+drawn facing south, south-east, east and north-east; the app mirrors those for the western
+half and reuses the north-east art for north.
+
+Right-click him → **Coat** to switch between **Classic** and **Shaggy**. Same dog, second
+haircut, a full 8-directional sprite set each.
+
+### Jumbini Cam
+
+**⌥⇧J**, or **Jumbini Cam** in the menu bar. It copies him — whatever he happens to be
+doing at that moment — straight to your clipboard as a PNG on a transparent background,
+with a little caption plate underneath reading **Jumbini, 3:42 PM** and a paw watermark in
+the corner.
+
+Paste it into Slack. That is the whole feature.
+
 ### Menu bar
 
 - **Hunger: ██████████ 100%** — a bottomless dog. This meter has never moved and never
   will. It is the joke.
 - **Treats eaten: N (no effect)** — counts up forever, does nothing, see above.
+- **Jumbini Cam** (⌥⇧J) — see above.
+- **Mute Sounds** — he barks (three different takes), growls, whines, yips, squeaks and
+  grunts. Sometimes you are in a meeting.
 - **Pause** — hides the overlay and freezes the scene. Click **Resume** to bring him back.
 - **Leave Jumbini Behind** (⌘Q) — quit.
+
+## What he doesn't do
+
+Worth stating plainly, because a lot of things in this category do:
+
+- **No network.** He never phones home. There is nothing to phone home to.
+- **No account, no login, no telemetry, no analytics.**
+- **No permissions.** No Accessibility, no Screen Recording, no Full Disk Access, no
+  Input Monitoring. He reads window geometry, idle time, battery and thermal state through
+  public APIs that require no prompt, and reads nothing else.
+- **No AI.** No model, no API key, no chat. He is a state machine with 29 states and a
+  dice roll, and he does not have anything to say to you.
+- **No purchases, no cosmetic packs, no subscription, no ads.**
+
+<!-- TODO: measure and publish idle CPU %, resident memory, and battery impact on an
+     M-series Mac. Resource cost is the top complaint driver in this category and the
+     number is worth more on this page than any feature. -->
 
 ## Build from source
 
@@ -127,7 +273,7 @@ the result.
 Other scripts:
 
 ```bash
-./Scripts/test.sh            # run the test suite (306 tests)
+./Scripts/test.sh            # run the test suite (312 tests)
 ./Scripts/dmg.sh             # → build/Jumbini.dmg, drag-to-Applications layout
 ```
 
@@ -158,8 +304,8 @@ SpriteKit, and they talk in values.**
    PetScene  ───────────────►  DogBrain  ───────────────►  PetScene
   (SpriteKit)  .tick             (pure)      .play(.run)     (SpriteKit)
                .petted                       .moveTo(p, 90)
-               .treatDropped(at:)            .startZoomies
-               .arrived                      .showHearts
+               .system(.fansUp)              .startZoomies
+               .arrived                      .hopTo(p)
 ```
 
 `DogBrain` imports Foundation and CoreGraphics, nothing else. Every frame the scene feeds
@@ -173,50 +319,68 @@ state transitions with zero flake and zero sleeping. The brain tests build one w
 `makeBrain(seed:tune:)`, zero out every autonomy probability, enable exactly one, and
 check what happens.
 
+The same discipline extends outward. `TrickTrainer` takes an injected store and explicit
+timestamps. `SystemMonitor` splits every source into a pure transition struct and a thin
+sampling shell, so "does a hot machine emit exactly one `fansUp`" is a unit test with no
+Mac underneath it. `WindowSurfaces` keeps the coordinate conversion pure and testable,
+because two coordinate systems meet in that file and confusing them is the classic way to
+end up with a dog walking on the ceiling.
+
 ### Files
 
 | File | Lines | What lives there |
 |---|---|---|
-| `Sources/Jumbini/DogBrain.swift` | 1421 | The state machine. 29 states, 16 events, 28 effects, every tuning knob |
-| `Sources/Jumbini/PetScene.swift` | 629 | Applies effects, owns all mouse input, zoomies bounce physics, cursor-sniff stepping, click-through |
-| `Sources/Jumbini/Dog.swift` | 119 | The dog sprite: plays animations in whichever of 8 directions he faces, walks to targets, reports arrival |
-| `Sources/Jumbini/SpriteLoader.swift` | 184 | `Facing` (8 directions) and `SpriteLibrary` (texture cache, nearest-neighbor, strip-sheet slicing) |
-| `Sources/Jumbini/OverlayWindow.swift` | 31 | Borderless non-activating `NSPanel` at status-bar level, click-through by default |
-| `Sources/Jumbini/AppDelegate.swift` | 122 | Menu bar item, pause, hunger gag, screen-resolution changes |
+| `Sources/Jumbini/DogBrain.swift` | 1428 | The state machine. 29 states, 16 events, 28 effects, every tuning knob |
+| `Sources/Jumbini/PetScene.swift` | 2421 | Applies effects, owns all mouse input, zoomies physics, cursor-sniff stepping, wardrobe, click-through |
+| `Sources/Jumbini/SpriteLoader.swift` | 425 | `Facing` (8 directions), `Coat`, and `SpriteLibrary` (texture cache, nearest-neighbor, strip-sheet slicing) |
+| `Sources/Jumbini/SystemMonitor.swift` | 373 | Idle, battery, thermal, build and Focus tracking. Pure transition logic, thin sampling shell |
+| `Sources/Jumbini/WindowSurfaces.swift` | 349 | Reads `CGWindowList`, converts to scene coordinates, hands the brain a list of walkable surfaces |
+| `Sources/Jumbini/AppDelegate.swift` | 284 | Menu bar item, Jumbini Cam and its hotkey, pause, mute, hunger gag, display changes |
+| `Sources/Jumbini/Dog.swift` | 225 | The dog sprite: plays animations in whichever of 8 directions he faces, walks to targets, reports arrival |
+| `Sources/Jumbini/ScreenLayout.swift` | 197 | Multi-display bounds, and the holes in them that an uneven monitor arrangement leaves behind |
+| `Sources/Jumbini/TugRope.swift` | 132 | Knotted caps and tiling middles, re-laid every frame between two moving points |
+| `Sources/Jumbini/TrickTrainer.swift` | 127 | Trick reps, the reward window, and what persists |
+| `Sources/Jumbini/Frisbee.swift` | 100 | The disc: a long, flat, slow arc with real hang time |
 | `Sources/Jumbini/Ball.swift` | 71 | Tennis ball: throw arc, bounce, landing callback |
-| `Tests/JumbiniTests/DogBrainTests.swift` | 672 | 59 deterministic behavior tests |
+| `Sources/Jumbini/EmoteBubble.swift` | 71 | The thought bubble. Deliberately ignorant of why it was asked for |
+| `Sources/Jumbini/OverlayWindow.swift` | 46 | Borderless non-activating `NSPanel` at status-bar level, click-through by default |
+| `Tests/JumbiniTests/` | 3741 | 312 deterministic tests across brain, tricks, system signals, window surfaces and screen layout |
 
 ### Two details worth knowing
 
 **Click-through is recomputed every frame.** The overlay window sets
 `ignoresMouseEvents = true` almost always, so your clicks land in your real apps. Once per
-frame `PetScene` checks whether the cursor is over the dog, the treat box, or the bed (or a drag
-or an armed throw is in flight) and flips the flag. That is why he never eats a click you
-meant for Xcode.
+frame `PetScene` checks whether the cursor is over the dog, the treat box, the bed, a pile
+or the free end of the tug rope (or a drag or an armed throw is in flight) and flips the
+flag. That is why he never eats a click you meant for Xcode.
 
 **The window never takes focus.** It is a `nonactivatingPanel` that refuses to become key
 or main, so petting the dog does not steal your cursor out of the editor you are typing
 in. It also joins all Spaces and floats over full-screen apps.
 
-## Art pipeline
+## The art
 
-Jumba's own art is hand-made: 8 rotations for each of `idle`, `run1`, `run2`, `sit`,
-`sleep`, `sniff`, and `hunch`, plus a 6-frame east-facing `bark` cycle that the app mirrors
-for west-facing poses. It lives in `Sources/Jumbini/Resources/jumba/` as
-`<state>_<direction>.png`.
+Jumba is a real dog. The pixel art is of him, drawn by hand from photographs — not
+generated, not licensed, not bought from a sprite pack.
+
+Each coat is 8 rotations for each of twenty states — `idle`, `run1`, `run2`, `sit`,
+`sleep`, `sniff`, `hunch`, `stalk`, `pounce`, `paw`, `highfive`, `playdead`, `peek`,
+`fall`, `land`, `growl`, `whine` and the rest — including a directional `bark`. It lives in
+`Sources/Jumbini/Resources/jumba/` as `<state>_<direction>.png`, with the shaggy coat
+prefixed. The old 6-frame east-facing bark strip is still in there as a fallback, and
+`rollOver` and `shakeToy` currently borrow other poses because nobody has drawn them yet.
 
 ```bash
 python3 Tools/import_jumba.py /path/to/export
 ```
 
-`import_jumba.py` takes AI-export folders shaped like `<state>/rotations/<direction>.png`,
+`import_jumba.py` takes export folders shaped like `<state>/rotations/<direction>.png`,
 strips the baked-in white background with a border flood fill (the dark outline protects
 interior whites like his chest blaze and socks), and flattens everything into the resource
 folder. Pure stdlib, including a hand-rolled PNG codec, no dependencies. New states get
-registered in the `EXTRA_STATES` map at the top.
-
-`Resources/jumba/` is the durable copy of that art. The importer skips any source folder
-that is not present, so re-running it with a partial export is safe.
+registered in the `KIT_STATES` / `KIT_SHAGGY_STATES` maps, which are the authoritative
+ones; the older `EXTRA_STATES` map above them only still exists so the pre-kit exports
+keep importing.
 
 Most props are drawings too. `jumbini-kit/sprites/` and `jumbini-kit/treat-box/` are the
 durable source copies of Alex's prop and FX art; the importer copies the files the app
@@ -232,8 +396,7 @@ a couple of frames. Its `IMPORT` list is explicit — a new file in the kit does
 bundle until it's listed there, which is also where the notes live on which delivered
 frames were unusable and why.
 
-What is left over (ball, heart, bed, treat, rabbit, and the placeholder wardrobe) is
-generated code, not drawings:
+What is left over (ball, heart, bed, treat, rabbit) is generated code, not drawings:
 
 ```bash
 python3 Tools/make_sprites.py
@@ -246,11 +409,12 @@ himself, which nothing uses anymore.
 
 ```
 Sources/Jumbini/           app code
-  Resources/jumba/         hand-made dog sprites, 8 directions per state
-  Resources/sprites/       generated props + 12 bed variants
+  Resources/jumba/         hand-made dog sprites, 8 directions per state, two coats
+  Resources/sprites/       props, emote icons, 12 bed variants, wardrobe
+  Resources/audio/         3 barks, growl, whine, yip, squeak, grunt, chime, shutter
   Resources/Icons/         menu bar icon (16 and 32 px)
-Tests/JumbiniTests/        59 deterministic brain tests
-Tools/                     import_jumba.py, make_sprites.py
+Tests/JumbiniTests/        312 deterministic tests
+Tools/                     import_jumba.py, import_kit_art.py, import_kit_props.py, make_sprites.py
 Scripts/                   test.sh, bundle.sh, dmg.sh, Info.plist
 icon/                      app icon sources and iconsets
 ```
@@ -259,7 +423,9 @@ icon/                      app icon sources and iconsets
 
 One rule that matters: **behavior changes are test-first.** Anything that touches how Jumba
 decides what to do starts with a failing test in `DogBrainTests.swift`, then the
-implementation. The brain is pure and deterministic specifically so this is cheap.
+implementation. The brain is pure and deterministic specifically so this is cheap. The
+same goes for `TrickTrainer`, `SystemMonitor`, `WindowSurfaces` and `ScreenLayout` — the
+pure half of each is where the test goes.
 
 Rendering and input code in `PetScene` has no tests. Verify those by hand: rebundle,
 relaunch, and actually play with the dog.
@@ -269,18 +435,18 @@ Stub the new case so the package compiles, then wire it up for real.
 
 ## Known limitations
 
-- **Not notarized.** Ad-hoc signed only, so recipients need the right-click → Open dance.
+- **Not notarized.** Ad-hoc signed only, so the first launch needs the override above.
 - **Apple Silicon only.** A universal binary would need `--arch` work in `bundle.sh`.
-- **Main display only.** He lives on `NSScreen.main` and does not roam to a second monitor.
+- **Do Not Disturb detection usually doesn't work**, by design — see above.
 
 ## License
 
 Code is MIT. See [LICENSE](LICENSE).
 
 The artwork is not. Jumba is a real dog, the pixel art is of him, and it stays his:
-everything under `Resources/jumba/` and `jumbini-kit/`, the bed variants, the icons, the
-art export folders, and the reference photo are all rights reserved. The generated props
-(ball, heart, treat, rabbit, and the built-in bed) come out of `Tools/make_sprites.py` and
-are MIT like the rest of the code.
+everything under `Resources/jumba/` and `jumbini-kit/`, the bed and wardrobe variants, the
+icons, the art export folders, and the reference photo are all rights reserved. The
+generated props (ball, heart, treat, rabbit, and the built-in bed) come out of
+`Tools/make_sprites.py` and are MIT like the rest of the code.
 
 Fork it, build it, reuse the code. If you ship something derived from it, replace the dog.
