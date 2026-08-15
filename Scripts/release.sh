@@ -51,6 +51,41 @@ if [ "${SKIP_NOTARIZE:-0}" != "1" ]; then
   : "${APPLE_API_KEY_ID:?set APPLE_API_KEY_ID}"
   : "${APPLE_API_ISSUER_ID:?set APPLE_API_ISSUER_ID}"
   [ -f "$APPLE_API_KEY_PATH" ] || die "no .p8 key at APPLE_API_KEY_PATH: $APPLE_API_KEY_PATH"
+
+  # Check the shape of both credentials before building. notarytool only sees
+  # them at the very end, so a stray character costs a full build, a signature
+  # and a timestamp round trip before it surfaces -- and on a macOS runner that
+  # is billed at 10x. Both of these have already shipped broken once: quotes
+  # wrapped around the key ID, and a non-UUID issuer.
+  #
+  # Quotes are the common failure. `gh secret set APPLE_API_KEY_ID "ABC123"`
+  # stores the quotes when the shell doesn't strip them, and the value becomes
+  # literally "ABC123". Trim them and carry on rather than fail: the intent is
+  # unambiguous, and a release should not die over a paste artifact.
+  for _var in APPLE_API_KEY_ID APPLE_API_ISSUER_ID; do
+    _val="${!_var}"
+    _trimmed="${_val//[$'\r\n\t ']/}"          # whitespace, incl. CRs from pastes
+    _trimmed="${_trimmed//\"/}"                # straight double quotes
+    _trimmed="${_trimmed//\'/}"                # straight single quotes
+    _trimmed="${_trimmed//[$'\u201c\u201d\u2018\u2019']/}"   # smart quotes
+    if [ "$_trimmed" != "$_val" ]; then
+      echo "    (trimmed quotes/whitespace from $_var)"
+      printf -v "$_var" '%s' "$_trimmed"
+    fi
+    [ -n "$_trimmed" ] || die "$_var is empty after trimming quotes and whitespace"
+  done
+
+  # The issuer is a UUID; the key ID is the 10-character alphanumeric from the
+  # App Store Connect key table. Anything else is a mixed-up or mangled value.
+  [[ "$APPLE_API_ISSUER_ID" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]] \
+    || die "APPLE_API_ISSUER_ID is not a UUID: '$APPLE_API_ISSUER_ID'
+       Copy the Issuer ID from App Store Connect > Users and Access >
+       Integrations > App Store Connect API (above the key table)."
+
+  [[ "$APPLE_API_KEY_ID" =~ ^[A-Z0-9]{10}$ ]] \
+    || die "APPLE_API_KEY_ID does not look like a key ID: '$APPLE_API_KEY_ID'
+       Expected 10 alphanumeric characters, e.g. ABCD123456 -- the 'Key ID'
+       column in App Store Connect, not the issuer UUID or the filename."
 fi
 
 # ---------------------------------------------------------------------------
