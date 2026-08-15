@@ -259,6 +259,14 @@ Stub the new case so the package compiles, then wire it up for real.
 - **Main display only.** He lives on `NSScreen.main` and does not roam to a second monitor.
 - **Version strings lag.** `Scripts/Info.plist` still says 1.0 while the release tag is v3.0.
 
-## Credits
+## License
 
-Jumba is a real dog. The pixel art is of him.
+Code is MIT. See [LICENSE](LICENSE).
+
+The artwork is not. Jumba is a real dog, the pixel art is of him, and it stays his:
+everything under `Resources/jumba/`, the bed variants, the icons, the art export folders,
+and the reference photo are all rights reserved. The generated props (ball, heart, jar,
+treat, rabbit, and the built-in bed) come out of `Tools/make_sprites.py` and are MIT like
+the rest of the code.
+
+Fork it, build it, reuse the code. If you ship something derived from it, replace the dog.
