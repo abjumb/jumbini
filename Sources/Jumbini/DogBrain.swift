@@ -134,6 +134,13 @@ struct BrainTuning {
     var hunchDuration: TimeInterval = 2.5
     var hunchChance: Double = 0.06
     var barkDuration: TimeInterval = 1.2
+    /// Minimum gap between barks (measured bark-start to bark-start) so a
+    /// hovering cursor can't machine-gun him.
+    var barkCooldown: TimeInterval = 8
+    /// Rare idle break: bark at the Dock / his own reflection.
+    var barkAtNothingChance: Double = 0.04
+    /// How far he steps toward the screen edge so the bark faces something.
+    var barkEdgeStep: CGFloat = 12
     var stalkDuration: TimeInterval = 3.0
     var pounceDuration: TimeInterval = 0.5
     var trickDuration: TimeInterval = 1.5
@@ -189,6 +196,10 @@ final class DogBrain {
     private var fetchReturnPoint: CGPoint?
     /// State to resume after a petting session (dog stays sitting/lying).
     private var petReturn: DogState?
+    /// State to resume after a bark (same pattern as `petReturn`).
+    private var barkReturn: DogState?
+    /// When the last bark started — provocations inside `barkCooldown` are ignored.
+    private var lastBark: TimeInterval?
 
     func handle(_ event: DogEvent, at now: TimeInterval) -> [DogEffect] {
         switch event {
@@ -213,7 +224,9 @@ final class DogBrain {
             return handlePickedUp(at: now)
         case .dropped(let point):
             return handleDropped(at: point, now: now)
-        case .provoked, .system, .toyThrown, .tugStarted, .tugMoved, .tugEnded:
+        case .provoked:
+            return handleProvoked(at: now)
+        case .system, .toyThrown, .tugStarted, .tugMoved, .tugEnded:
             // Vocabulary landed ahead of behavior — feature branches wire these.
             return []
         }
@@ -242,6 +255,8 @@ final class DogBrain {
             return [.disarmThrow] + enterIdle(at: now)
         case .beingPetted:
             return endPetting(at: now)
+        case .barking:
+            return endBarking(at: now)
         case .zoomies:
             return [.stopZoomies] + enterIdle(at: now)
         case .sniffingMouse:
@@ -392,6 +407,22 @@ final class DogBrain {
         return enterIdle(at: now)
     }
 
+    /// The cursor lingered over him: bark at it, unless something that outranks
+    /// barking (arms, food, a chase, affection) is in progress.
+    private func handleProvoked(at now: TimeInterval) -> [DogEffect] {
+        switch state {
+        case .idle, .sitting, .lyingDown, .wandering:
+            if let lastBark, now - lastBark < tuning.barkCooldown { return [] }
+            lastBark = now
+            barkReturn = (state == .sitting || state == .lyingDown) ? state : nil
+            state = .barking
+            deadline = now + tuning.barkDuration
+            return [.stopMoving, .play(.bark), .playSound("borf")]
+        default:
+            return []
+        }
+    }
+
     // MARK: - Transitions
 
     private func enterIdle(at now: TimeInterval) -> [DogEffect] {
@@ -435,6 +466,18 @@ final class DogBrain {
             deadline = now + tuning.hunchDuration
             return [.play(.hunch)]
         }
+        if roll < tuning.sleepChance + tuning.flourishChance + tuning.zoomiesChance
+            + tuning.sniffChance + tuning.hunchChance + tuning.barkAtNothingChance {
+            // Something at the screen edge (the Dock? his reflection?) needs
+            // telling off. A small step toward the edge turns him to face it;
+            // .arrived from that hop is ignored while barking.
+            lastBark = now
+            barkReturn = nil
+            state = .barking
+            deadline = now + tuning.barkDuration
+            return [.moveTo(nearestEdgeNudge(), speed: tuning.walkSpeed),
+                    .play(.bark), .playSound("borf")]
+        }
         state = .wandering
         deadline = nil
         let margin = tuning.wanderMargin
@@ -443,6 +486,23 @@ final class DogBrain {
             y: CGFloat.random(in: margin...(bounds.height - margin), using: &rng)
         )
         return [.play(.walk), .moveTo(target, speed: tuning.walkSpeed)]
+    }
+
+    /// Bark finished: resume sitting/lying if that's what was interrupted.
+    private func endBarking(at now: TimeInterval) -> [DogEffect] {
+        defer { barkReturn = nil }
+        switch barkReturn {
+        case .sitting:
+            state = .sitting
+            deadline = now + tuning.sitTimeout
+            return [.play(.sit)]
+        case .lyingDown:
+            state = .lyingDown
+            deadline = now + tuning.lieTimeout
+            return [.play(.lie)]
+        default:
+            return enterIdle(at: now)
+        }
     }
 
     /// Petting session over: resume sitting/lying if that's what was interrupted.
@@ -478,12 +538,30 @@ final class DogBrain {
             return [.stopSniffing]
         case .chasingTreat:
             return keepTreat ? [] : [.removeTreat]
+        case .barking:
+            barkReturn = nil // the interrupter decides what happens next
+            return []
         default:
             return []
         }
     }
 
     // MARK: - Helpers
+
+    /// A point a short step toward the nearest screen edge — walking there
+    /// turns the dog to face whatever he's decided lives just off-screen.
+    private func nearestEdgeNudge() -> CGPoint {
+        let step = tuning.barkEdgeStep
+        let toLeft = position.x
+        let toRight = bounds.width - position.x
+        let toBottom = position.y
+        let toTop = bounds.height - position.y
+        let nearest = min(toLeft, toRight, toBottom, toTop)
+        if nearest == toLeft { return CGPoint(x: position.x - step, y: position.y) }
+        if nearest == toRight { return CGPoint(x: position.x + step, y: position.y) }
+        if nearest == toBottom { return CGPoint(x: position.x, y: position.y - step) }
+        return CGPoint(x: position.x, y: position.y + step)
+    }
 
     private func random(in range: ClosedRange<TimeInterval>) -> TimeInterval {
         Double.random(in: range, using: &rng)

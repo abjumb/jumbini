@@ -15,6 +15,7 @@ private func makeBrain(
     tuning.zoomiesChance = 0
     tuning.sniffChance = 0
     tuning.hunchChance = 0
+    tuning.barkAtNothingChance = 0
     tune(&tuning)
     return DogBrain(
         bounds: CGSize(width: 800, height: 600),
@@ -669,4 +670,195 @@ private func moveTarget(in effects: [DogEffect]) -> (point: CGPoint, speed: CGFl
     let effects = brain.handle(.treatDropped(at: CGPoint(x: 100, y: 100)), at: 4)
     #expect(brain.state == .chasingTreat)
     #expect(effects.contains(.play(.run)))
+}
+
+// MARK: - Barking (provoked by a lingering cursor)
+
+@Test func provokedWhileIdleBarksWithSound() {
+    let brain = makeBrain { $0.barkDuration = 1.2 }
+    let effects = brain.handle(.provoked(at: CGPoint(x: 410, y: 310)), at: 0)
+    #expect(brain.state == .barking)
+    #expect(effects.contains(.stopMoving))
+    #expect(effects.contains(.play(.bark)))
+    #expect(effects.contains(.playSound("borf")))
+
+    #expect(brain.handle(.tick, at: 1.0) == [], "still barking before barkDuration elapses")
+    let done = brain.handle(.tick, at: 1.3)
+    #expect(brain.state == .idle)
+    #expect(done.contains(.play(.idle)))
+}
+
+@Test func provokedWhileSittingBarksThenResumesSitting() {
+    let brain = makeBrain { $0.barkDuration = 1.2 }
+    _ = brain.handle(.command(.sit), at: 0)
+    _ = brain.handle(.provoked(at: .zero), at: 1)
+    #expect(brain.state == .barking)
+
+    let done = brain.handle(.tick, at: 2.3)
+    #expect(brain.state == .sitting)
+    #expect(done.contains(.play(.sit)))
+}
+
+@Test func provokedWhileLyingDownBarksThenResumesLying() {
+    let brain = makeBrain { $0.barkDuration = 1.2 }
+    _ = brain.handle(.command(.lieDown), at: 0)
+    _ = brain.handle(.provoked(at: .zero), at: 1)
+    #expect(brain.state == .barking)
+
+    let done = brain.handle(.tick, at: 2.3)
+    #expect(brain.state == .lyingDown)
+    #expect(done.contains(.play(.lie)))
+}
+
+@Test func provokedWhileWanderingBarksThenIdles() {
+    let brain = makeBrain()
+    _ = brain.handle(.tick, at: 0)
+    _ = brain.handle(.tick, at: 3.1)
+    #expect(brain.state == .wandering)
+
+    let effects = brain.handle(.provoked(at: .zero), at: 4)
+    #expect(brain.state == .barking)
+    #expect(effects.contains(.stopMoving), "the in-flight wander walk must be cancelled")
+
+    _ = brain.handle(.tick, at: 4 + brain.tuning.barkDuration + 0.1)
+    #expect(brain.state == .idle)
+}
+
+@Test func provokedIgnoredWhileCarried() {
+    let brain = makeBrain()
+    _ = brain.handle(.pickedUp, at: 0)
+    let effects = brain.handle(.provoked(at: .zero), at: 1)
+    #expect(effects == [])
+    #expect(brain.state == .carried)
+}
+
+@Test func provokedIgnoredWhileEating() {
+    let brain = makeBrain()
+    _ = brain.handle(.treatDropped(at: CGPoint(x: 640, y: 200)), at: 0)
+    _ = brain.handle(.arrived, at: 1)
+    #expect(brain.state == .eating)
+    let effects = brain.handle(.provoked(at: .zero), at: 1.5)
+    #expect(effects == [])
+    #expect(brain.state == .eating)
+}
+
+@Test func provokedIgnoredWhileChasingBall() {
+    let brain = makeBrain()
+    _ = brain.handle(.command(.fetch), at: 0)
+    _ = brain.handle(.ballThrown(landing: CGPoint(x: 700, y: 100), origin: CGPoint(x: 400, y: 300)), at: 1)
+    #expect(brain.state == .chasingBall)
+    let effects = brain.handle(.provoked(at: .zero), at: 2)
+    #expect(effects == [])
+    #expect(brain.state == .chasingBall)
+}
+
+@Test func provokedIgnoredWhileBeingPetted() {
+    let brain = makeBrain()
+    _ = brain.handle(.petted, at: 0)
+    let effects = brain.handle(.provoked(at: .zero), at: 0.5)
+    #expect(effects == [])
+    #expect(brain.state == .beingPetted)
+}
+
+@Test func provokedIgnoredWhileSleeping() {
+    let brain = makeBrain { $0.sleepChance = 1.0; $0.sleepDuration = 10...10 }
+    _ = brain.handle(.tick, at: 0)
+    _ = brain.handle(.tick, at: 3.1)
+    #expect(brain.state == .sleeping)
+    let effects = brain.handle(.provoked(at: .zero), at: 4)
+    #expect(effects == [])
+    #expect(brain.state == .sleeping)
+}
+
+@Test func provokedWhileBarkingIsIgnored() {
+    let brain = makeBrain()
+    _ = brain.handle(.provoked(at: .zero), at: 0)
+    #expect(brain.state == .barking)
+    let effects = brain.handle(.provoked(at: .zero), at: 0.5)
+    #expect(effects == [])
+    #expect(brain.state == .barking)
+}
+
+@Test func provokedDuringCooldownIsIgnoredThenWorksAgain() {
+    let brain = makeBrain { $0.barkDuration = 1.2; $0.barkCooldown = 8 }
+    _ = brain.handle(.provoked(at: .zero), at: 0)
+    _ = brain.handle(.tick, at: 1.3)
+    #expect(brain.state == .idle)
+
+    // Hover-spam inside the cooldown window: no machine-gun barking.
+    let spam = brain.handle(.provoked(at: .zero), at: 2)
+    #expect(spam == [])
+    #expect(brain.state == .idle)
+
+    // Cooldown measured from the bark start: 8s later he'll bark again.
+    let again = brain.handle(.provoked(at: .zero), at: 8.1)
+    #expect(brain.state == .barking)
+    #expect(again.contains(.play(.bark)))
+    #expect(again.contains(.playSound("borf")))
+}
+
+@Test func commandInterruptsBark() {
+    let brain = makeBrain()
+    _ = brain.handle(.provoked(at: .zero), at: 0)
+    #expect(brain.state == .barking)
+    let effects = brain.handle(.command(.sit), at: 0.5)
+    #expect(brain.state == .sitting)
+    #expect(effects.contains(.play(.sit)))
+}
+
+@Test func treatBeatsBark() {
+    let brain = makeBrain()
+    _ = brain.handle(.provoked(at: .zero), at: 0)
+    let effects = brain.handle(.treatDropped(at: CGPoint(x: 100, y: 100)), at: 0.5)
+    #expect(brain.state == .chasingTreat)
+    #expect(effects.contains(.play(.run)))
+}
+
+// MARK: - Barking at nothing (the Dock is suspicious)
+
+@Test func autonomousBarkAtNothingFacesNearestEdge() {
+    let brain = makeBrain { $0.barkAtNothingChance = 1.0 }
+    brain.position = CGPoint(x: 100, y: 300) // left edge is nearest
+    _ = brain.handle(.tick, at: 0)
+
+    let effects = brain.handle(.tick, at: 3.1)
+    #expect(brain.state == .barking)
+    #expect(effects.contains(.play(.bark)))
+    #expect(effects.contains(.playSound("borf")))
+    let target = moveTarget(in: effects)
+    #expect(target != nil, "he takes a small step toward the edge so he faces it")
+    if let target {
+        #expect(target.point.x < 100, "nearest edge is the left one")
+        #expect(target.point.y == 300)
+        #expect(target.speed == brain.tuning.walkSpeed)
+    }
+
+    let done = brain.handle(.tick, at: 3.1 + brain.tuning.barkDuration + 0.1)
+    #expect(brain.state == .idle)
+    #expect(done.contains(.play(.idle)))
+}
+
+@Test func autonomousBarkPicksBottomEdgeWhenNearest() {
+    let brain = makeBrain { $0.barkAtNothingChance = 1.0 }
+    brain.position = CGPoint(x: 400, y: 90) // bottom edge is nearest
+    _ = brain.handle(.tick, at: 0)
+    let effects = brain.handle(.tick, at: 3.1)
+    #expect(brain.state == .barking)
+    let target = moveTarget(in: effects)
+    #expect(target?.point.x == 400)
+    if let target { #expect(target.point.y < 90) }
+}
+
+@Test func autonomousBarkStartsTheProvokeCooldown() {
+    let brain = makeBrain { $0.barkAtNothingChance = 1.0; $0.barkCooldown = 8 }
+    _ = brain.handle(.tick, at: 0)
+    _ = brain.handle(.tick, at: 3.1)
+    #expect(brain.state == .barking)
+    _ = brain.handle(.tick, at: 3.1 + brain.tuning.barkDuration + 0.1)
+    #expect(brain.state == .idle)
+
+    // Hovering right after the autonomous bark: still inside the cooldown.
+    let effects = brain.handle(.provoked(at: .zero), at: 5)
+    #expect(effects == [])
+    #expect(brain.state == .idle)
 }
