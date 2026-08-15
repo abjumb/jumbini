@@ -28,7 +28,7 @@ jobs:
     runs-on: macos-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # Printed unconditionally: when a build breaks after a runner image
       # rolls forward, the toolchain version is the first thing worth seeing.
