@@ -24,6 +24,11 @@ final class PetScene: SKScene {
     /// The fur rabbit he carries during zoomies (a child of the dog).
     private var rabbit: SKSpriteNode?
 
+    /// The wardrobe item he's wearing (a child of the dog); nil = nothing.
+    private var wornItem: SKSpriteNode?
+    /// Sprite file of the current wardrobe selection (mirrors UserDefaults).
+    private var currentWardrobeFile: String?
+
     // Mouse sniffing: he tracks the cursor while the brain's timer runs.
     private var isSniffing = false
     /// Near/far sub-state so walk/sniff anims only switch on transitions.
@@ -79,6 +84,10 @@ final class PetScene: SKScene {
         dog.onFacingChanged = { [weak self] in
             self?.reseatCarriedBall()
             self?.reseatCarriedRabbit()
+            self?.reseatWornItem()
+        }
+        if let stored = UserDefaults.standard.string(forKey: Self.wardrobeItemKey) {
+            applyWardrobeItem(stored)
         }
 
         brain = DogBrain(bounds: size, position: dog.position)
@@ -167,6 +176,98 @@ final class PetScene: SKScene {
         applyBedVariant(index >= 0 ? index : nil)
     }
 
+    // MARK: - Wardrobe
+
+    /// Wardrobe catalog, menu order. Seating is per-item because the pieces
+    /// live at different heights: `dy` shifts the crown anchor by a fraction
+    /// of the dog's height (negative = down towards face/neck), `lift` raises
+    /// by a fraction of the item's own height (so hats perch on the head
+    /// instead of swallowing it). All placement lives here, not in the art,
+    /// so the placeholder sprites can swap for real 48x48 art untouched.
+    private static let wardrobeItems:
+        [(title: String, file: String, dy: CGFloat, lift: CGFloat, isEyewear: Bool)] = [
+            ("Party Hat", "wardrobe_partyhat", 0, 0.30, false),
+            ("Top Hat", "wardrobe_tophat", 0, 0.30, false),
+            ("Cowboy Hat", "wardrobe_cowboyhat", 0.02, 0.10, false),
+            ("Bandana", "wardrobe_bandana", -0.34, 0, false),
+            ("Sunglasses", "wardrobe_sunglasses", -0.10, 0, true),
+        ]
+    private static let wardrobeItemKey = "wardrobeItem"
+
+    private func applyWardrobeItem(_ file: String?) {
+        wornItem?.removeFromParent()
+        wornItem = nil
+        currentWardrobeFile = nil
+        guard let file, Self.wardrobeItems.contains(where: { $0.file == file }) else {
+            UserDefaults.standard.removeObject(forKey: Self.wardrobeItemKey)
+            return
+        }
+        let node: SKSpriteNode
+        if let anim = SpriteLibrary.shared.singleProp(named: file) {
+            node = SKSpriteNode(texture: anim.textures[0])
+            node.size = anim.nodeSize
+        } else {
+            node = SKSpriteNode(color: .systemPink, size: CGSize(width: 36, height: 24))
+        }
+        dog.addChild(node)
+        wornItem = node
+        currentWardrobeFile = file
+        UserDefaults.standard.set(file, forKey: Self.wardrobeItemKey)
+        reseatWornItem()
+    }
+
+    /// Keep the worn item seated as he turns and as his node size changes
+    /// between poses (sit art is taller than idle). The dog's own xScale
+    /// (±1, mirrored bark art) is divided back out because a child node
+    /// inherits its parent's scale — same gotcha as reseatCarriedRabbit().
+    private func reseatWornItem() {
+        guard let item = wornItem, item.parent === dog,
+              let spec = Self.wardrobeItems.first(where: { $0.file == currentWardrobeFile })
+        else { return }
+        let parentFlip: CGFloat = dog.xScale < 0 ? -1 : 1
+        let anchor = dog.hatOffset
+        item.position = CGPoint(
+            x: anchor.x * parentFlip,
+            y: anchor.y + spec.dy * dog.size.height + spec.lift * item.size.height
+        )
+        item.zPosition = dog.hatZOffset
+        // Facing away, glasses would float on the back of his head — hide
+        // them; hats and the bandana still read and just tuck behind (-1).
+        item.isHidden = spec.isEyewear && dog.facing.isNorthish
+        // Any lean in the art follows the facing (and cancels the parent flip).
+        let westish = dog.facing.unitVector.x < 0
+        item.xScale = (westish ? -1 : 1) * parentFlip
+    }
+
+    private func wardrobeSelectionMenu() -> NSMenu {
+        let menu = NSMenu()
+        let nothing = NSMenuItem(title: "Nothing", action: #selector(wardrobeChosen(_:)), keyEquivalent: "")
+        nothing.target = self
+        nothing.representedObject = ""
+        nothing.state = currentWardrobeFile == nil ? .on : .off
+        menu.addItem(nothing)
+        menu.addItem(.separator())
+        for spec in Self.wardrobeItems {
+            let item = NSMenuItem(title: spec.title, action: #selector(wardrobeChosen(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = spec.file
+            item.state = currentWardrobeFile == spec.file ? .on : .off
+            if let url = Bundle.module.url(forResource: spec.file, withExtension: "png", subdirectory: "sprites"),
+               let image = NSImage(contentsOf: url) {
+                // x2, not a fixed height: the items' aspects vary too much.
+                image.size = NSSize(width: image.size.width * 2, height: image.size.height * 2)
+                item.image = image
+            }
+            menu.addItem(item)
+        }
+        return menu
+    }
+
+    @objc private func wardrobeChosen(_ sender: NSMenuItem) {
+        guard let file = sender.representedObject as? String else { return }
+        applyWardrobeItem(file.isEmpty ? nil : file)
+    }
+
     // MARK: - Frame loop
 
     override func update(_ currentTime: TimeInterval) {
@@ -179,6 +280,9 @@ final class PetScene: SKScene {
         stepSniffing(dt: dt)
         brain.position = dog.position
         send(.tick)
+        // Every frame (cheap): the anchor depends on the dog's node size,
+        // which changes with the pose (sit vs idle), not just the facing.
+        reseatWornItem()
         updateClickThrough()
     }
 
@@ -619,6 +723,10 @@ final class PetScene: SKScene {
             item.representedObject = command
             menu.addItem(item)
         }
+        menu.addItem(.separator())
+        let wardrobe = NSMenuItem(title: "Wardrobe", action: nil, keyEquivalent: "")
+        wardrobe.submenu = wardrobeSelectionMenu()
+        menu.addItem(wardrobe)
         NSMenu.popUpContextMenu(menu, with: event, for: view)
     }
 
