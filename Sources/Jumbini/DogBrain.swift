@@ -231,7 +231,7 @@ final class DogBrain {
         switch state {
         case .idle:
             return leaveIdleForAutonomy(at: now)
-        case .sitting, .lyingDown, .spinning, .sleeping, .hunching:
+        case .sitting, .lyingDown, .spinning, .sleeping, .hunching, .performingTrick:
             return enterIdle(at: now)
         case .eating:
             // Treats go straight through him; the hunger meter never budges.
@@ -321,9 +321,10 @@ final class DogBrain {
             effects.append(contentsOf: [.play(.run), .startZoomies])
         case .relax:
             effects.append(contentsOf: enterIdle(at: now))
-        case .trick:
-            // Vocabulary stub — the trick-training branch wires performingTrick.
-            break
+        case .trick(let trick):
+            state = .performingTrick(trick)
+            deadline = now + tuning.trickDuration
+            effects.append(.play(Self.animation(for: trick)))
         }
         return effects
     }
@@ -484,6 +485,16 @@ final class DogBrain {
     }
 
     // MARK: - Helpers
+
+    /// Which animation performs a given trick.
+    private static func animation(for trick: Trick) -> DogAnimation {
+        switch trick {
+        case .shake: return .shakePaw
+        case .highFive: return .highFive
+        case .playDead: return .playDead
+        case .rollOver: return .rollOver
+        }
+    }
 
     private func random(in range: ClosedRange<TimeInterval>) -> TimeInterval {
         Double.random(in: range, using: &rng)

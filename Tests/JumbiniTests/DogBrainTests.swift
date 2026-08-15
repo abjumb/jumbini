@@ -639,6 +639,94 @@ private func moveTarget(in effects: [DogEffect]) -> (point: CGPoint, speed: CGFl
     #expect(brain.state == .sitting)
 }
 
+// MARK: - Tricks
+
+private func expectedTrickAnimation(_ trick: Trick) -> DogAnimation {
+    switch trick {
+    case .shake: return .shakePaw
+    case .highFive: return .highFive
+    case .playDead: return .playDead
+    case .rollOver: return .rollOver
+    }
+}
+
+@Test(arguments: Trick.allCases)
+func trickCommandPerformsItsAnimation(trick: Trick) {
+    let brain = makeBrain()
+    let effects = brain.handle(.command(.trick(trick)), at: 1)
+    #expect(brain.state == .performingTrick(trick))
+    #expect(effects.contains(.stopMoving))
+    #expect(effects.contains(.play(expectedTrickAnimation(trick))))
+}
+
+@Test func trickTimesOutBackToIdleAfterTrickDuration() {
+    let brain = makeBrain { $0.trickDuration = 1.5 }
+    _ = brain.handle(.command(.trick(.shake)), at: 10)
+    #expect(brain.handle(.tick, at: 11.4) == [], "still performing before trickDuration")
+    #expect(brain.state == .performingTrick(.shake))
+
+    let done = brain.handle(.tick, at: 11.6)
+    #expect(brain.state == .idle)
+    #expect(done.contains(.play(.idle)))
+}
+
+@Test func trickCommandIgnoredWhileCarried() {
+    let brain = makeBrain()
+    _ = brain.handle(.pickedUp, at: 0)
+    let effects = brain.handle(.command(.trick(.highFive)), at: 1)
+    #expect(effects == [])
+    #expect(brain.state == .carried)
+}
+
+@Test func trickInterruptsWandering() {
+    let brain = makeBrain()
+    _ = brain.handle(.tick, at: 0)
+    _ = brain.handle(.tick, at: 3.1)
+    #expect(brain.state == .wandering)
+
+    let effects = brain.handle(.command(.trick(.rollOver)), at: 4)
+    #expect(brain.state == .performingTrick(.rollOver))
+    #expect(effects.contains(.stopMoving), "movement must be cancelled")
+}
+
+@Test func treatBeatsTrick() {
+    let brain = makeBrain()
+    _ = brain.handle(.command(.trick(.playDead)), at: 0)
+    let spot = CGPoint(x: 200, y: 200)
+    let effects = brain.handle(.treatDropped(at: spot), at: 0.5)
+    #expect(brain.state == .chasingTreat)
+    #expect(effects.contains(.play(.run)))
+    #expect(moveTarget(in: effects)?.point == spot)
+}
+
+@Test func pettingInterruptsTrick() {
+    let brain = makeBrain { $0.petDuration = 1.2 }
+    _ = brain.handle(.command(.trick(.shake)), at: 0)
+    let effects = brain.handle(.petted, at: 0.5)
+    #expect(brain.state == .beingPetted)
+    #expect(effects.contains(.showHearts))
+
+    // And the session ends in idle, not back in the trick.
+    _ = brain.handle(.tick, at: 2)
+    #expect(brain.state == .idle)
+}
+
+@Test func pickupInterruptsTrick() {
+    let brain = makeBrain()
+    _ = brain.handle(.command(.trick(.rollOver)), at: 0)
+    let effects = brain.handle(.pickedUp, at: 0.5)
+    #expect(brain.state == .carried)
+    #expect(effects.contains(.play(.dangle)))
+}
+
+@Test func newCommandReplacesTrick() {
+    let brain = makeBrain()
+    _ = brain.handle(.command(.trick(.highFive)), at: 0)
+    let effects = brain.handle(.command(.sit), at: 0.5)
+    #expect(brain.state == .sitting)
+    #expect(effects.contains(.play(.sit)))
+}
+
 // MARK: - Hunching (the poopchini special)
 
 @Test func autonomousHunchStartsAndEnds() {
