@@ -1,3 +1,4 @@
+import CoreGraphics
 import SpriteKit
 
 /// The transparent scene the dog lives in. Owns per-frame mouse polling and
@@ -237,7 +238,9 @@ final class PetScene: SKScene {
                 sniffingClose = false
             case .removeTreat:
                 removeGroundTreat()
-            case .playSound, .leaveDeposit, .nudgeCursor,
+            case .nudgeCursor:
+                nudgeRealCursor()
+            case .playSound, .leaveDeposit,
                  .pickUpToy, .dropToy, .removeToy, .startTug, .stopTug:
                 break // vocabulary stubs — wired by feature branches
             }
@@ -355,10 +358,21 @@ final class PetScene: SKScene {
         reseatCarriedRabbit()
     }
 
-    // MARK: - Mouse sniffing
+    // MARK: - Mouse hunting (sniff / stalk / pounce share the cursor tracker)
 
+    /// A whole hunt (.sniffingMouse → .stalkingMouse → .pouncing) runs under
+    /// one .startSniffing/.stopSniffing pair, so `isSniffing` stays true
+    /// through every stage; the brain's state picks the movement style.
     private func stepSniffing(dt: TimeInterval) {
         guard isSniffing, dt > 0 else { return }
+        switch brain.state {
+        case .stalkingMouse: stepStalking(dt: dt)
+        case .pouncing: stepPouncing(dt: dt)
+        default: stepPlainSniffing(dt: dt)
+        }
+    }
+
+    private func stepPlainSniffing(dt: TimeInterval) {
         let cursor = mouseLocationInScene()
         let dx = cursor.x - dog.position.x
         let dy = cursor.y - dog.position.y
@@ -381,6 +395,71 @@ final class PetScene: SKScene {
             if !sniffingClose {
                 sniffingClose = true
                 dog.play(.sniff)
+            }
+        }
+    }
+
+    /// How close the stalk lets him get: he shadows the cursor from here.
+    private static let stalkStandoff: CGFloat = 90
+
+    /// The stalk: creep after the cursor at half the sniff approach speed,
+    /// holding the standoff distance — low, slow, and just out of reach.
+    /// The brain already played .stalk on entry; no animation switching here.
+    private func stepStalking(dt: TimeInterval) {
+        let cursor = mouseLocationInScene()
+        dog.face(towards: cursor)
+        let dx = cursor.x - dog.position.x
+        let dy = cursor.y - dog.position.y
+        let distance = hypot(dx, dy)
+        guard distance > Self.stalkStandoff else { return }
+        let creep = brain.tuning.walkSpeed * 0.75 // 0.5× the sniff approach (walkSpeed * 1.5)
+        let step = min(creep * CGFloat(dt), distance - Self.stalkStandoff)
+        dog.position = CGPoint(
+            x: min(max(dog.position.x + dx / distance * step, 0), size.width),
+            y: min(max(dog.position.y + dy / distance * step, 0), size.height)
+        )
+    }
+
+    /// The pounce: a fast manual leap re-aimed at the cursor's *current*
+    /// position every frame (like zoomies, not an SKAction), so a fleeing
+    /// cursor is still chased over the brain's pounceDuration window.
+    private func stepPouncing(dt: TimeInterval) {
+        let cursor = mouseLocationInScene()
+        let dx = cursor.x - dog.position.x
+        let dy = cursor.y - dog.position.y
+        let distance = hypot(dx, dy)
+        guard distance > 1 else { return }
+        dog.face(towards: cursor)
+        let step = min(brain.tuning.runSpeed * CGFloat(dt), distance)
+        dog.position = CGPoint(
+            x: min(max(dog.position.x + dx / distance * step, 0), size.width),
+            y: min(max(dog.position.y + dy / distance * step, 0), size.height)
+        )
+    }
+
+    // MARK: - The catch
+
+    /// The caught "prey" wriggles: jitter the real pointer a few points and
+    /// put it back. CGEvent's location and CGWarpMouseCursor both use global
+    /// display coordinates (top-left origin), and only relative offsets from
+    /// the read position are applied, so no scene-coordinate conversion is
+    /// needed. Best-effort: if the system ignores the warp (event-posting
+    /// restrictions), nothing moves and the .celebrate hearts still sell it.
+    private func nudgeRealCursor() {
+        guard let origin = CGEvent(source: nil)?.location else { return }
+        // Small hops (≤5pt from origin), ending exactly back home, ~0.3s total.
+        let offsets: [CGVector] = [
+            CGVector(dx: 4, dy: -3), CGVector(dx: -4, dy: 3),
+            CGVector(dx: 3, dy: 4), CGVector(dx: 0, dy: 0),
+        ]
+        for (index, offset) in offsets.enumerated() {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.075 * Double(index + 1)) {
+                // The user yanked the mouse away mid-jitter: let go of it.
+                guard let current = CGEvent(source: nil)?.location,
+                      hypot(current.x - origin.x, current.y - origin.y) < 24 else { return }
+                CGWarpMouseCursorPosition(CGPoint(x: origin.x + offset.dx, y: origin.y + offset.dy))
+                // Re-associate so the warp doesn't suppress real mouse input.
+                CGAssociateMouseAndMouseCursorPosition(1)
             }
         }
     }
