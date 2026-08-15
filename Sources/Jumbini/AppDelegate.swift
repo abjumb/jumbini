@@ -152,6 +152,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func togglePause(_ sender: NSMenuItem) {
         isPaused.toggle()
         sender.title = isPaused ? "Resume" : "Pause"
+        // Window walking: stop polling the window server while he's away.
+        scene?.setWindowWatching(!isPaused)
         if isPaused {
             skView?.isPaused = true
             window?.orderOut(nil)

@@ -75,11 +75,20 @@ final class Dog: SKSpriteNode {
     }
 
     /// One-shot happy flourish that overlays the current animation briefly.
-    func celebrate() {
+    func celebrate() { flourish(.happy, duration: 0.9) }
+
+    /// One-shot touchdown absorb after a fall: he crumples for a moment, then
+    /// picks up whatever the brain asked for next.
+    func absorb() { flourish(.land, duration: 0.35) }
+
+    /// Play `animation` over the top of the current one, then snap back to
+    /// whatever `play(_:)` was last asked for (which may have changed while
+    /// the flourish was running).
+    private func flourish(_ animation: DogAnimation, duration: TimeInterval) {
         celebrating = true
-        apply(.happy)
+        apply(animation)
         run(.sequence([
-            .wait(forDuration: 0.9),
+            .wait(forDuration: duration),
             .run { [weak self] in
                 guard let self else { return }
                 self.celebrating = false
@@ -129,6 +138,23 @@ final class Dog: SKSpriteNode {
         let move = SKAction.move(to: point, duration: TimeInterval(distance / speed))
         let done = SKAction.run { [weak self] in self?.onArrived?() }
         run(.sequence([move, done]), withKey: "move")
+    }
+
+    /// A leap along an arc — the hop onto a window's top edge. Shares the
+    /// "move" key with `move(to:speed:)`, so the two can never run at once
+    /// and `stopMoving()` cancels either of them.
+    func hop(to point: CGPoint, height: CGFloat, duration: TimeInterval) {
+        face(towards: point)
+        let start = position
+        let arc = SKAction.customAction(withDuration: duration) { node, elapsed in
+            let u = CGFloat(min(1, TimeInterval(elapsed) / duration))
+            node.position = CGPoint(
+                x: start.x + (point.x - start.x) * u,
+                y: start.y + (point.y - start.y) * u + height * 4 * u * (1 - u)
+            )
+        }
+        let done = SKAction.run { [weak self] in self?.onArrived?() }
+        run(.sequence([arc, done]), withKey: "move")
     }
 
     func stopMoving() {

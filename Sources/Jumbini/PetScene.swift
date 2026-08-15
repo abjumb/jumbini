@@ -133,6 +133,12 @@ final class PetScene: SKScene {
         brain = DogBrain(bounds: size, position: dog.position)
         brain.bedPosition = bedLieSpot()
         apply(effects: [.play(.idle)])
+        startWatchingWindows()
+    }
+
+    override func willMove(from view: SKView) {
+        windowSurfaces?.stop()
+        windowSurfaces = nil
     }
 
     private static func propNode(
@@ -319,11 +325,16 @@ final class PetScene: SKScene {
         lastTime = currentTime
         brain.bounds = size
         stepZoomies(dt: dt)
+        stepFalling(dt: dt)
         stepSniffing(dt: dt)
         brain.position = dog.position
+        // Half his sprite height, live: the pose changes it, and the brain
+        // needs it to stand his centre on a window's top edge.
+        brain.footOffset = dog.size.height / 2
         stepFrisbeeCatch()
         stepTug(dt: dt)
         send(.tick)
+        updatePerchShadow()
         trackHover(at: currentTime)
         // Every frame (cheap): the anchor depends on the dog's node size,
         // which changes with the pose (sit vs idle), not just the facing.
@@ -435,6 +446,14 @@ final class PetScene: SKScene {
                 beginTug()
             case .stopTug:
                 endTug()
+            case .hopTo(let point):
+                dog.hop(to: point, height: Self.perchHopHeight, duration: Self.perchHopDuration)
+            case .startFalling(let toY):
+                startFalling(toY: toY)
+            case .stopFalling:
+                stopFalling()
+            case .absorbLanding:
+                dog.absorb()
             }
         }
     }
@@ -921,6 +940,123 @@ final class PetScene: SKScene {
         dog.face(towards: CGPoint(x: p.x + v.x, y: p.y + v.y))
         // A bounce flips the rabbit even when face() already reseated it.
         reseatCarriedRabbit()
+    }
+
+    // MARK: - Window walking: your windows, as somewhere to stand
+
+    /// Polls the window server and keeps `brain.surfaces` current. nil once
+    /// the scene has been torn down.
+    private var windowSurfaces: WindowSurfaces?
+    /// The soft ellipse under his feet while he's on a ledge.
+    private var perchShadow: SKShapeNode?
+
+    private func startWatchingWindows() {
+        let watcher = WindowSurfaces(geometry: { [weak self] in
+            guard let self else { return SurfaceGeometry(flipHeight: 0, sceneOrigin: .zero, sceneSize: .zero) }
+            // The overlay covers exactly one screen, and the scene is 1:1
+            // with it (resizeFill, anchor at the origin), so the window's
+            // frame IS the scene's frame in global AppKit coordinates.
+            let frame = self.overlayWindow?.frame ?? CGRect(origin: .zero, size: self.size)
+            return SurfaceGeometry.forOverlay(sceneFrame: frame)
+        })
+        watcher.onUpdate = { [weak self] surfaces in self?.windowsChanged(to: surfaces) }
+        watcher.start()
+        windowSurfaces = watcher
+    }
+
+    /// A fresh reading of the windows on screen. Two things happen here, in
+    /// this order: he rides a window that moved, and then the brain is told
+    /// what the world looks like now.
+    private func windowsChanged(to surfaces: [Surface]) {
+        rideMovingWindow(to: surfaces)
+        brain.surfaces = surfaces
+    }
+
+    /// If the window he's standing on has been dragged, slide him by the same
+    /// delta so he stays on the title bar — the scene's job, because it owns
+    /// the pixels. The brain sees the same delta on its next tick and decides
+    /// whether it was gentle enough to survive; the shared `perchRideLimit`
+    /// keeps the two answers consistent, so he is never slid somewhere the
+    /// brain has already decided he fell from.
+    private func rideMovingWindow(to surfaces: [Surface]) {
+        guard case .perched(let id) = brain.state,
+              let before = brain.surfaces.first(where: { $0.id == id }),
+              let after = surfaces.first(where: { $0.id == id })
+        else { return }
+        let dx = after.rect.minX - before.rect.minX
+        let dy = after.rect.maxY - before.rect.maxY
+        guard hypot(dx, dy) <= brain.tuning.perchRideLimit else { return }
+        dog.position = CGPoint(x: dog.position.x + dx, y: dog.position.y + dy)
+    }
+
+    /// A contact shadow so he reads as standing ON the title bar rather than
+    /// floating over it. Created once, then just moved and hidden.
+    private func updatePerchShadow() {
+        guard case .perched(let id) = brain.state,
+              let surface = brain.surfaces.first(where: { $0.id == id })
+        else {
+            perchShadow?.isHidden = true
+            return
+        }
+        let shadow = perchShadow ?? makePerchShadow()
+        shadow.isHidden = false
+        shadow.position = CGPoint(x: dog.position.x, y: surface.topY + 2)
+    }
+
+    private func makePerchShadow() -> SKShapeNode {
+        let shadow = SKShapeNode(ellipseOf: CGSize(width: 44, height: 12))
+        shadow.fillColor = NSColor.black.withAlphaComponent(0.28)
+        shadow.strokeColor = .clear
+        shadow.zPosition = dog.zPosition - 1
+        addChild(shadow)
+        perchShadow = shadow
+        return shadow
+    }
+
+    /// Paused means the overlay is hidden and the dog is frozen; there is no
+    /// reason to keep asking the window server what your windows are doing.
+    func setWindowWatching(_ active: Bool) {
+        if active { windowSurfaces?.start() } else { windowSurfaces?.stop() }
+    }
+
+    // MARK: - Window walking: the hop and the fall
+    //
+    // The brain decides that he climbs, and that he falls, and where the fall
+    // stops. Everything here is pixels: the arc of the hop and the
+    // points-per-second of the descent, integrated by hand exactly the way
+    // `stepZoomies` is, so the drop accelerates like a real falling dog
+    // instead of gliding at a constant SKAction speed.
+
+    /// How high over the straight line the hop onto a ledge arcs.
+    private static let perchHopHeight: CGFloat = 60
+    private static let perchHopDuration: TimeInterval = 0.45
+
+    /// Downward speed in points/second; nil when he isn't falling.
+    private var fallVelocity: CGFloat?
+    /// Scene y the current fall stops at (from the brain's `.startFalling`).
+    private var fallFloorY: CGFloat = 0
+
+    private func startFalling(toY: CGFloat) {
+        // Defensive, like startZoomies: no stale in-flight walk or hop
+        // fighting the manual integration.
+        dog.removeAction(forKey: "move")
+        fallFloorY = toY
+        fallVelocity = 0
+    }
+
+    private func stopFalling() {
+        fallVelocity = nil
+    }
+
+    private func stepFalling(dt: TimeInterval) {
+        guard let v = fallVelocity, dt > 0 else { return }
+        // Terminal velocity keeps a drop from the top of a large display
+        // reading as a dog rather than a meteor.
+        let next = min(v + brain.tuning.fallAcceleration * CGFloat(dt), brain.tuning.fallMaxSpeed)
+        fallVelocity = next
+        // Clamped, but NOT cleared: the brain owns the end of the fall. It
+        // sees him at the floor on this frame's tick and sends `.stopFalling`.
+        dog.position.y = max(dog.position.y - next * CGFloat(dt), fallFloorY)
     }
 
     // MARK: - Mouse hunting (sniff / stalk / pounce share the cursor tracker)

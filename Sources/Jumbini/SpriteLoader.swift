@@ -138,6 +138,19 @@ final class SpriteLibrary {
         case .tug:
             return make(["brace_\(d)"], fps: 1, scale: Self.baseScale)
                 ?? make(["sit_\(d)"], fps: 1, scale: Self.sitScale)
+        case .fall:
+            // Legs out, ears up. The run frame reads as airborne once the
+            // dog is descending with nothing under him.
+            return make(["fall_\(d)"], fps: 1, scale: Self.baseScale)
+                ?? make(["run2_\(d)"], fps: 1, scale: Self.baseScale)
+        case .land:
+            // The touchdown absorb: a crouch, which the hunch pose already is.
+            return make(["land_\(d)"], fps: 1, scale: Self.baseScale)
+                ?? make(["hunch_\(d)"], fps: 1, scale: Self.baseScale)
+        case .peek:
+            // Nose over the edge of a window, looking down at the desktop.
+            return make(["peek_\(d)"], fps: 1, scale: Self.baseScale)
+                ?? make(["sniff_\(d)"], fps: 1, scale: Self.baseScale)
         }
     }
 
