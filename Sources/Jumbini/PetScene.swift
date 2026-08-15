@@ -1271,22 +1271,54 @@ final class PetScene: SKScene {
     /// On-screen pile cap: when a 6th appears the oldest fades away.
     private static let maxPiles = 5
 
-    /// Pile art: the roadmap's hand-made piles (deposit_1..3) win when they
-    /// exist; the generated two-variant strip is the stand-in. Same
-    /// drop-the-file-in upgrade path as the bed catalog.
+    /// How long a fresh pile stays fresh. Past this it dries out — the art
+    /// swaps to the pale crusted variant and the flies find it.
+    private static let pileDryAge: TimeInterval = 120
+
+    /// Pile art: one of Alex's three hand-made variants, picked at random so
+    /// no two piles in a row are the same lump.
     private static func pileNode() -> SKSpriteNode {
         if let real = SpriteLibrary.shared.singleProp(named: "deposit_\(Int.random(in: 1...3))") {
             let node = SKSpriteNode(texture: real.textures[0])
             node.size = real.nodeSize
             return node
         }
-        if let anim = SpriteLibrary.shared.prop(named: "deposit", frameWidth: 12, fps: 1),
-           let texture = anim.textures.randomElement() {
-            let node = SKSpriteNode(texture: texture)
-            node.size = anim.nodeSize
-            return node
-        }
         return SKSpriteNode(color: .systemBrown, size: CGSize(width: 36, height: 30))
+    }
+
+    /// Two minutes on the carpet and it isn't fresh any more: the pile crusts
+    /// over and picks up an escort. The timer rides on the pile node itself,
+    /// so a pile that gets dragged, evicted or binned takes its own schedule
+    /// (and its flies, which are children) with it.
+    private func startAging(_ pile: SKSpriteNode) {
+        guard let dry = SpriteLibrary.shared.singleProp(named: "deposit_dry") else { return }
+        pile.run(.sequence([
+            .wait(forDuration: Self.pileDryAge),
+            .run { [weak self] in
+                pile.texture = dry.textures[0]
+                pile.size = dry.nodeSize
+                self?.addFlies(to: pile)
+            },
+        ]), withKey: "age")
+    }
+
+    /// A couple of flies orbiting an old pile, half a turn out of phase.
+    private func addFlies(to pile: SKSpriteNode) {
+        guard let anim = SpriteLibrary.shared.propSequence(named: "fly", frames: 2, fps: 8) else { return }
+        for (index, phase) in [CGFloat(0), .pi].enumerated() {
+            let fly = SKSpriteNode(texture: anim.textures[0])
+            fly.size = CGSize(width: 18, height: 18)
+            fly.zPosition = 1 // above the pile it's sitting on
+            fly.run(.repeatForever(.animate(with: anim.textures, timePerFrame: 1 / anim.fps)))
+            // A slow lopsided orbit — wider than it is tall, so it reads as a
+            // circle seen at desk level rather than a spinning wheel.
+            let period: TimeInterval = 2.6 + 0.4 * Double(index)
+            fly.run(.repeatForever(.customAction(withDuration: period) { node, elapsed in
+                let angle = phase + 2 * .pi * CGFloat(TimeInterval(elapsed) / period)
+                node.position = CGPoint(x: cos(angle) * 22, y: 14 + sin(angle) * 9)
+            }))
+            pile.addChild(fly)
+        }
     }
 
     /// The hunch finished: a pile lands just behind him, on the ground line.
@@ -1300,6 +1332,7 @@ final class PetScene: SKScene {
         pile.zPosition = 4 // above furniture (2), below the dog (10)
         addChild(pile)
         piles.append(pile)
+        startAging(pile)
         if piles.count > Self.maxPiles {
             // Never evict the pile the user is currently dragging — it would
             // vanish out of their hand mid-gesture and leave mouseUp holding
