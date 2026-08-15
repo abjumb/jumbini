@@ -33,6 +33,15 @@ final class PetScene: SKScene {
     /// Near/far sub-state so walk/sniff anims only switch on transitions.
     private var sniffingClose = false
 
+    // Hover-to-provoke: linger over the dog long enough and he barks at you.
+    /// When the cursor entered the dog's hover frame (nil while it's outside).
+    private var hoverStart: TimeInterval?
+    /// Continuous hover time that counts as a provocation.
+    private static let hoverProvokeDelay: TimeInterval = 1.5
+
+    /// Cached sound effects by name (Resources/audio/<name>.wav).
+    private var soundCache: [String: NSSound] = [:]
+
     /// Fetch was chosen: the next left-click anywhere throws the ball.
     private var armedForThrow = false
     /// Dog arrived at the landing spot before the ball finished bouncing.
@@ -183,7 +192,27 @@ final class PetScene: SKScene {
         stepSniffing(dt: dt)
         brain.position = dog.position
         send(.tick)
+        trackHover(at: currentTime)
         updateClickThrough()
+    }
+
+    /// A cursor lingering over the dog for a while counts as a provocation.
+    /// Resets after firing — the brain's bark cooldown governs repeats.
+    private func trackHover(at now: TimeInterval) {
+        // A press/drag on him is interaction, not loitering.
+        guard dogHoverFrame().contains(mouseLocationInScene()),
+              !mouseDownOnDog, !isCarryingDog else {
+            hoverStart = nil
+            return
+        }
+        guard let start = hoverStart else {
+            hoverStart = now
+            return
+        }
+        if now - start >= Self.hoverProvokeDelay {
+            hoverStart = nil
+            send(.provoked(at: mouseLocationInScene()))
+        }
     }
 
     /// Route an event to the brain and apply what comes back.
@@ -243,11 +272,34 @@ final class PetScene: SKScene {
                 removeGroundTreat()
             case .leaveDeposit:
                 spawnPile()
-            case .playSound, .nudgeCursor,
+            case .playSound(let name):
+                playSound(named: name)
+            case .nudgeCursor,
                  .pickUpToy, .dropToy, .removeToy, .startTug, .stopTug:
                 break // vocabulary stubs — wired by feature branches
             }
         }
+    }
+
+    // MARK: - Sound
+
+    /// Play a generated effect from Resources/audio, unless the user muted us.
+    /// NSSounds are cached; a re-trigger restarts the sound from the top.
+    private func playSound(named name: String) {
+        guard !UserDefaults.standard.bool(forKey: "soundMuted") else { return }
+        let sound: NSSound
+        if let cached = soundCache[name] {
+            sound = cached
+        } else {
+            guard
+                let url = Bundle.module.url(forResource: name, withExtension: "wav", subdirectory: "audio"),
+                let loaded = NSSound(contentsOf: url, byReference: true)
+            else { return }
+            soundCache[name] = loaded
+            sound = loaded
+        }
+        if sound.isPlaying { sound.stop() }
+        sound.play()
     }
 
     // MARK: - Fetch plumbing

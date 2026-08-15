@@ -86,6 +86,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         treatsItem.isEnabled = false
         menu.addItem(treatsItem)
         menu.addItem(.separator())
+        let muteItem = NSMenuItem(title: "Mute Sounds", action: #selector(toggleMute(_:)), keyEquivalent: "")
+        muteItem.target = self
+        muteItem.state = UserDefaults.standard.bool(forKey: "soundMuted") ? .on : .off
+        menu.addItem(muteItem)
         let pauseItem = NSMenuItem(title: "Pause", action: #selector(togglePause(_:)), keyEquivalent: "")
         pauseItem.target = self
         menu.addItem(pauseItem)
@@ -106,6 +110,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             : "Treats eaten: \(treatsEaten)"
         // Hunger stays pinned at 100% forever — bottomless by design.
         hungerItem?.title = "Hunger: ██████████ 100%"
+    }
+
+    @objc private func toggleMute(_ sender: NSMenuItem) {
+        let defaults = UserDefaults.standard
+        let muted = !defaults.bool(forKey: "soundMuted")
+        defaults.set(muted, forKey: "soundMuted")
+        sender.state = muted ? .on : .off
     }
 
     @objc private func togglePause(_ sender: NSMenuItem) {
