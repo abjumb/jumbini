@@ -37,6 +37,35 @@ final class Dog: SKSpriteNode {
     /// A carried ball hides behind him when he faces away from the viewer.
     var mouthZOffset: CGFloat { facing.isNorthish ? -1 : 1 }
 
+    /// Where a worn wardrobe item sits, relative to the dog (the crown of his
+    /// head). Uses the live node size so the anchor tracks pose changes
+    /// (sit art renders taller than idle) — positioning stays in code, never
+    /// baked into the item art.
+    var hatOffset: CGPoint {
+        let v = renderedFacing.unitVector
+        return CGPoint(x: v.x * 10, y: size.height * 0.32)
+    }
+
+    /// A worn item tucks behind him when he faces away from the viewer.
+    var hatZOffset: CGFloat { renderedFacing.isNorthish ? -1 : 1 }
+
+    /// The direction the art on screen ACTUALLY faces, which is not always the
+    /// logical `facing`: the dangle pose always draws `sit_south`, and the
+    /// bark/happy art only exists facing east (mirrored for westish facings).
+    /// Wardrobe placement keys off this, so sunglasses don't vanish while he's
+    /// dangling from the cursor looking straight at you.
+    var renderedFacing: Facing {
+        switch lastRequested {
+        case .dangle:
+            return .south
+        case .happy, .bark:
+            // Matches SpriteLibrary's mirror rule for the east-only bark art.
+            return facing.unitVector.x < 0 ? .west : .east
+        default:
+            return facing
+        }
+    }
+
     // MARK: - Animation
 
     func play(_ animation: DogAnimation) {
