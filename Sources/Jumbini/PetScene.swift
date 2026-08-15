@@ -386,6 +386,9 @@ final class PetScene: SKScene {
     /// the same path as a click or a menu command, so the brain's own rules
     /// about what outranks what apply unchanged. Main thread only.
     func receive(_ signal: SystemSignal) {
+        // The build party is the scene's to throw — the brain's `.celebrate`
+        // covers every kind of good news, and only this one gets confetti.
+        if signal == .buildFinished { showConfetti() }
         send(.system(signal))
     }
 
@@ -411,6 +414,13 @@ final class PetScene: SKScene {
             switch effect {
             case .play(let animation):
                 dog.play(animation)
+                // Two poses come with their own puff of air. The brain sends
+                // each exactly once on entering the state, so these fire once.
+                switch animation {
+                case .bark: showBarkPuff()
+                case .pounce: showDust()
+                default: break
+                }
             case .moveTo(let point, let speed):
                 dog.move(to: point, speed: speed)
             case .stopMoving:
@@ -451,7 +461,9 @@ final class PetScene: SKScene {
             case .playSound(let name):
                 playSound(named: name)
             case .nudgeCursor:
+                // The catch. The jitter is the payoff; the sparkles sell it.
                 nudgeRealCursor()
+                showSparkles()
             case .pickUpToy(let kind):
                 attachToyToDog(kind)
             case .dropToy(let kind):
@@ -470,6 +482,7 @@ final class PetScene: SKScene {
                 stopFalling()
             case .absorbLanding:
                 dog.absorb()
+                showDust()
             }
         }
     }
@@ -1340,6 +1353,7 @@ final class PetScene: SKScene {
         if let trick = trickTrainer.recordTreat(at: lastTime), trickTrainer.isUnlocked(trick) {
             dog.celebrate()
             showHearts()
+            showSparkles()
         }
     }
 
@@ -1368,6 +1382,44 @@ final class PetScene: SKScene {
             return node
         }
         return SKSpriteNode(color: .systemBrown, size: CGSize(width: 36, height: 30))
+    }
+
+    /// How long a fresh pile steams for.
+    private static let pileSteamDuration: TimeInterval = 20
+    /// Gap between wisps.
+    private static let pileSteamInterval: TimeInterval = 0.55
+
+    /// It is fresh, and the desktop is cold. Wisps rise out of the pile for
+    /// the first twenty seconds and then it's just a pile. The emitter is an
+    /// action on the pile node, so it stops the moment the pile is binned.
+    private func startSteaming(_ pile: SKSpriteNode) {
+        guard let anim = SpriteLibrary.shared.propSequence(named: "steam", frames: 1, fps: 1),
+              let texture = anim.textures.first
+        else { return }
+        let emit = SKAction.run { [weak pile] in
+            guard let pile else { return }
+            let wisp = SKSpriteNode(texture: texture)
+            wisp.size = CGSize(width: 24, height: 24)
+            wisp.zPosition = 1
+            wisp.alpha = 0
+            wisp.position = CGPoint(x: CGFloat.random(in: -7...7), y: 6)
+            pile.addChild(wisp)
+            wisp.run(.sequence([
+                .group([
+                    .moveBy(x: CGFloat.random(in: -7...7), y: 28, duration: 1.7),
+                    .sequence([
+                        .fadeAlpha(to: 0.7, duration: 0.4),
+                        .wait(forDuration: 0.5),
+                        .fadeOut(withDuration: 0.8),
+                    ]),
+                ]),
+                .removeFromParent(),
+            ]))
+        }
+        pile.run(.repeat(
+            .sequence([emit, .wait(forDuration: Self.pileSteamInterval)]),
+            count: Int(Self.pileSteamDuration / Self.pileSteamInterval)
+        ), withKey: "steam")
     }
 
     /// Two minutes on the carpet and it isn't fresh any more: the pile crusts
@@ -1416,6 +1468,7 @@ final class PetScene: SKScene {
         pile.zPosition = 4 // above furniture (2), below the dog (10)
         addChild(pile)
         piles.append(pile)
+        startSteaming(pile)
         startAging(pile)
         if piles.count > Self.maxPiles {
             // Never evict the pile the user is currently dragging — it would
@@ -1450,6 +1503,107 @@ final class PetScene: SKScene {
             .group([.scale(to: 0.1, duration: 0.25), .fadeOut(withDuration: 0.25)]),
             .removeFromParent(),
         ]))
+    }
+
+    // MARK: - Flourishes
+    //
+    // Small one-shot effects, all built the same way showHearts() is: spawn a
+    // node, give it an action that moves and fades it, have it delete itself.
+    // Nothing here holds a reference or needs cleaning up, so nothing here can
+    // leak into the next frame.
+
+    /// One flourish sprite: numbered frames played once across `duration`
+    /// while it drifts and fades, then gone. Returns nil (and does nothing) if
+    /// the art isn't in the bundle.
+    @discardableResult
+    private func spawnFlourish(
+        named name: String, frames: Int, at point: CGPoint, side: CGFloat,
+        drift: CGVector, duration: TimeInterval
+    ) -> SKSpriteNode? {
+        guard let anim = SpriteLibrary.shared.propSequence(
+            named: name, frames: frames, fps: Double(frames) / duration
+        ) else { return nil }
+        let node = SKSpriteNode(texture: anim.textures[0])
+        node.size = CGSize(width: side, height: side)
+        node.zPosition = 20 // with the hearts: above the dog and everything he owns
+        node.position = point
+        addChild(node)
+        node.run(.animate(with: anim.textures, timePerFrame: duration / Double(frames),
+                          resize: false, restore: false))
+        node.run(.sequence([
+            .group([
+                .moveBy(x: drift.dx, y: drift.dy, duration: duration),
+                .sequence([
+                    .wait(forDuration: duration * 0.5),
+                    .fadeOut(withDuration: duration * 0.5),
+                ]),
+            ]),
+            .removeFromParent(),
+        ]))
+        return node
+    }
+
+    /// His mouth, in scene coordinates.
+    private func mouthPoint() -> CGPoint {
+        CGPoint(x: dog.position.x + dog.mouthOffset.x, y: dog.position.y + dog.mouthOffset.y)
+    }
+
+    /// A puff of breath leaving his mouth on a bark. `renderedFacing`, not
+    /// `facing`: the bark art is east-only and mirrored, so the mouth he's
+    /// actually drawn with may not be pointing where he logically is.
+    private func showBarkPuff() {
+        let v = dog.renderedFacing.unitVector
+        spawnFlourish(
+            named: "bark_puff", frames: 3, at: mouthPoint(), side: 30,
+            drift: CGVector(dx: v.x * 26, dy: v.y * 14 + 6), duration: 0.45
+        )
+    }
+
+    /// Dust off the floor where his paws are: a landing, or a pounce leaving
+    /// the ground.
+    private func showDust() {
+        spawnFlourish(
+            named: "dust", frames: 4,
+            at: CGPoint(x: dog.position.x, y: dog.position.y - dog.size.height / 2 + 8),
+            side: 46, drift: CGVector(dx: 0, dy: 10), duration: 0.5
+        )
+    }
+
+    /// Sparkles over his head: the cursor caught, or a trick that just clicked.
+    private func showSparkles() {
+        // Varied sizes and lifetimes rather than a stagger — three identical
+        // sparkles firing together read as one flash.
+        for (side, duration) in [(34 as CGFloat, 0.45), (26, 0.6), (30, 0.75)] {
+            spawnFlourish(
+                named: "sparkle", frames: 4,
+                at: CGPoint(
+                    x: dog.position.x + CGFloat.random(in: -30...30),
+                    y: dog.position.y + dog.size.height / 2 + CGFloat.random(in: -8...16)
+                ),
+                side: side, drift: CGVector(dx: CGFloat.random(in: -8...8), dy: 20),
+                duration: duration
+            )
+        }
+    }
+
+    /// Ship it: confetti rains down over him.
+    ///
+    /// Two frames, not three — confetti_2 was delivered as a humanoid
+    /// character sprite rather than confetti and isn't imported. See
+    /// Tools/import_kit_props.py.
+    private func showConfetti() {
+        for _ in 0..<7 {
+            spawnFlourish(
+                named: "confetti", frames: 2,
+                at: CGPoint(
+                    x: dog.position.x + CGFloat.random(in: -54...54),
+                    y: dog.position.y + dog.size.height / 2 + CGFloat.random(in: 8...48)
+                ),
+                side: CGFloat.random(in: 26...38),
+                drift: CGVector(dx: CGFloat.random(in: -16...16), dy: CGFloat.random(in: -78...(-44))),
+                duration: Double.random(in: 1.0...1.6)
+            )
+        }
     }
 
     // MARK: - Petting feedback
