@@ -251,6 +251,96 @@ private func parse(
     #expect(parse([windowInfo(y: 1080, height: 480)]).isEmpty)
 }
 
+// MARK: - Filtering: dead zones on a multi-display desk
+
+// One overlay spans the bounding box of every display, so the scene can
+// contain regions that are on no display at all. A title bar out there is
+// drawn nowhere, and a dog patrolling it has vanished — so the reachability
+// test measures the top edge against the DISPLAYS, not against the scene box.
+//
+// `screenRects` empty means "the scene box is all screen", which is the
+// single-display case and every fixture above.
+
+/// A 1920x1080 primary with a bottom-aligned 1440x900 panel to its right.
+/// Scene is 3360x1080; the top 180pt of the right-hand 1440 is dead.
+private let unevenPair = SurfaceGeometry(
+    flipHeight: 1080,
+    sceneOrigin: .zero,
+    sceneSize: CGSize(width: 3360, height: 1080),
+    screenRects: [
+        CGRect(x: 0, y: 0, width: 1920, height: 1080),
+        CGRect(x: 1920, y: 0, width: 1440, height: 900),
+    ]
+)
+
+@Test func aTitleBarOnTheSecondDisplayIsAPerch() {
+    // CG y=200 on the shared flip axis -> scene y=880 for the top edge; that
+    // is inside the short display, which only reaches 900.
+    let surfaces = parse([windowInfo(x: 2200, y: 200, width: 640, height: 480)], geometry: unevenPair)
+    #expect(surfaces.count == 1)
+    #expect(surfaces.first?.topY == 880)
+}
+
+@Test func aTitleBarStrandedInADeadZoneIsNotAPerch() {
+    // Same window, 100pt higher: its top edge is now at scene y=980, in the
+    // strip above the short display, where nothing is drawn at all.
+    #expect(parse([windowInfo(x: 2200, y: 100, width: 640, height: 480)], geometry: unevenPair).isEmpty)
+}
+
+@Test func aWindowStraddlingTheSeamIsJudgedOnTheVisiblePartOfItsTopEdge() {
+    // Straddling the boundary, high up: only the 100pt over the tall display
+    // is real, and 100 >= the 60pt minimum, so he can still get on it.
+    let straddling = parse(
+        [windowInfo(x: 1820, y: 100, width: 640, height: 480)], geometry: unevenPair
+    )
+    #expect(straddling.count == 1)
+
+    // Nudged right so only 40pt of the top edge is over the tall display and
+    // the rest hangs in the dead zone: not enough ledge to be worth it.
+    #expect(parse(
+        [windowInfo(x: 1880, y: 100, width: 640, height: 480)], geometry: unevenPair
+    ).isEmpty)
+}
+
+@Test func theDeadZoneRuleAddsUpDisjointStretchesOfRealScreen() {
+    // A short middle display with taller ones either side: a wide window high
+    // up is visible at both ends and dead in the middle. 60pt of ledge on the
+    // left plus 60 on the right is 120 — reachable.
+    let valley = SurfaceGeometry(
+        flipHeight: 1000,
+        sceneOrigin: .zero,
+        sceneSize: CGSize(width: 3000, height: 1000),
+        screenRects: [
+            CGRect(x: 0, y: 0, width: 1000, height: 1000),
+            CGRect(x: 1000, y: 0, width: 1000, height: 600),
+            CGRect(x: 2000, y: 0, width: 1000, height: 1000),
+        ]
+    )
+    // Top edge at scene y = 1000 - 200 = 800, above the middle display.
+    let surfaces = parse(
+        [windowInfo(x: 940, y: 200, width: 1120, height: 480)], geometry: valley
+    )
+    #expect(surfaces.count == 1, "60pt on the left plus 60pt on the right clears the minimum")
+
+    // Shrink both overhangs to 20pt each and the same window has nowhere to
+    // stand: 40pt of ledge in two pieces is not a walk, it is a stumble.
+    #expect(parse(
+        [windowInfo(x: 980, y: 200, width: 1040, height: 480)], geometry: valley
+    ).isEmpty)
+}
+
+@Test func describingTheScreensChangesNothingOnASingleDisplay() {
+    let described = SurfaceGeometry(
+        flipHeight: 1080,
+        sceneOrigin: .zero,
+        sceneSize: CGSize(width: 1920, height: 1080),
+        screenRects: [CGRect(x: 0, y: 0, width: 1920, height: 1080)]
+    )
+    #expect(parse([windowInfo()], geometry: described) == parse([windowInfo()]))
+    #expect(parse([windowInfo(x: 1880, width: 640)], geometry: described).isEmpty)
+    #expect(parse([windowInfo(x: -440, width: 640)], geometry: described).count == 1)
+}
+
 // MARK: - Bounds decoding
 
 @Test func boundsDecodingMatchesTheWindowServersDictionaryShape() {

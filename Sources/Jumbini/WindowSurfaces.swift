@@ -34,6 +34,19 @@ struct SurfaceGeometry: Equatable {
     /// The scene's size in points; used to cull windows that don't overlap it.
     var sceneSize: CGSize
 
+    /// Where the real displays are inside the scene, in SCENE coordinates.
+    ///
+    /// EMPTY — the default, and every single-display Mac — means "the whole
+    /// scene box is screen", which is exactly how this file behaved before
+    /// there was such a thing as a second monitor.
+    ///
+    /// Non-empty matters because the union overlay spans the BOUNDING BOX of
+    /// every display, and an uneven arrangement leaves parts of that box on no
+    /// display. A title bar out there is drawn nowhere at all, so it is not
+    /// somewhere a dog can stand, however wide it is. `ScreenLayout.sceneFrames`
+    /// is what fills this in.
+    var screenRects: [CGRect] = []
+
     /// ────────────────────────────────────────────────────────────────────
     /// THE COORDINATE CONVERSION. **MULTI-MONITOR EXTENSION POINT.**
     /// ────────────────────────────────────────────────────────────────────
@@ -88,6 +101,25 @@ struct SurfaceGeometry: Equatable {
             flipHeight: primary?.frame.maxY ?? sceneFrame.maxY,
             sceneOrigin: sceneFrame.origin,
             sceneSize: sceneFrame.size
+        )
+    }
+
+    /// The geometry for the one overlay spanning every display. Pure: the
+    /// layout has already done the `NSScreen` reading.
+    ///
+    /// `flipHeight` is the PRIMARY display's height and nothing else — see the
+    /// warning on `sceneRect(from:)`. `sceneOrigin` is the union's origin,
+    /// which goes negative the moment a display sits left of or below the
+    /// primary, and that is fine because the conversion is a translation.
+    static func forOverlay(layout: ScreenLayout) -> SurfaceGeometry {
+        let primary = layout.displays.indices.contains(layout.primaryIndex)
+            ? layout.displays[layout.primaryIndex]
+            : layout.unionFrame
+        return SurfaceGeometry(
+            flipHeight: primary.maxY,
+            sceneOrigin: layout.unionFrame.origin,
+            sceneSize: layout.unionFrame.size,
+            screenRects: layout.sceneFrames
         )
     }
 }
@@ -181,13 +213,35 @@ enum WindowSurfaceParser {
         )
     }
 
-    /// Is this window's TOP EDGE actually somewhere in the scene? A window
-    /// scrolled off the side, or one whose title bar sits above the scene
-    /// (or below its floor), is not a perch even though it is "on screen".
+    /// Is this window's TOP EDGE actually somewhere a dog could stand? A window
+    /// scrolled off the side, one whose title bar sits above the scene (or
+    /// below its floor), or — on an uneven multi-display desk — one whose title
+    /// bar hangs in a region that belongs to no display, is not a perch even
+    /// though it is "on screen".
     private static func isReachable(_ rect: CGRect, in geometry: SurfaceGeometry) -> Bool {
-        let visibleWidth = min(rect.maxX, geometry.sceneSize.width) - max(rect.minX, 0)
-        guard visibleWidth >= minimumOnScreenWidth else { return false }
-        return rect.maxY > 0 && rect.maxY < geometry.sceneSize.height
+        guard rect.maxY > 0, rect.maxY < geometry.sceneSize.height else { return false }
+        return visibleTopEdgeWidth(of: rect, in: geometry) >= minimumOnScreenWidth
+    }
+
+    /// How many points of the window's top edge are over something the user
+    /// can actually see.
+    ///
+    /// With no `screenRects` this is the scene box, unchanged. With them it is
+    /// the total across every display whose vertical span covers the top edge
+    /// — a total, because a window can straddle two displays with a dead zone
+    /// between them and still offer a walkable ledge at each end. Displays
+    /// never overlap, so summing cannot double-count.
+    private static func visibleTopEdgeWidth(
+        of rect: CGRect, in geometry: SurfaceGeometry
+    ) -> CGFloat {
+        guard !geometry.screenRects.isEmpty else {
+            return min(rect.maxX, geometry.sceneSize.width) - max(rect.minX, 0)
+        }
+        let topY = rect.maxY
+        return geometry.screenRects.reduce(0) { total, screen in
+            guard topY >= screen.minY, topY <= screen.maxY else { return total }
+            return total + max(0, min(rect.maxX, screen.maxX) - max(rect.minX, screen.minX))
+        }
     }
 
     /// CGWindowList stores bounds as a nested dictionary of X/Y/Width/Height
