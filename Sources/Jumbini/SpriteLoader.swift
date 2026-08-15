@@ -105,6 +105,39 @@ final class SpriteLibrary {
             return make(["sniff_\(d)"], fps: 1, scale: Self.baseScale)
         case .hunch:
             return make(["hunch_\(d)"], fps: 1, scale: Self.baseScale)
+        // v4 states: real art first (imported via Tools/import_jumba.py when it
+        // arrives), existing art as the stand-in until then. Keeping the real
+        // filename in the lookup means dropping the art in requires no code.
+        case .bark:
+            let flip = facing == .west || facing == .northWest || facing == .southWest
+            return make((0..<6).map { "bark_\($0)" }, fps: 10, scale: Self.baseScale, flipX: flip)
+        case .stalk:
+            return make(["stalk_\(d)"], fps: 1, scale: Self.baseScale)
+                ?? make(["sniff_\(d)"], fps: 1, scale: Self.baseScale)
+        case .pounce:
+            return make(["pounce_\(d)"], fps: 1, scale: Self.baseScale)
+                ?? make(["run2_\(d)"], fps: 1, scale: Self.baseScale)
+        case .shakePaw:
+            return make(["paw_\(d)"], fps: 1, scale: Self.baseScale)
+                ?? make(["sit_\(d)"], fps: 1, scale: Self.sitScale)
+        case .highFive:
+            return make(["highfive_\(d)"], fps: 1, scale: Self.baseScale)
+                ?? make(["sit_\(d)"], fps: 1, scale: Self.sitScale)
+        case .playDead:
+            return make(["playdead_\(d)"], fps: 1, scale: Self.baseScale)
+                ?? make(["sleep_\(d)"], fps: 1, scale: Self.baseScale)
+        case .rollOver:
+            if let real = make(["rollover_\(d)"], fps: 1, scale: Self.baseScale) { return real }
+            let cycle = [Facing.south, .southWest, .west, .northWest,
+                         .north, .northEast, .east, .southEast]
+            return make(cycle.map { "idle_\($0.fileSuffix)" }, fps: 8, scale: Self.baseScale)
+        case .shakeToy:
+            if let real = make(["shaketoy_\(d)"], fps: 8, scale: Self.baseScale) { return real }
+            let flip = facing == .west || facing == .northWest || facing == .southWest
+            return make((0..<6).map { "bark_\($0)" }, fps: 12, scale: Self.baseScale, flipX: flip)
+        case .tug:
+            return make(["brace_\(d)"], fps: 1, scale: Self.baseScale)
+                ?? make(["sit_\(d)"], fps: 1, scale: Self.sitScale)
         }
     }
 

@@ -5,10 +5,30 @@ import CoreGraphics
 
 enum DogAnimation: String, Equatable {
     case idle, walk, run, sit, lie, sleep, spin, carryWalk, happy, dangle, sniff, hunch
+    case bark, stalk, pounce, shakePaw, highFive, playDead, rollOver, shakeToy, tug
+}
+
+/// Tricks the dog can be taught. Raw value doubles as the menu title.
+enum Trick: String, CaseIterable, Equatable {
+    case shake = "Shake"
+    case highFive = "High Five"
+    case playDead = "Play Dead"
+    case rollOver = "Roll Over"
+}
+
+/// Toys beyond the fetch ball.
+enum ToyKind: Equatable {
+    case frisbee, squeaky, rope
+}
+
+/// Ambient machine happenings the scene layer can feed the brain.
+enum SystemSignal: Equatable {
+    case buildFinished, idleBegan, idleEnded, fansUp, batteryLow, batteryNormal, dndOn, dndOff
 }
 
 enum DogCommand: Equatable {
     case sit, lieDown, spin, fetch, spinForever, zoomies, relax
+    case trick(Trick)
 }
 
 /// Why the dog is heading to his bed.
@@ -34,6 +54,13 @@ enum DogState: Equatable {
     case zoomies
     case sniffingMouse
     case hunching
+    case barking
+    case stalkingMouse
+    case pouncing
+    case performingTrick(Trick)
+    case chasingFrisbee
+    case shakingToy
+    case tugging
 }
 
 enum DogEvent: Equatable {
@@ -47,6 +74,12 @@ enum DogEvent: Equatable {
     case petted
     case pickedUp
     case dropped(at: CGPoint)
+    case provoked(at: CGPoint)
+    case system(SystemSignal)
+    case toyThrown(kind: ToyKind, landing: CGPoint, origin: CGPoint)
+    case tugStarted(at: CGPoint)
+    case tugMoved(to: CGPoint, force: CGFloat)
+    case tugEnded
 }
 
 /// Side effects the scene applies (animations, movement, ball control).
@@ -67,6 +100,14 @@ enum DogEffect: Equatable {
     case startSniffing
     case stopSniffing
     case removeTreat
+    case playSound(String)
+    case leaveDeposit
+    case nudgeCursor
+    case pickUpToy(ToyKind)
+    case dropToy(ToyKind)
+    case removeToy(ToyKind)
+    case startTug
+    case stopTug
 }
 
 /// All timing/probability/speed knobs, overridable in tests for determinism.
@@ -92,6 +133,22 @@ struct BrainTuning {
     var sniffChance: Double = 0.12
     var hunchDuration: TimeInterval = 2.5
     var hunchChance: Double = 0.06
+    var barkDuration: TimeInterval = 1.2
+    /// Minimum gap between barks (measured bark-start to bark-start) so a
+    /// hovering cursor can't machine-gun him.
+    var barkCooldown: TimeInterval = 8
+    /// Rare idle break: bark at the Dock / his own reflection.
+    var barkAtNothingChance: Double = 0.04
+    /// How far he steps toward the screen edge so the bark faces something.
+    var barkEdgeStep: CGFloat = 12
+    var stalkDuration: TimeInterval = 3.0
+    var pounceDuration: TimeInterval = 0.5
+    /// Odds that a finished sniff escalates into a stalk-and-pounce hunt
+    /// instead of ending quietly.
+    var pounceChance: Double = 0.6
+    var trickDuration: TimeInterval = 1.5
+    var shakeToyDuration: TimeInterval = 2.0
+    var tugTimeout: TimeInterval = 12
 }
 
 /// Deterministic RNG for tests (SplitMix64).
@@ -142,6 +199,15 @@ final class DogBrain {
     private var fetchReturnPoint: CGPoint?
     /// State to resume after a petting session (dog stays sitting/lying).
     private var petReturn: DogState?
+    /// State to resume after a bark (same pattern as `petReturn`).
+    private var barkReturn: DogState?
+    /// When the last bark started — provocations inside `barkCooldown` are ignored.
+    private var lastBark: TimeInterval?
+    /// Which system signal parked him in a rest state (nap, conserve lie,
+    /// DND sleep). Wake-up signals only act when their counterpart caused the
+    /// state — a nap or lie-down he chose on his own is never interrupted.
+    private enum RestReason { case userIdle, batteryLow, doNotDisturb }
+    private var restReason: RestReason?
 
     func handle(_ event: DogEvent, at now: TimeInterval) -> [DogEffect] {
         switch event {
@@ -166,6 +232,13 @@ final class DogBrain {
             return handlePickedUp(at: now)
         case .dropped(let point):
             return handleDropped(at: point, now: now)
+        case .provoked:
+            return handleProvoked(at: now)
+        case .system(let signal):
+            return handleSystemSignal(signal, at: now)
+        case .toyThrown, .tugStarted, .tugMoved, .tugEnded:
+            // Vocabulary landed ahead of behavior — feature branches wire these.
+            return []
         }
     }
 
@@ -181,8 +254,13 @@ final class DogBrain {
         switch state {
         case .idle:
             return leaveIdleForAutonomy(at: now)
-        case .sitting, .lyingDown, .spinning, .sleeping, .hunching:
+        case .sitting, .lyingDown, .spinning, .sleeping, .performingTrick:
             return enterIdle(at: now)
+        case .hunching:
+            // Hunch complete: the pile is the only thing the hunger meter
+            // ever produces. Both roads lead here — the autonomous roll and
+            // the eating → hunching digestion pipeline.
+            return [.leaveDeposit] + enterIdle(at: now)
         case .eating:
             // Treats go straight through him; the hunger meter never budges.
             state = .hunching
@@ -192,10 +270,27 @@ final class DogBrain {
             return [.disarmThrow] + enterIdle(at: now)
         case .beingPetted:
             return endPetting(at: now)
+        case .barking:
+            return endBarking(at: now)
         case .zoomies:
             return [.stopZoomies] + enterIdle(at: now)
         case .sniffingMouse:
+            // The trail's gone cold — or has it? Sometimes the sniff escalates
+            // into a full hunt: stalk low and slow, then pounce.
+            if Double.random(in: 0..<1, using: &rng) < tuning.pounceChance {
+                state = .stalkingMouse
+                self.deadline = now + tuning.stalkDuration
+                // No .stopSniffing: the scene keeps tracking the cursor.
+                return [.play(.stalk)]
+            }
             return [.stopSniffing] + enterIdle(at: now)
+        case .stalkingMouse:
+            state = .pouncing
+            self.deadline = now + tuning.pounceDuration
+            return [.play(.pounce)]
+        case .pouncing:
+            // The catch: jitter the real cursor, celebrate, trot off proud.
+            return [.stopSniffing, .nudgeCursor, .celebrate] + enterIdle(at: now)
         default:
             return []
         }
@@ -220,7 +315,9 @@ final class DogBrain {
                 return [.play(.lie)]
             case .sleep:
                 state = .sleeping
-                deadline = now + random(in: tuning.sleepDuration)
+                // A DND-caused bedtime has no wake deadline — he sleeps
+                // until the humans lift the signal.
+                deadline = restReason == .doNotDisturb ? nil : now + random(in: tuning.sleepDuration)
                 return [.play(.sleep)]
             }
         case .chasingTreat:
@@ -235,6 +332,9 @@ final class DogBrain {
     private func handleCommand(_ command: DogCommand, at now: TimeInterval) -> [DogEffect] {
         // No commands while he's in your arms (matches petted/treatDropped).
         guard state != .carried else { return [] }
+        // An explicit command overrides any machine-caused rest: whatever he
+        // does next is user-caused, so wake-up signals must not act on it.
+        restReason = nil
         var effects: [DogEffect] = [.stopMoving] + interruptionCleanup()
         switch command {
         case .sit:
@@ -271,6 +371,10 @@ final class DogBrain {
             effects.append(contentsOf: [.play(.run), .startZoomies])
         case .relax:
             effects.append(contentsOf: enterIdle(at: now))
+        case .trick(let trick):
+            state = .performingTrick(trick)
+            deadline = now + tuning.trickDuration
+            effects.append(.play(Self.animation(for: trick)))
         }
         return effects
     }
@@ -339,11 +443,117 @@ final class DogBrain {
         return enterIdle(at: now)
     }
 
+    /// The cursor lingered over him: bark at it, unless something that outranks
+    /// barking (arms, food, a chase, affection) is in progress.
+    private func handleProvoked(at now: TimeInterval) -> [DogEffect] {
+        switch state {
+        case .idle, .sitting, .lyingDown, .wandering:
+            if let lastBark, now - lastBark < tuning.barkCooldown { return [] }
+            lastBark = now
+            barkReturn = (state == .sitting || state == .lyingDown) ? state : nil
+            state = .barking
+            deadline = now + tuning.barkDuration
+            return [.stopMoving, .play(.bark), .playSound("borf")]
+        default:
+            return []
+        }
+    }
+
+    // MARK: - System reactions (ambient machine status as a dog)
+
+    /// States mellow enough for machine news to matter. Anything with
+    /// momentum — chases, tricks, the arms, an armed throw — outranks the
+    /// machine; sleeping is special-cased by the wake-up signals only.
+    private var isCalm: Bool {
+        switch state {
+        case .idle, .wandering, .sitting, .lyingDown: return true
+        default: return false
+        }
+    }
+
+    private func handleSystemSignal(_ signal: SystemSignal, at now: TimeInterval) -> [DogEffect] {
+        switch signal {
+        case .buildFinished:
+            // Ship it! A brief party — celebrate overlays the current art.
+            guard isCalm else { return [] }
+            return [.stopMoving, .celebrate, .showHearts] + enterIdle(at: now)
+        case .idleBegan:
+            // Human's wandered off — nap time, same path as an autonomous nap.
+            guard isCalm else { return [] }
+            restReason = .userIdle
+            return [.stopMoving] + restfulSleep(at: now)
+        case .idleEnded:
+            return riseFromRest(ended: .userIdle, at: now)
+        case .fansUp:
+            // The machine's working hard; so should he.
+            guard isCalm else { return [] }
+            state = .zoomies
+            deadline = now + tuning.zoomiesDuration
+            return [.stopMoving, .play(.run), .startZoomies]
+        case .batteryLow:
+            // Conserve energy: lie down (in the bed when he has one).
+            guard isCalm else { return [] }
+            restReason = .batteryLow
+            return [.stopMoving] + restfulLie(at: now)
+        case .batteryNormal:
+            return riseFromRest(ended: .batteryLow, at: now)
+        case .dndOn:
+            // Do Not Disturb means exactly that: off to bed, no wake deadline.
+            guard isCalm else { return [] }
+            restReason = .doNotDisturb
+            return [.stopMoving] + restfulSleep(at: now)
+        case .dndOff:
+            return riseFromRest(ended: .doNotDisturb, at: now)
+        }
+    }
+
+    /// The existing sleep path (bed-aware), used by system-caused naps.
+    /// A DND sleep gets no wake deadline — it lasts until the signal lifts.
+    private func restfulSleep(at now: TimeInterval) -> [DogEffect] {
+        if let bed = bedPosition {
+            state = .goingToBed(.sleep)
+            deadline = nil
+            return [.play(.walk), .moveTo(bed, speed: tuning.walkSpeed)]
+        }
+        state = .sleeping
+        deadline = restReason == .doNotDisturb ? nil : now + random(in: tuning.sleepDuration)
+        return [.play(.sleep)]
+    }
+
+    /// The existing lie-down path (bed-aware), used by the battery conserve.
+    private func restfulLie(at now: TimeInterval) -> [DogEffect] {
+        if let bed = bedPosition {
+            state = .goingToBed(.lie)
+            deadline = nil
+            return [.play(.walk), .moveTo(bed, speed: tuning.walkSpeed)]
+        }
+        state = .lyingDown
+        deadline = now + tuning.lieTimeout
+        return [.play(.lie)]
+    }
+
+    /// A wake-up signal arrived: get up only if its counterpart put him
+    /// there. Covers the walk to bed too — the trip is cancelled mid-stride.
+    private func riseFromRest(ended reason: RestReason, at now: TimeInterval) -> [DogEffect] {
+        guard restReason == reason else { return [] }
+        switch state {
+        case .sleeping, .lyingDown:
+            return enterIdle(at: now)
+        case .goingToBed:
+            return [.stopMoving] + enterIdle(at: now)
+        default:
+            // The reason is stale only until something re-idles him;
+            // meanwhile he's busy with whatever interrupted the rest.
+            return []
+        }
+    }
+
     // MARK: - Transitions
 
     private func enterIdle(at now: TimeInterval) -> [DogEffect] {
         state = .idle
         deadline = now + random(in: tuning.idleDuration)
+        restReason = nil // every road back to idle ends a signal-caused rest
         return [.play(.idle)]
     }
 
@@ -382,6 +592,18 @@ final class DogBrain {
             deadline = now + tuning.hunchDuration
             return [.play(.hunch)]
         }
+        if roll < tuning.sleepChance + tuning.flourishChance + tuning.zoomiesChance
+            + tuning.sniffChance + tuning.hunchChance + tuning.barkAtNothingChance {
+            // Something at the screen edge (the Dock? his reflection?) needs
+            // telling off. A small step toward the edge turns him to face it;
+            // .arrived from that hop is ignored while barking.
+            lastBark = now
+            barkReturn = nil
+            state = .barking
+            deadline = now + tuning.barkDuration
+            return [.moveTo(nearestEdgeNudge(), speed: tuning.walkSpeed),
+                    .play(.bark), .playSound("borf")]
+        }
         state = .wandering
         deadline = nil
         let margin = tuning.wanderMargin
@@ -390,6 +612,23 @@ final class DogBrain {
             y: CGFloat.random(in: margin...(bounds.height - margin), using: &rng)
         )
         return [.play(.walk), .moveTo(target, speed: tuning.walkSpeed)]
+    }
+
+    /// Bark finished: resume sitting/lying if that's what was interrupted.
+    private func endBarking(at now: TimeInterval) -> [DogEffect] {
+        defer { barkReturn = nil }
+        switch barkReturn {
+        case .sitting:
+            state = .sitting
+            deadline = now + tuning.sitTimeout
+            return [.play(.sit)]
+        case .lyingDown:
+            state = .lyingDown
+            deadline = now + tuning.lieTimeout
+            return [.play(.lie)]
+        default:
+            return enterIdle(at: now)
+        }
     }
 
     /// Petting session over: resume sitting/lying if that's what was interrupted.
@@ -421,16 +660,46 @@ final class DogBrain {
             return [.removeBall]
         case .zoomies:
             return [.stopZoomies]
-        case .sniffingMouse:
+        case .sniffingMouse, .stalkingMouse, .pouncing:
+            // The whole hunt keeps cursor tracking live, so any interruption
+            // at any escalation stage must switch it off.
             return [.stopSniffing]
         case .chasingTreat:
             return keepTreat ? [] : [.removeTreat]
+        case .barking:
+            barkReturn = nil // the interrupter decides what happens next
+            return []
         default:
             return []
         }
     }
 
     // MARK: - Helpers
+
+    /// A point a short step toward the nearest screen edge — walking there
+    /// turns the dog to face whatever he's decided lives just off-screen.
+    private func nearestEdgeNudge() -> CGPoint {
+        let step = tuning.barkEdgeStep
+        let toLeft = position.x
+        let toRight = bounds.width - position.x
+        let toBottom = position.y
+        let toTop = bounds.height - position.y
+        let nearest = min(toLeft, toRight, toBottom, toTop)
+        if nearest == toLeft { return CGPoint(x: position.x - step, y: position.y) }
+        if nearest == toRight { return CGPoint(x: position.x + step, y: position.y) }
+        if nearest == toBottom { return CGPoint(x: position.x, y: position.y - step) }
+        return CGPoint(x: position.x, y: position.y + step)
+    }
+
+    /// Which animation performs a given trick.
+    private static func animation(for trick: Trick) -> DogAnimation {
+        switch trick {
+        case .shake: return .shakePaw
+        case .highFive: return .highFive
+        case .playDead: return .playDead
+        case .rollOver: return .rollOver
+        }
+    }
 
     private func random(in range: ClosedRange<TimeInterval>) -> TimeInterval {
         Double.random(in: range, using: &rng)
