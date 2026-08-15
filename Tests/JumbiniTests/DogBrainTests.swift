@@ -982,7 +982,8 @@ func trickCommandPerformsItsAnimation(trick: Trick) {
     #expect(brain.state == .barking)
     #expect(effects.contains(.stopMoving))
     #expect(effects.contains(.play(.bark)))
-    #expect(effects.contains(.playSound("borf")))
+    #expect(effects.contains { if case .playSound(let n) = $0 { return n.hasPrefix("bark") }; return false },
+            "a provoked bark plays one of the three recorded barks")
 
     #expect(brain.handle(.tick, at: 1.0) == [], "still barking before barkDuration elapses")
     let done = brain.handle(.tick, at: 1.3)
@@ -1096,7 +1097,7 @@ func trickCommandPerformsItsAnimation(trick: Trick) {
     let again = brain.handle(.provoked(at: .zero), at: 8.1)
     #expect(brain.state == .barking)
     #expect(again.contains(.play(.bark)))
-    #expect(again.contains(.playSound("borf")))
+    #expect(again.contains { if case .playSound(let n) = $0 { return n.hasPrefix("bark") }; return false })
 }
 
 @Test func commandInterruptsBark() {
@@ -1125,8 +1126,7 @@ func trickCommandPerformsItsAnimation(trick: Trick) {
 
     let effects = brain.handle(.tick, at: 3.1)
     #expect(brain.state == .barking)
-    #expect(effects.contains(.play(.bark)))
-    #expect(effects.contains(.playSound("borf")))
+    #expect(effects.contains(.playSound("growl")), "he growls at the Dock, not a friendly borf")
     let target = moveTarget(in: effects)
     #expect(target != nil, "he takes a small step toward the edge so he faces it")
     if let target {
@@ -1188,7 +1188,7 @@ private func makeNaturallySleepingBrain() -> DogBrain {
     let brain = makeBrain()
     let effects = brain.handle(.system(.buildFinished), at: 1)
     #expect(brain.state == .idle)
-    #expect(effects == [.stopMoving, .celebrate, .showHearts, .play(.idle)])
+    #expect(effects == [.stopMoving, .celebrate, .showHearts, .playSound("yip"), .play(.idle)])
 }
 
 @Test func buildFinishedInterruptsWandering() {
@@ -1966,7 +1966,7 @@ private func makeTugging(
 
     let roll = brain.handle(.tick, at: 4.4) // inside the 8s cooldown
     #expect(brain.state != .barking, "second bark only 4.4s after the first")
-    #expect(!roll.contains(.playSound("borf")))
+    #expect(!roll.contains { if case .playSound = $0 { return true }; return false }, "no bark sound at all while cooling down")
     #expect(brain.state == .wandering, "the band falls through to a wander")
 }
 
@@ -2646,4 +2646,62 @@ private func isSomewhereReal(_ point: CGPoint, _ rects: [CGRect] = lShapedWorld)
                 "approached the window from the void at \(target)")
         #expect(target == CGPoint(x: 400, y: 100), "stopped at the edge of his own display")
     }
+}
+
+// MARK: - Real audio (Alex's kit replaces the synthesized placeholder)
+
+@Test func provokedBarkPicksOneOfTheThreeRealBarks() {
+    // Three recorded barks, chosen by the injected RNG so a test can pin it.
+    var heard: Set<String> = []
+    for seed in UInt64(1)...24 {
+        let brain = makeBrain(seed: seed)
+        let effects = brain.handle(.provoked(at: CGPoint(x: 400, y: 300)), at: 0)
+        let sounds = effects.compactMap { effect -> String? in
+            if case .playSound(let name) = effect { return name }
+            return nil
+        }
+        #expect(sounds.count == 1, "exactly one bark sound")
+        if let s = sounds.first {
+            #expect(["bark1", "bark2", "bark3"].contains(s), "unexpected bark sound \(s)")
+            heard.insert(s)
+        }
+    }
+    #expect(heard.count > 1, "the variants should actually vary across seeds, got \(heard)")
+}
+
+@Test func theSameSeedAlwaysPicksTheSameBark() {
+    let a = makeBrain(seed: 7).handle(.provoked(at: .zero), at: 0)
+    let b = makeBrain(seed: 7).handle(.provoked(at: .zero), at: 0)
+    #expect(a == b, "bark choice must stay deterministic under a seeded RNG")
+}
+
+@Test func barkingAtNothingGrowlsInstead() {
+    // He's telling off the Dock or his own reflection — a growl reads better
+    // than a friendly borf at an inanimate object.
+    let brain = makeBrain { $0.barkAtNothingChance = 1.0 }
+    _ = brain.handle(.tick, at: 0)
+    let effects = brain.handle(.tick, at: 3.1)
+    #expect(brain.state == .barking)
+    #expect(effects.contains(.playSound("growl")))
+}
+
+@Test func aFinishedBuildGetsAHappyYip() {
+    let brain = makeBrain()
+    let effects = brain.handle(.system(.buildFinished), at: 0)
+    #expect(effects.contains(.celebrate))
+    #expect(effects.contains(.playSound("yip")))
+}
+
+@Test func aLowBatteryWhines() {
+    let brain = makeBrain()
+    let effects = brain.handle(.system(.batteryLow), at: 0)
+    #expect(brain.state == .lyingDown)
+    #expect(effects.contains(.playSound("whine")))
+}
+
+@Test func bracingAgainstTheRopeGrunts() {
+    let brain = makeBrain()
+    let effects = brain.handle(.tugStarted(at: CGPoint(x: 600, y: 300)), at: 0)
+    #expect(brain.state == .tugging)
+    #expect(effects.contains(.playSound("grunt")))
 }

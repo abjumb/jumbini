@@ -676,7 +676,7 @@ final class DogBrain {
         petReturn = nil
         state = .tugging
         deadline = now + tuning.tugTimeout
-        return [.stopMoving] + cleanup + [.startTug, .play(.tug)]
+        return [.stopMoving] + cleanup + [.startTug, .play(.tug), .playSound("grunt")]
     }
 
     /// Nobody let go: the rope decides it. A win means he takes the prize on
@@ -797,7 +797,7 @@ final class DogBrain {
             barkReturn = (state == .sitting || state == .lyingDown) ? state : nil
             state = .barking
             deadline = now + tuning.barkDuration
-            return [.stopMoving, .play(.bark), .playSound("borf")]
+            return [.stopMoving, .play(.bark), barkSound()]
         default:
             return []
         }
@@ -837,8 +837,8 @@ final class DogBrain {
             // Celebrate in place while conserving: enterIdle would clear
             // restReason, and batteryLow is edge-triggered, so the conserve
             // would be lost for the rest of the discharge.
-            if restReason != nil { return [.celebrate, .showHearts] }
-            return [.stopMoving, .celebrate, .showHearts] + enterIdle(at: now)
+            if restReason != nil { return [.celebrate, .showHearts, .playSound("yip")] }
+            return [.stopMoving, .celebrate, .showHearts, .playSound("yip")] + enterIdle(at: now)
         case .idleBegan:
             // Human's wandered off — nap time, same path as an autonomous nap.
             guard isCalm else { return deferSignal(signal) }
@@ -856,7 +856,7 @@ final class DogBrain {
             // Conserve energy: lie down (in the bed when he has one).
             guard isCalm else { return deferSignal(signal) }
             restReason = .batteryLow
-            return [.stopMoving] + restfulLie(at: now)
+            return [.stopMoving, .playSound("whine")] + restfulLie(at: now)
         case .batteryNormal:
             return riseFromRest(ended: .batteryLow, at: now)
         case .dndOn:
@@ -971,7 +971,7 @@ final class DogBrain {
                 state = .barking
                 deadline = now + tuning.barkDuration
                 return [.moveTo(nearestEdgeNudge(), speed: tuning.walkSpeed),
-                        .play(.bark), .playSound("borf")]
+                        .play(.bark), .playSound("growl")]
             }
             // Still cooling down: fall through to a wander instead.
         }
@@ -1413,6 +1413,13 @@ final class DogBrain {
         case .playDead: return .playDead
         case .rollOver: return .rollOver
         }
+    }
+
+    /// One of the three recorded barks. Picked through the injected RNG so a
+    /// seeded test gets the same bark every run.
+    private func barkSound() -> DogEffect {
+        let take = Int.random(in: 1...3, using: &rng)
+        return .playSound("bark\(take)")
     }
 
     private func random(in range: ClosedRange<TimeInterval>) -> TimeInterval {
