@@ -35,7 +35,9 @@ DEST = os.path.join(ROOT, "Sources", "Jumbini", "Resources", "sprites")
 WARDROBE_ITEMS = ["party", "tophat", "cowboy", "beanie", "bandana", "shades", "raincoat"]
 WARDROBE_DIRECTIONS = ["s", "se", "e", "ne"]
 # Files that need the keying speckle scrubbed off before they are usable.
-DESPECKLE = {"shades_s"}
+# Empty: shades_s arrived speckled in the first kit and was scrubbed here.
+# Alex redrew it clean, so despeckling it now would only risk eating art.
+DESPECKLE: set[str] = set()
 
 # ------------------------------------------------------------- PNG codec
 

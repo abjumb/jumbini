@@ -1562,7 +1562,7 @@ final class PetScene: SKScene {
     /// the first twenty seconds and then it's just a pile. The emitter is an
     /// action on the pile node, so it stops the moment the pile is binned.
     private func startSteaming(_ pile: SKSpriteNode) {
-        guard let anim = SpriteLibrary.shared.propSequence(named: "steam", frames: 1, fps: 1),
+        guard let anim = SpriteLibrary.shared.propSequence(named: "steam", frames: 3, fps: 6),
               let texture = anim.textures.first
         else { return }
         let emit = SKAction.run { [weak pile] in
@@ -1763,7 +1763,7 @@ final class PetScene: SKScene {
     private func showConfetti() {
         for _ in 0..<7 {
             spawnFlourish(
-                named: "confetti", frames: 2,
+                named: "confetti", frames: 3,
                 at: CGPoint(
                     x: dog.position.x + CGFloat.random(in: -54...54),
                     y: dog.position.y + dog.size.height / 2 + CGFloat.random(in: 8...48)

@@ -13,10 +13,8 @@ final class Frisbee: SKSpriteNode {
     private static let minFlight: TimeInterval = 0.9
     private static let maxFlight: TimeInterval = 2.2
 
-    /// Alex's spin frames. frisbee_3 is deliberately absent — it was delivered
-    /// as a dither smear rather than a disc; redraw it and this becomes 4.
-    /// (Tools/import_kit_props.py has the matching note.)
-    private static let spinFrames = 3
+    /// Alex's four spin frames, face-on through edge-on.
+    private static let spinFrames = 4
 
     init() {
         let anim = SpriteLibrary.shared.propSequence(named: "frisbee", frames: Self.spinFrames, fps: 14)

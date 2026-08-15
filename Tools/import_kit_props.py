@@ -127,16 +127,12 @@ IMPORT = [
     # Deposits: three fresh variants, plus the dried-out one an old pile ages
     # into, plus the flies that find it.
     "deposit_1", "deposit_2", "deposit_3", "deposit_dry", "fly_0", "fly_1",
-    # Frisbee: spin frames + the edge-on sprite for the carry.
-    # frisbee_3 is NOT imported — it came back as a checkerboard dither smear
-    # rather than a disc. Redraw it and add it back here (and bump the frame
-    # count in PetScene.frisbeeSpinFrames).
-    "frisbee_0", "frisbee_1", "frisbee_2", "frisbee_mouth",
-    # Tug rope. The rope_taut_* set is NOT imported: rope_taut_mid is a
-    # humanoid character sprite, rope_taut_left is a bar on a baked
-    # checkerboard, rope_taut_right is a scatter of loose fibres. The
-    # "rope strains under a hard pull" swap is waiting on redrawn art.
+    # Frisbee: the full 4-frame spin + the edge-on sprite for the carry.
+    "frisbee_0", "frisbee_1", "frisbee_2", "frisbee_3", "frisbee_mouth",
+    # Tug rope, slack and taut. The taut set drives the "rope strains under a
+    # hard pull" swap in TugRope.
     "rope_left", "rope_mid", "rope_right",
+    "rope_taut_left", "rope_taut_mid", "rope_taut_right",
     # Squeaky toy: rest pose + the squash cycle he shakes it through.
     "toy_chicken", "toy_squash_0", "toy_squash_1", "toy_squash_2",
     # Contact shadow under his feet on a window ledge / mid-fall.
@@ -145,22 +141,24 @@ IMPORT = [
     "bark_puff_0", "bark_puff_1", "bark_puff_2",
     "dust_0", "dust_1", "dust_2", "dust_3",
     "sparkle_0", "sparkle_1", "sparkle_2", "sparkle_3",
-    "steam_0",
-    "confetti_0", "confetti_1",
+    "steam_0", "steam_1", "steam_2",
+    "confetti_0", "confetti_1", "confetti_2",
 ]
 
 # Delivered but not imported, and why:
-#   confetti_2   - a humanoid character sprite, not confetti
-#   frisbee_3    - checkerboard dither smear
-#   rope_taut_*  - see above
-#   steam_1      - black box with the editor backdrop baked in
-#   steam_2      - a purple/green blob, doesn't read as steam
 #   rain_0..2,
 #   puddle       - drawn for a weather feature that does not exist (Jumbini
 #                  does no networking). Held in the kit until there's one.
 
-# Files whose backdrop needs clearing (see strip_backdrop).
-STRIP_BACKDROP = {"rope_mid"}
+# Files whose backdrop needs clearing, and the thresholds to do it with (see
+# strip_backdrop). Defaults suit a dark near-grey; rope_taut_mid arrived on a
+# two-tone olive checkerboard — (109,110,90) and (146,146,129) — which needs a
+# wider net, still far below the saturation of the rope's own tan hemp.
+STRIP_BACKDROP = {
+    "rope_mid": {},
+    "rope_taut_mid": {"sat": 22, "value": 150},
+    "steam_2": {},
+}
 
 # The treat box, which replaces the peanut butter jar. It lives in its own kit
 # folder and its frames are two-digit, so it's renamed on the way in to the
@@ -190,7 +188,7 @@ def main():
     for path, name in jobs:
         w, h, rows = read_png(path)
         if name in STRIP_BACKDROP:
-            cleared = strip_backdrop(w, h, rows)
+            cleared = strip_backdrop(w, h, rows, **STRIP_BACKDROP[name])
             print(f"  {name}: cleared {cleared} backdrop pixels")
         write_png(os.path.join(dst, name + ".png"), w, h, rows)
     print(f"imported {len(jobs)} props -> {dst}")
