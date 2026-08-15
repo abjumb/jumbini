@@ -139,9 +139,10 @@ final class SpriteLibrary {
             return make(["sniff_\(d)"], fps: 1, scale: Self.baseScale)
         case .hunch:
             return make(["hunch_\(d)"], fps: 1, scale: Self.baseScale)
-        // v4 states: real art first (imported via Tools/import_jumba.py when it
-        // arrives), existing art as the stand-in until then. Keeping the real
-        // filename in the lookup means dropping the art in requires no code.
+        // v4 states: the real filename first, an older pose as the stand-in
+        // behind it — which is what let the hand-made art light these up with
+        // no code change at all. All of them are real now except rollOver and
+        // shakeToy, which nobody has drawn yet; leave the fallbacks in place.
         case .bark:
             return yap(facing: facing, fps: 8)
         case .stalk:
