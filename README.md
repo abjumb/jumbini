@@ -405,6 +405,21 @@ python3 Tools/make_sprites.py
 Run it without `--all`. That flag also regenerates procedural placeholder art for the dog
 himself, which nothing uses anymore.
 
+### Drawing your own dog
+
+Jumba is the dog this app is about, and he is what you get when you install it. But the
+app can also load dog art from a folder instead of from the bundle, so if you draw, you
+can put your own dog on the desktop without touching the source. Drop a folder of sprites
+into `~/Library/Application Support/Jumbini/coats/` and it appears in the **Coat** menu
+alongside Classic and Shaggy; pick **Classic** to get Jumba back, in one click.
+
+[COATS.md](COATS.md) is the format: filenames, the 17 states the app reads, the eight
+directions, canvas and outline expectations, and the optional `coat.json` for per-state
+scale. It is written to be followed without reading any source.
+
+The app only ever reads PNGs off a disk. It does not generate art and makes no network
+calls to load a coat — how the sprites got drawn is entirely your business.
+
 ## Project layout
 
 ```
