@@ -6,6 +6,9 @@ import CoreGraphics
 enum DogAnimation: String, Equatable {
     case idle, walk, run, sit, lie, sleep, spin, carryWalk, happy, dangle, sniff, hunch
     case bark, stalk, pounce, shakePaw, highFive, playDead, rollOver, shakeToy, tug
+    /// Window walking: legs out mid-air, the touchdown absorb, and the
+    /// nose-over-the-edge pose at the end of a title-bar patrol.
+    case fall, land, peek
 }
 
 /// A window the dog can stand on top of, in SCENE coordinates (bottom-left
@@ -96,6 +99,17 @@ enum DogState: Equatable {
     /// Trotting back with a toy in his mouth (the frisbee's return leg, and
     /// the victory lap after he wins a tug).
     case returningToy(ToyKind)
+
+    // Window walking. The four stages of climbing onto one of your windows:
+    // walk to the near edge, hop up, patrol the title bar, come back down.
+    /// Walking along the floor towards the near edge of a window.
+    case headingToSurface(surfaceID: CGWindowID)
+    /// Mid-air on the way up. The scene renders the arc.
+    case hoppingUp(surfaceID: CGWindowID)
+    /// Standing on a window's top edge, trotting from end to end.
+    case perched(surfaceID: CGWindowID)
+    /// On the way down, under gravity the scene integrates.
+    case falling
 }
 
 enum DogEvent: Equatable {
@@ -143,6 +157,19 @@ enum DogEffect: Equatable {
     case removeToy(ToyKind)
     case startTug
     case stopTug
+    /// Leap to a point along an arc (the hop onto a window's top edge). Like
+    /// `.moveTo`, the scene reports `.arrived` when he gets there.
+    case hopTo(CGPoint)
+    /// Start integrating gravity, stopping at this scene y. The brain decides
+    /// WHEN he falls and WHERE he stops; the scene owns the pixels per second
+    /// in between (the `stepZoomies` pattern).
+    case startFalling(toY: CGFloat)
+    /// Cancel a fall in progress (mirrors `.stopZoomies`).
+    case stopFalling
+    /// Touchdown: a brief squash-and-recover flourish over whatever comes
+    /// next, in the same one-shot spirit as `.celebrate`. Named for the
+    /// landing rather than `.landed` so it can't be misread as an event.
+    case absorbLanding
 }
 
 /// All timing/probability/speed knobs, overridable in tests for determinism.
@@ -187,6 +214,35 @@ struct BrainTuning {
     /// Odds he wins when a tug-of-war goes the distance. A straight coin
     /// flip: he's a small dog with a lot of conviction.
     var tugWinChance: Double = 0.5
+
+    // MARK: Window walking
+
+    /// Rare idle break: climb onto one of your windows. Deliberately the
+    /// least likely thing he does — it should feel like catching him at it.
+    var perchChance: Double = 0.05
+    /// How far he'll walk to reach a window's edge before deciding it isn't
+    /// worth the trip.
+    var perchSearchRadius: CGFloat = 700
+    /// The tallest climb he'll attempt, measured from his feet to the title
+    /// bar. Anything higher and the hop reads as teleporting.
+    var perchReach: CGFloat = 420
+    /// How far in from the corner he lands and turns around, so he's never
+    /// drawn teetering half off the end.
+    var perchEdgeInset: CGFloat = 24
+    /// How long a perch lasts before he gets bored and hops down.
+    var perchDuration: ClosedRange<TimeInterval> = 18...36
+    /// The pause at the end of each patrol leg, nose over the edge.
+    var peekDuration: TimeInterval = 1.4
+    /// How far a window may jump between two polls while he's aboard. Under
+    /// this he rides along; over it the drag is violent enough to shake him
+    /// off, which is the whole joke.
+    var perchRideLimit: CGFloat = 180
+    /// Downward acceleration for a fall, in points per second squared. Read
+    /// by the scene, which does the integrating (see `zoomiesSpeed`).
+    var fallAcceleration: CGFloat = 2_000
+    /// Terminal velocity, so a fall from the top of a big display still reads
+    /// as a dog and not a meteor.
+    var fallMaxSpeed: CGFloat = 1_400
 }
 
 /// Deterministic RNG for tests (SplitMix64).
@@ -215,6 +271,15 @@ final class DogBrain {
     var position: CGPoint
     /// Where his bed is, if there is one — lie-down and naps route here.
     var bedPosition: CGPoint?
+    /// The windows he could stand on, front-most first, in scene coordinates
+    /// (the scene keeps this current from `WindowSurfaces`, exactly like
+    /// `bounds` and `position`). Empty means "no windows" — every window
+    /// behavior below degrades to nothing at all, and he stays on the desktop.
+    var surfaces: [Surface] = []
+    /// How far the dog's CENTRE sits above his feet — half his sprite height,
+    /// which changes with the pose, so the scene keeps it current. Standing on
+    /// a window means `position.y == surface.topY + footOffset`.
+    var footOffset: CGFloat = 0
 
     let tuning: BrainTuning
     private var rng: any RandomNumberGenerator
@@ -255,6 +320,22 @@ final class DogBrain {
     /// state — a nap or lie-down he chose on his own is never interrupted.
     private enum RestReason { case userIdle, batteryLow, doNotDisturb }
     private var restReason: RestReason?
+
+    // Window walking bookkeeping. All of it is cleared together by
+    // `forgetPerch()`, which every interruption path runs.
+    /// The perch window's rect as of the last tick. Comparing it with the
+    /// current one is how a window drag is detected.
+    private var perchAnchor: CGRect?
+    /// Where the current patrol leg is headed, so a window drag can shift it.
+    private var perchTarget: CGPoint?
+    /// When he's had enough of this window.
+    private var perchExpiry: TimeInterval?
+    /// The height he climbed FROM, and therefore the height a fall returns
+    /// him to. nil when he didn't climb (dropped out of the user's hand).
+    private var groundY: CGFloat?
+    /// Where the current fall ends. The scene integrates towards it; the
+    /// brain watches `position` and calls the landing.
+    private var fallTargetY: CGFloat = 0
 
     func handle(_ event: DogEvent, at now: TimeInterval) -> [DogEffect] {
         switch event {
@@ -310,10 +391,18 @@ final class DogBrain {
             deadline = now + random(in: tuning.idleDuration)
             return []
         }
+        // Window walking is watched on EVERY tick, deadline or no deadline:
+        // the window under him can be dragged, closed or minimised at any
+        // moment, and a fall is driven by his position rather than a timer.
+        if let effects = superviseWindowWalking(at: now) { return effects }
         guard let deadline, now >= deadline else { return [] }
         switch state {
         case .idle:
             return leaveIdleForAutonomy(at: now)
+        case .perched(let id):
+            // The peek at the end of a patrol leg is over: turn around.
+            guard let surface = surface(id) else { return beginFalling(at: now) }
+            return startPatrolLeg(on: surface)
         case .sitting, .lyingDown, .spinning, .sleeping, .performingTrick:
             return enterIdle(at: now)
         case .hunching:
@@ -397,6 +486,30 @@ final class DogBrain {
             toyReturnPoint = nil
             chasedToy = nil
             return [.dropToy(kind), .celebrate] + enterIdle(at: now)
+        case .headingToSurface(let id):
+            // At the near edge, looking up. The window may have moved during
+            // the walk, so the hop is aimed from its CURRENT rect.
+            guard let surface = surface(id) else {
+                // It closed while he was walking over. Oh well — he's still
+                // on the floor, so there's nothing to fall from.
+                return [.stopMoving] + enterIdle(at: now)
+            }
+            state = .hoppingUp(surfaceID: id)
+            deadline = nil
+            return [.play(.pounce), .hopTo(perchLanding(on: surface))]
+        case .hoppingUp(let id):
+            guard let surface = surface(id) else { return beginFalling(at: now) }
+            state = .perched(surfaceID: id)
+            deadline = nil
+            perchAnchor = surface.rect
+            perchExpiry = now + random(in: tuning.perchDuration)
+            return startPatrolLeg(on: surface)
+        case .perched:
+            // End of a patrol leg: a beat spent looking over the edge before
+            // he turns around. The tick handler starts the next leg.
+            perchTarget = nil
+            deadline = now + tuning.peekDuration
+            return [.play(.peek)]
         default:
             return []
         }
@@ -627,6 +740,13 @@ final class DogBrain {
     private func handleDropped(at point: CGPoint, now: TimeInterval) -> [DogEffect] {
         guard state == .carried else { return [] }
         position = point
+        // Let go over one of your windows and he drops onto its title bar.
+        // Only a WINDOW causes this: he roams the whole screen freely, so a
+        // plain drop on empty desktop must leave him exactly where you put
+        // him rather than dragging him to the bottom of the display.
+        if surfaceTop(under: point) != nil {
+            return beginFalling(at: now)
+        }
         return enterIdle(at: now)
     }
 
@@ -791,6 +911,17 @@ final class DogBrain {
             return [.moveTo(nearestEdgeNudge(), speed: tuning.walkSpeed),
                     .play(.bark), .playSound("borf")]
         }
+        if roll < tuning.sleepChance + tuning.flourishChance + tuning.zoomiesChance
+            + tuning.sniffChance + tuning.hunchChance + tuning.barkAtNothingChance
+            + tuning.perchChance {
+            // The rarest idle break: climb onto one of your windows and trot
+            // along the title bar. Needs a window to climb — with none in
+            // reach the roll quietly becomes an ordinary wander rather than
+            // disturbing the cumulative bands below it.
+            if let surface = perchableSurface() {
+                return startPerchApproach(to: surface)
+            }
+        }
         state = .wandering
         deadline = nil
         let margin = tuning.wanderMargin
@@ -874,9 +1005,238 @@ final class DogBrain {
         case .barking:
             barkReturn = nil // the interrupter decides what happens next
             return []
+        case .headingToSurface, .hoppingUp, .perched:
+            // Whatever interrupted him outranks a window. He simply leaves
+            // it — the interrupter's own `.moveTo` carries him off the ledge,
+            // and clearing the bookkeeping here is what stops a later tick
+            // deciding he's still up there and ought to fall.
+            forgetPerch()
+            groundY = nil
+            return []
+        case .falling:
+            forgetPerch()
+            groundY = nil
+            return [.stopFalling]
         default:
             return []
         }
+    }
+
+    // MARK: - Window walking
+    //
+    // The division of labour, which is the whole design:
+    //
+    //   * The SCENE knows what the windows are doing. It polls them
+    //     (`WindowSurfaces`), keeps `surfaces`, `position` and `footOffset`
+    //     current, slides the dog along when the window he's on is dragged,
+    //     and integrates gravity pixel by pixel during a fall.
+    //   * The BRAIN knows what he's doing about it. It picks the window,
+    //     sequences approach → hop → patrol, and decides — from the facts the
+    //     scene reports — the moment a perch becomes a fall and the height
+    //     that fall ends at.
+    //
+    // Nothing here touches AppKit or the window server; `Surface` is already
+    // in scene coordinates by the time it arrives.
+
+    /// Distances below this count as "the same place" — a window that hasn't
+    /// really moved, or a fall that has really arrived.
+    private static let perchEpsilon: CGFloat = 0.5
+
+    /// Per-tick supervision of the four window-walking states. Returns nil
+    /// when it has nothing to say and the normal deadline machinery should
+    /// run; returns effects when it has taken the tick over.
+    private func superviseWindowWalking(at now: TimeInterval) -> [DogEffect]? {
+        switch state {
+        case .headingToSurface(let id):
+            // The window closed mid-walk: abandon the trip, stay on the floor.
+            guard surface(id) == nil else { return nil }
+            return [.stopMoving] + enterIdle(at: now)
+        case .hoppingUp(let id):
+            // The window closed mid-air. Gravity does the rest.
+            guard surface(id) == nil else { return nil }
+            return beginFalling(at: now)
+        case .perched(let id):
+            return supervisePerch(surfaceID: id, at: now)
+        case .falling:
+            // The scene has been moving him down; has he arrived?
+            guard position.y <= fallTargetY + Self.perchEpsilon else { return [] }
+            return land(at: now)
+        default:
+            return nil
+        }
+    }
+
+    /// Everything that can go wrong while standing on someone's window, in
+    /// the order it matters.
+    private func supervisePerch(surfaceID id: CGWindowID, at now: TimeInterval) -> [DogEffect]? {
+        // 1. The window closed, minimised, or went to another Space.
+        guard let surface = surface(id) else { return beginFalling(at: now) }
+
+        // 2. It moved. A gentle drag he rides along with (the scene slides
+        //    him by the same delta); a violent one throws him off.
+        var effects: [DogEffect] = []
+        if let anchor = perchAnchor {
+            let dx = surface.rect.minX - anchor.minX
+            let dy = surface.rect.maxY - anchor.maxY
+            let travelled = hypot(dx, dy)
+            if travelled > tuning.perchRideLimit { return beginFalling(at: now) }
+            if travelled > Self.perchEpsilon {
+                perchAnchor = surface.rect
+                // The in-flight walk is aimed at where the window USED to be.
+                if let target = perchTarget {
+                    let shifted = clampToLedge(
+                        CGPoint(x: target.x + dx, y: target.y + dy), on: surface
+                    )
+                    perchTarget = shifted
+                    effects += [.stopMoving, .moveTo(shifted, speed: tuning.walkSpeed)]
+                }
+            }
+        } else {
+            perchAnchor = surface.rect
+        }
+
+        // 3. He's no longer over the window at all — he trotted off the end,
+        //    or it shrank/slid out from under him.
+        if position.x < surface.rect.minX || position.x > surface.rect.maxX {
+            return beginFalling(at: now)
+        }
+
+        // 4. Bored. A deliberate hop down, which is just a fall he chose.
+        if let expiry = perchExpiry, now >= expiry { return beginFalling(at: now) }
+
+        return effects.isEmpty ? nil : effects
+    }
+
+    /// Off the edge. Works from anywhere: a perch, a hop, or the user's hand.
+    private func beginFalling(at now: TimeInterval) -> [DogEffect] {
+        let target = landingY(under: position)
+        forgetPerch()
+        state = .falling
+        deadline = nil
+        fallTargetY = target
+        return [.stopMoving, .play(.fall), .startFalling(toY: target)]
+    }
+
+    /// Touchdown. The absorb is a one-shot flourish over the idle pose, the
+    /// same way `.celebrate` works, so it needs no state of its own.
+    private func land(at now: TimeInterval) -> [DogEffect] {
+        groundY = nil
+        return [.stopFalling, .absorbLanding] + enterIdle(at: now)
+    }
+
+    /// Where a fall from `point` ends: the highest window top underneath him,
+    /// or the height he climbed from, whichever he meets first. Never above
+    /// where he already is.
+    private func landingY(under point: CGPoint) -> CGFloat {
+        let floor = groundY ?? tuning.wanderMargin
+        let candidate = max(surfaceTop(under: point) ?? -.greatestFiniteMagnitude, floor)
+        return min(candidate, point.y)
+    }
+
+    /// The highest window top strictly below `point` and horizontally under
+    /// it, if any. Surface-only: no floor, no memory of a climb.
+    private func surfaceTop(under point: CGPoint) -> CGFloat? {
+        surfaces
+            .filter { $0.rect.minX <= point.x && point.x <= $0.rect.maxX }
+            .map { $0.topY + footOffset }
+            .filter { $0 < point.y - Self.perchEpsilon }
+            .max()
+    }
+
+    /// Start a leg of the title-bar patrol: trot to whichever end of the
+    /// ledge he is further from, so he always crosses the window.
+    private func startPatrolLeg(on surface: Surface) -> [DogEffect] {
+        let inset = tuning.perchEdgeInset
+        let ledgeY = surface.topY + footOffset
+        let left = CGPoint(x: surface.rect.minX + inset, y: ledgeY)
+        let right = CGPoint(x: surface.rect.maxX - inset, y: ledgeY)
+        let target = clampToLedge(
+            abs(position.x - left.x) > abs(position.x - right.x) ? left : right,
+            on: surface
+        )
+        perchTarget = target
+        deadline = nil
+        return [.play(.walk), .moveTo(target, speed: tuning.walkSpeed)]
+    }
+
+    /// Keep a patrol point on the window's top edge, and inside it. A window
+    /// narrower than two insets collapses to its middle.
+    private func clampToLedge(_ point: CGPoint, on surface: Surface) -> CGPoint {
+        let inset = tuning.perchEdgeInset
+        let lower = surface.rect.minX + inset
+        let upper = surface.rect.maxX - inset
+        let x = lower > upper ? surface.rect.midX : min(max(point.x, lower), upper)
+        return CGPoint(x: x, y: surface.topY + footOffset)
+    }
+
+    /// Which end of the window he'd walk to from here.
+    private func nearEdgeX(of surface: Surface) -> CGFloat {
+        abs(position.x - surface.rect.minX) <= abs(position.x - surface.rect.maxX)
+            ? surface.rect.minX
+            : surface.rect.maxX
+    }
+
+    /// The spot on the floor he walks to before hopping: directly below the
+    /// near edge, at the height he's already at.
+    private func approachPoint(for surface: Surface) -> CGPoint {
+        let margin = tuning.wanderMargin
+        return CGPoint(
+            x: min(max(nearEdgeX(of: surface), margin), max(margin, bounds.width - margin)),
+            y: position.y
+        )
+    }
+
+    /// Where the hop puts him down: on the top edge, one inset in from the
+    /// corner he jumped at.
+    private func perchLanding(on surface: Surface) -> CGPoint {
+        let inset = tuning.perchEdgeInset
+        let atLeftEdge = nearEdgeX(of: surface) == surface.rect.minX
+        let x = atLeftEdge ? surface.rect.minX + inset : surface.rect.maxX - inset
+        return clampToLedge(CGPoint(x: x, y: 0), on: surface)
+    }
+
+    /// The closest window worth climbing, or nil if none is. A perch has to
+    /// be a real climb (its top above his feet), within jumping range, and
+    /// close enough to be worth walking to.
+    private func perchableSurface() -> Surface? {
+        var best: Surface?
+        var bestDistance = CGFloat.greatestFiniteMagnitude
+        for surface in surfaces {
+            let rise = (surface.topY + footOffset) - position.y
+            guard rise > 0, rise <= tuning.perchReach else { continue }
+            let approach = approachPoint(for: surface)
+            let distance = hypot(approach.x - position.x, approach.y - position.y)
+            guard distance <= tuning.perchSearchRadius else { continue }
+            // Ties go to the front-most window, which is first in the list.
+            if distance < bestDistance {
+                best = surface
+                bestDistance = distance
+            }
+        }
+        return best
+    }
+
+    private func surface(_ id: CGWindowID) -> Surface? {
+        surfaces.first { $0.id == id }
+    }
+
+    /// Set off on the climb.
+    private func startPerchApproach(to surface: Surface) -> [DogEffect] {
+        groundY = position.y // a fall brings him back down to here
+        perchAnchor = nil
+        perchTarget = nil
+        perchExpiry = nil
+        state = .headingToSurface(surfaceID: surface.id)
+        deadline = nil
+        return [.play(.walk), .moveTo(approachPoint(for: surface), speed: tuning.walkSpeed)]
+    }
+
+    /// Drop every trace of a window adventure. Run by each interruption, so
+    /// nothing can arrange a ghost fall out of a perch he already left.
+    private func forgetPerch() {
+        perchAnchor = nil
+        perchTarget = nil
+        perchExpiry = nil
     }
 
     // MARK: - Helpers

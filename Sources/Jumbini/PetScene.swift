@@ -319,8 +319,12 @@ final class PetScene: SKScene {
         lastTime = currentTime
         brain.bounds = size
         stepZoomies(dt: dt)
+        stepFalling(dt: dt)
         stepSniffing(dt: dt)
         brain.position = dog.position
+        // Half his sprite height, live: the pose changes it, and the brain
+        // needs it to stand his centre on a window's top edge.
+        brain.footOffset = dog.size.height / 2
         stepFrisbeeCatch()
         stepTug(dt: dt)
         send(.tick)
@@ -435,6 +439,14 @@ final class PetScene: SKScene {
                 beginTug()
             case .stopTug:
                 endTug()
+            case .hopTo(let point):
+                dog.hop(to: point, height: Self.perchHopHeight, duration: Self.perchHopDuration)
+            case .startFalling(let toY):
+                startFalling(toY: toY)
+            case .stopFalling:
+                stopFalling()
+            case .absorbLanding:
+                dog.absorb()
             }
         }
     }
@@ -921,6 +933,46 @@ final class PetScene: SKScene {
         dog.face(towards: CGPoint(x: p.x + v.x, y: p.y + v.y))
         // A bounce flips the rabbit even when face() already reseated it.
         reseatCarriedRabbit()
+    }
+
+    // MARK: - Window walking: the hop and the fall
+    //
+    // The brain decides that he climbs, and that he falls, and where the fall
+    // stops. Everything here is pixels: the arc of the hop and the
+    // points-per-second of the descent, integrated by hand exactly the way
+    // `stepZoomies` is, so the drop accelerates like a real falling dog
+    // instead of gliding at a constant SKAction speed.
+
+    /// How high over the straight line the hop onto a ledge arcs.
+    private static let perchHopHeight: CGFloat = 60
+    private static let perchHopDuration: TimeInterval = 0.45
+
+    /// Downward speed in points/second; nil when he isn't falling.
+    private var fallVelocity: CGFloat?
+    /// Scene y the current fall stops at (from the brain's `.startFalling`).
+    private var fallFloorY: CGFloat = 0
+
+    private func startFalling(toY: CGFloat) {
+        // Defensive, like startZoomies: no stale in-flight walk or hop
+        // fighting the manual integration.
+        dog.removeAction(forKey: "move")
+        fallFloorY = toY
+        fallVelocity = 0
+    }
+
+    private func stopFalling() {
+        fallVelocity = nil
+    }
+
+    private func stepFalling(dt: TimeInterval) {
+        guard let v = fallVelocity, dt > 0 else { return }
+        // Terminal velocity keeps a drop from the top of a large display
+        // reading as a dog rather than a meteor.
+        let next = min(v + brain.tuning.fallAcceleration * CGFloat(dt), brain.tuning.fallMaxSpeed)
+        fallVelocity = next
+        // Clamped, but NOT cleared: the brain owns the end of the fall. It
+        // sees him at the floor on this frame's tick and sends `.stopFalling`.
+        dog.position.y = max(dog.position.y - next * CGFloat(dt), fallFloorY)
     }
 
     // MARK: - Mouse hunting (sniff / stalk / pounce share the cursor tracker)

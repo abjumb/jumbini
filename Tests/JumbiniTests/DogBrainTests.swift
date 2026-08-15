@@ -18,6 +18,7 @@ private func makeBrain(
     tuning.barkAtNothingChance = 0
     tuning.pounceChance = 0
     tuning.tugWinChance = 0
+    tuning.perchChance = 0
     tune(&tuning)
     return DogBrain(
         bounds: CGSize(width: 800, height: 600),
@@ -1906,4 +1907,406 @@ private func makeTugging(
     let effects = brain.handle(.command(.sit), at: 3)
     #expect(brain.state == .sitting)
     #expect(effects.contains(.stopTug))
+}
+
+// MARK: - Window walking (perch / ride / fall)
+
+/// A window in scene coordinates: `y` is its BOTTOM edge, so the perch line
+/// — the top of the title bar — is at `y + height`.
+private func testSurface(
+    _ id: CGWindowID, x: CGFloat = 300, y: CGFloat = 120,
+    width: CGFloat = 400, height: CGFloat = 300
+) -> Surface {
+    Surface(
+        id: id,
+        rect: CGRect(x: x, y: y, width: width, height: height),
+        title: "Window \(id)",
+        ownerPID: 900
+    )
+}
+
+/// The default brain stands at (400, 300); this window's top edge is at 420,
+/// a comfortable 120pt climb, and it spans x 300…700.
+private let perchable = testSurface(1)
+
+/// A brain that will take the perch branch the moment its idle timer fires.
+private func makePercher(
+    surfaces: [Surface] = [perchable],
+    tune: @escaping (inout BrainTuning) -> Void = { _ in }
+) -> DogBrain {
+    let brain = makeBrain { tuning in
+        tuning.perchChance = 1
+        tuning.perchDuration = 30...30
+        tuning.peekDuration = 1
+        tune(&tuning)
+    }
+    brain.surfaces = surfaces
+    return brain
+}
+
+/// Idle → heading to the edge → hop → perched, on the fixed clock the other
+/// perch tests build on. Leaves him standing on the title bar at t=5.
+private func makePerched(
+    surfaces: [Surface] = [perchable],
+    tune: @escaping (inout BrainTuning) -> Void = { _ in }
+) -> DogBrain {
+    let brain = makePercher(surfaces: surfaces, tune: tune)
+    _ = brain.handle(.tick, at: 0)
+    _ = brain.handle(.tick, at: 3.1)      // → .headingToSurface
+    brain.position = CGPoint(x: 300, y: 300)
+    _ = brain.handle(.arrived, at: 4)     // → .hoppingUp
+    brain.position = CGPoint(x: 324, y: 420)
+    _ = brain.handle(.arrived, at: 5)     // → .perched, first patrol leg
+    return brain
+}
+
+private func fallTarget(in effects: [DogEffect]) -> CGFloat? {
+    for case let .startFalling(toY) in effects { return toY }
+    return nil
+}
+
+private func hopTarget(in effects: [DogEffect]) -> CGPoint? {
+    for case let .hopTo(point) in effects { return point }
+    return nil
+}
+
+// MARK: Choosing a window
+
+@Test func perchAutonomyWalksToTheNearEdgeOfAWindow() {
+    let brain = makePercher()
+    _ = brain.handle(.tick, at: 0)
+    let effects = brain.handle(.tick, at: 3.1)
+
+    #expect(brain.state == .headingToSurface(surfaceID: 1))
+    #expect(effects.contains(.play(.walk)))
+    // He stands at x=400 inside the window's 300…700 span: the left edge is
+    // the near one, and the approach stays at his current height.
+    #expect(moveTarget(in: effects)?.point == CGPoint(x: 300, y: 300))
+    #expect(moveTarget(in: effects)?.speed == brain.tuning.walkSpeed)
+}
+
+@Test func withNoWindowsThePerchRollFallsThroughToWandering() {
+    let brain = makePercher(surfaces: [])
+    _ = brain.handle(.tick, at: 0)
+    _ = brain.handle(.tick, at: 3.1)
+    #expect(brain.state == .wandering, "no windows means the dog stays on the desktop")
+}
+
+@Test func aWindowTooHighToReachIsNotAPerch() {
+    let brain = makePercher { $0.perchReach = 50 } // the fixture is a 120pt climb
+    _ = brain.handle(.tick, at: 0)
+    _ = brain.handle(.tick, at: 3.1)
+    #expect(brain.state == .wandering)
+}
+
+@Test func aWindowTooFarAwayIsNotAPerch() {
+    let brain = makePercher { $0.perchSearchRadius = 50 }
+    _ = brain.handle(.tick, at: 0)
+    _ = brain.handle(.tick, at: 3.1)
+    #expect(brain.state == .wandering)
+}
+
+@Test func aWindowWhoseTopIsBelowHimIsNotAPerch() {
+    // Top edge at 200, he's at 300: that's a step down, not a climb.
+    let brain = makePercher(surfaces: [testSurface(9, y: 0, height: 200)])
+    _ = brain.handle(.tick, at: 0)
+    _ = brain.handle(.tick, at: 3.1)
+    #expect(brain.state == .wandering)
+}
+
+@Test func heClimbsTheNearestReachableWindow() {
+    // Far window first in the list (front-most), near window second: distance
+    // wins over stacking order.
+    let far = testSurface(1, x: 700, y: 120, width: 300, height: 300)
+    let near = testSurface(2, x: 380, y: 120, width: 300, height: 300)
+    let brain = makePercher(surfaces: [far, near])
+    _ = brain.handle(.tick, at: 0)
+    _ = brain.handle(.tick, at: 3.1)
+    #expect(brain.state == .headingToSurface(surfaceID: 2))
+}
+
+// MARK: The hop
+
+@Test func arrivingAtTheEdgeHopsUpOntoTheTitleBar() {
+    let brain = makePercher()
+    _ = brain.handle(.tick, at: 0)
+    _ = brain.handle(.tick, at: 3.1)
+    brain.position = CGPoint(x: 300, y: 300)
+    let effects = brain.handle(.arrived, at: 4)
+
+    #expect(brain.state == .hoppingUp(surfaceID: 1))
+    // Onto the top edge, a little in from the corner so he isn't teetering.
+    #expect(hopTarget(in: effects) == CGPoint(x: 324, y: 420))
+}
+
+@Test func footOffsetKeepsHisFeetOnTheTitleBarNotHisBelly() {
+    // The scene reports half his sprite height; the brain stands his CENTRE
+    // that far above the perch line.
+    let brain = makePercher()
+    brain.footOffset = 30
+    _ = brain.handle(.tick, at: 0)
+    _ = brain.handle(.tick, at: 3.1)
+    brain.position = CGPoint(x: 300, y: 300)
+    let effects = brain.handle(.arrived, at: 4)
+    #expect(hopTarget(in: effects) == CGPoint(x: 324, y: 450))
+}
+
+@Test func landingTheHopStartsPatrollingTheTitleBar() {
+    let brain = makePerched()
+    #expect(brain.state == .perched(surfaceID: 1))
+}
+
+@Test func thePatrolTrotsToTheFarEndOfTheWindow() {
+    let brain = makePercher()
+    _ = brain.handle(.tick, at: 0)
+    _ = brain.handle(.tick, at: 3.1)
+    brain.position = CGPoint(x: 300, y: 300)
+    _ = brain.handle(.arrived, at: 4)
+    brain.position = CGPoint(x: 324, y: 420)
+    let effects = brain.handle(.arrived, at: 5)
+
+    #expect(brain.state == .perched(surfaceID: 1))
+    #expect(effects.contains(.play(.walk)))
+    // He landed at the left end, so he heads for the right one, same height.
+    #expect(moveTarget(in: effects)?.point == CGPoint(x: 676, y: 420))
+}
+
+@Test func reachingTheEndOfTheLedgePeeksOverIt() {
+    let brain = makePerched()
+    brain.position = CGPoint(x: 676, y: 420)
+    let effects = brain.handle(.arrived, at: 6)
+    #expect(brain.state == .perched(surfaceID: 1))
+    #expect(effects.contains(.play(.peek)))
+}
+
+@Test func afterPeekingHeTrotsBackTheOtherWay() {
+    let brain = makePerched()
+    brain.position = CGPoint(x: 676, y: 420)
+    _ = brain.handle(.arrived, at: 6)
+    #expect(brain.handle(.tick, at: 6.5) == [], "the peek lasts a beat")
+
+    let effects = brain.handle(.tick, at: 7.1)
+    #expect(brain.state == .perched(surfaceID: 1))
+    #expect(moveTarget(in: effects)?.point == CGPoint(x: 324, y: 420))
+}
+
+// MARK: Riding a moving window
+
+@Test func draggingTheWindowCarriesHimAlongAndRetargetsThePatrol() {
+    let brain = makePerched()
+    // The user nudges the window 60pt right and 40pt down. The scene shifts
+    // the dog by the same delta before the next tick.
+    brain.surfaces = [testSurface(1, x: 360, y: 80)]
+    brain.position = CGPoint(x: 384, y: 380)
+    let effects = brain.handle(.tick, at: 5.5)
+
+    #expect(brain.state == .perched(surfaceID: 1), "a gentle drag doesn't shake him off")
+    #expect(effects.contains(.stopMoving), "the in-flight walk has a stale target")
+    #expect(moveTarget(in: effects)?.point == CGPoint(x: 736, y: 380))
+}
+
+@Test func aWindowYankedAcrossTheScreenShakesHimOff() {
+    let brain = makePerched()
+    brain.surfaces = [testSurface(1, x: 700, y: 120)] // 400pt in one poll
+    let effects = brain.handle(.tick, at: 5.5)
+
+    #expect(brain.state == .falling)
+    #expect(effects.contains(.play(.fall)))
+    #expect(effects.contains(.stopMoving))
+}
+
+@Test func aWindowSlidingOutFromUnderHimDropsHim() {
+    let brain = makePerched()
+    // Same top edge, and a slide gentle enough to ride (150pt, under the
+    // 180pt limit) — but the window is narrower now, so it has slid out from
+    // under him entirely and he's standing on nothing.
+    brain.surfaces = [testSurface(1, x: 450, y: 120, width: 200)]
+    let effects = brain.handle(.tick, at: 5.5)
+
+    #expect(brain.state == .falling, "he trotted off the end")
+    #expect(fallTarget(in: effects) != nil)
+}
+
+@Test func closingTheWindowUnderHimDropsHim() {
+    let brain = makePerched()
+    brain.surfaces = []
+    let effects = brain.handle(.tick, at: 5.5)
+
+    #expect(brain.state == .falling)
+    #expect(effects.contains(.play(.fall)))
+    #expect(effects.contains(.startFalling(toY: 300)), "back down to where he climbed from")
+}
+
+@Test func theWindowVanishingMidHopDropsHim() {
+    let brain = makePercher()
+    _ = brain.handle(.tick, at: 0)
+    _ = brain.handle(.tick, at: 3.1)
+    brain.position = CGPoint(x: 300, y: 300)
+    _ = brain.handle(.arrived, at: 4)
+    #expect(brain.state == .hoppingUp(surfaceID: 1))
+
+    brain.surfaces = []
+    brain.position = CGPoint(x: 310, y: 380) // mid-arc
+    let effects = brain.handle(.tick, at: 4.2)
+    #expect(brain.state == .falling)
+    #expect(effects.contains(.stopMoving))
+}
+
+@Test func theWindowVanishingDuringTheApproachEndsTheAdventure() {
+    let brain = makePercher()
+    _ = brain.handle(.tick, at: 0)
+    _ = brain.handle(.tick, at: 3.1)
+    #expect(brain.state == .headingToSurface(surfaceID: 1))
+
+    brain.surfaces = []
+    let effects = brain.handle(.tick, at: 3.5)
+    #expect(brain.state == .idle, "he's still on the floor; nothing to fall from")
+    #expect(effects.contains(.stopMoving))
+}
+
+@Test func heEventuallyGetsBoredAndHopsDown() {
+    let brain = makePerched { $0.perchDuration = 10...10 }
+    #expect(brain.handle(.tick, at: 14) == [], "still patrolling")
+    let effects = brain.handle(.tick, at: 15.1) // the perch began at t=5
+    #expect(brain.state == .falling)
+    #expect(effects.contains(.startFalling(toY: 300)))
+}
+
+// MARK: Falling and landing
+
+@Test func aFallAimsAtALowerWindowWhenOneIsUnderHim() {
+    let lower = testSurface(2, x: 200, y: 0, width: 400, height: 350) // top at 350
+    let brain = makePerched(surfaces: [perchable, lower])
+    brain.surfaces = [lower] // the window he was standing on closed
+    let effects = brain.handle(.tick, at: 5.5)
+
+    #expect(brain.state == .falling)
+    #expect(fallTarget(in: effects) == 350, "he catches the window below instead of the floor")
+}
+
+@Test func fallingIsSilentWhileHeIsStillInTheAir() {
+    let brain = makePerched()
+    brain.surfaces = []
+    _ = brain.handle(.tick, at: 5.5)
+    brain.position = CGPoint(x: 324, y: 400)
+    #expect(brain.handle(.tick, at: 5.6) == [])
+    brain.position = CGPoint(x: 324, y: 340)
+    #expect(brain.handle(.tick, at: 5.7) == [])
+}
+
+@Test func reachingTheGroundAbsorbsTheLandingAndReturnsToIdle() {
+    let brain = makePerched()
+    brain.surfaces = []
+    _ = brain.handle(.tick, at: 5.5)
+    #expect(brain.state == .falling)
+
+    brain.position = CGPoint(x: 324, y: 299)
+    let effects = brain.handle(.tick, at: 6)
+    #expect(brain.state == .idle)
+    #expect(effects.contains(.stopFalling))
+    #expect(effects.contains(.absorbLanding))
+    #expect(effects.contains(.play(.idle)))
+}
+
+// MARK: Interruptions
+
+@Test func pickingHimUpOffALedgeEndsThePerchCleanly() {
+    let brain = makePerched()
+    _ = brain.handle(.pickedUp, at: 6)
+    #expect(brain.state == .carried)
+
+    // Nothing stale left behind: the window closing now is a non-event.
+    brain.surfaces = []
+    #expect(brain.handle(.tick, at: 7) == [])
+    #expect(brain.state == .carried)
+}
+
+@Test func pickingHimUpMidFallStopsTheGravity() {
+    let brain = makePerched()
+    brain.surfaces = []
+    _ = brain.handle(.tick, at: 5.5)
+    let effects = brain.handle(.pickedUp, at: 6)
+
+    #expect(brain.state == .carried)
+    #expect(effects.contains(.stopFalling))
+}
+
+@Test func aTreatOutranksALedge() {
+    let brain = makePerched()
+    let effects = brain.handle(.treatDropped(at: CGPoint(x: 100, y: 100)), at: 6)
+    #expect(brain.state == .chasingTreat)
+    #expect(effects.contains(.stopMoving))
+
+    brain.surfaces = []
+    #expect(brain.handle(.tick, at: 7) == [], "no ghost fall from a perch he already left")
+}
+
+@Test func aTreatDuringAFallStopsTheGravity() {
+    let brain = makePerched()
+    brain.surfaces = []
+    _ = brain.handle(.tick, at: 5.5)
+    let effects = brain.handle(.treatDropped(at: CGPoint(x: 100, y: 100)), at: 6)
+
+    #expect(brain.state == .chasingTreat)
+    #expect(effects.contains(.stopFalling))
+}
+
+@Test func pettingHimOnALedgeWorks() {
+    let brain = makePerched()
+    let effects = brain.handle(.petted, at: 6)
+    #expect(brain.state == .beingPetted)
+    #expect(effects.contains(.showHearts))
+}
+
+@Test func aCommandWhilePerchedTakesOver() {
+    let brain = makePerched()
+    _ = brain.handle(.command(.sit), at: 6)
+    #expect(brain.state == .sitting)
+
+    brain.surfaces = []
+    #expect(brain.handle(.tick, at: 7) == [], "sitting is not falling")
+}
+
+@Test func aCommandWhileFallingStopsTheGravity() {
+    let brain = makePerched()
+    brain.surfaces = []
+    _ = brain.handle(.tick, at: 5.5)
+    let effects = brain.handle(.command(.spin), at: 6)
+
+    #expect(brain.state == .spinning)
+    #expect(effects.contains(.stopFalling))
+}
+
+// MARK: Dropped in mid-air
+
+@Test func droppingHimOverAWindowLandsHimOnItsTitleBar() {
+    let brain = makeBrain()
+    brain.surfaces = [perchable] // top edge at 420
+    _ = brain.handle(.pickedUp, at: 1)
+    let effects = brain.handle(.dropped(at: CGPoint(x: 500, y: 560)), at: 2)
+
+    #expect(brain.state == .falling, "let go over a window, he drops onto it")
+    #expect(fallTarget(in: effects) == 420)
+    #expect(effects.contains(.play(.fall)))
+}
+
+@Test func droppingHimWithNothingUnderneathLeavesHimExactlyThere() {
+    // The dog roams the whole screen, so a plain drop must NOT yank him to
+    // the bottom of the display — only a window under him causes a fall.
+    let brain = makeBrain()
+    brain.surfaces = [perchable]
+    _ = brain.handle(.pickedUp, at: 1)
+    let effects = brain.handle(.dropped(at: CGPoint(x: 100, y: 560)), at: 2)
+
+    #expect(brain.state == .idle)
+    #expect(effects.contains(.play(.idle)))
+}
+
+@Test func droppingHimBesideAWindowAtGroundLevelLeavesHimThere() {
+    // Over the window horizontally, but already below its title bar.
+    let brain = makeBrain()
+    brain.surfaces = [perchable]
+    _ = brain.handle(.pickedUp, at: 1)
+    _ = brain.handle(.dropped(at: CGPoint(x: 500, y: 200)), at: 2)
+    #expect(brain.state == .idle)
 }
