@@ -273,7 +273,7 @@ the result.
 Other scripts:
 
 ```bash
-./Scripts/test.sh            # run the test suite (312 tests)
+./Scripts/test.sh            # run the test suite (327 tests)
 ./Scripts/dmg.sh             # → build/Jumbini.dmg, drag-to-Applications layout
 ```
 
@@ -331,20 +331,21 @@ end up with a dog walking on the ceiling.
 | File | Lines | What lives there |
 |---|---|---|
 | `Sources/Jumbini/DogBrain.swift` | 1428 | The state machine. 29 states, 16 events, 28 effects, every tuning knob |
-| `Sources/Jumbini/PetScene.swift` | 2421 | Applies effects, owns all mouse input, zoomies physics, cursor-sniff stepping, wardrobe, click-through |
-| `Sources/Jumbini/SpriteLoader.swift` | 425 | `Facing` (8 directions), `Coat`, and `SpriteLibrary` (texture cache, nearest-neighbor, strip-sheet slicing) |
+| `Sources/Jumbini/PetScene.swift` | 2443 | Applies effects, owns all mouse input, zoomies physics, cursor-sniff stepping, wardrobe, click-through |
+| `Sources/Jumbini/SpriteLoader.swift` | 437 | `Facing` (8 directions) and `SpriteLibrary` (coat resolution, texture cache, nearest-neighbor, strip-sheet slicing) |
 | `Sources/Jumbini/SystemMonitor.swift` | 373 | Idle, battery, thermal, build and Focus tracking. Pure transition logic, thin sampling shell |
 | `Sources/Jumbini/WindowSurfaces.swift` | 349 | Reads `CGWindowList`, converts to scene coordinates, hands the brain a list of walkable surfaces |
 | `Sources/Jumbini/AppDelegate.swift` | 284 | Menu bar item, Jumbini Cam and its hotkey, pause, mute, hunger gag, display changes |
 | `Sources/Jumbini/Dog.swift` | 225 | The dog sprite: plays animations in whichever of 8 directions he faces, walks to targets, reports arrival |
 | `Sources/Jumbini/ScreenLayout.swift` | 197 | Multi-display bounds, and the holes in them that an uneven monitor arrangement leaves behind |
+| `Sources/Jumbini/CoatCatalog.swift` | 146 | `Coat` and the catalog of installed ones: which folders on disk qualify, their manifests, where each coat's sprites resolve |
 | `Sources/Jumbini/TugRope.swift` | 132 | Knotted caps and tiling middles, re-laid every frame between two moving points |
 | `Sources/Jumbini/TrickTrainer.swift` | 127 | Trick reps, the reward window, and what persists |
 | `Sources/Jumbini/Frisbee.swift` | 100 | The disc: a long, flat, slow arc with real hang time |
 | `Sources/Jumbini/Ball.swift` | 71 | Tennis ball: throw arc, bounce, landing callback |
 | `Sources/Jumbini/EmoteBubble.swift` | 71 | The thought bubble. Deliberately ignorant of why it was asked for |
 | `Sources/Jumbini/OverlayWindow.swift` | 46 | Borderless non-activating `NSPanel` at status-bar level, click-through by default |
-| `Tests/JumbiniTests/` | 3741 | 312 deterministic tests across brain, tricks, system signals, window surfaces and screen layout |
+| `Tests/JumbiniTests/` | 3931 | 327 deterministic tests across brain, tricks, system signals, window surfaces, screen layout and coat resolution |
 
 ### Two details worth knowing
 
@@ -428,7 +429,7 @@ Sources/Jumbini/           app code
   Resources/sprites/       props, emote icons, 12 bed variants, wardrobe
   Resources/audio/         3 barks, growl, whine, yip, squeak, grunt, chime, shutter
   Resources/Icons/         menu bar icon (16 and 32 px)
-Tests/JumbiniTests/        312 deterministic tests
+Tests/JumbiniTests/        327 deterministic tests
 Tools/                     import_jumba.py, import_kit_art.py, import_kit_props.py, make_sprites.py
 Scripts/                   test.sh, bundle.sh, dmg.sh, Info.plist
 icon/                      app icon sources and iconsets
