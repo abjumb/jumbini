@@ -347,7 +347,7 @@ final class PetScene: SKScene {
 
         let anchor = dog.wearAnchor(spec.slot)
         let flip: CGFloat = dog.xScale < 0 ? -1 : 1
-        let mirror: CGFloat = facing.unitVector.x < 0 ? -1 : 1
+        let mirror: CGFloat = direction.mirrored ? -1 : 1
         // A hat hangs by the bottom edge of its ink (the brim lands on his
         // crown); everything else hangs by the middle of its ink.
         let y = spec.slot == .crown
