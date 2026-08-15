@@ -17,6 +17,7 @@ private func makeBrain(
     tuning.hunchChance = 0
     tuning.barkAtNothingChance = 0
     tuning.pounceChance = 0
+    tuning.tugWinChance = 0
     tune(&tuning)
     return DogBrain(
         bounds: CGSize(width: 800, height: 600),
@@ -1752,4 +1753,157 @@ private func makeSqueakyChase(
     )
     #expect(effects == [])
     #expect(brain.state == .idle)
+}
+
+// MARK: - Toy box: tug-of-war
+
+/// The user has the free end of the rope and is pulling.
+private func makeTugging(
+    winChance: Double = 0,
+    seed: UInt64 = 42,
+    at start: Double = 1
+) -> DogBrain {
+    let brain = makeBrain(seed: seed) { $0.tugWinChance = winChance }
+    _ = brain.handle(.tugStarted(at: CGPoint(x: 520, y: 300)), at: start)
+    return brain
+}
+
+@Test func tugStartedBracesHim() {
+    let brain = makeBrain()
+    let effects = brain.handle(.tugStarted(at: CGPoint(x: 520, y: 300)), at: 1)
+    #expect(brain.state == .tugging)
+    #expect(effects.contains(.stopMoving), "he plants his feet")
+    #expect(effects.contains(.startTug))
+    #expect(effects.contains(.play(.tug)))
+}
+
+@Test func tugStartedIsIgnoredWhileCarried() {
+    let brain = makeBrain()
+    _ = brain.handle(.pickedUp, at: 0)
+    let effects = brain.handle(.tugStarted(at: CGPoint(x: 520, y: 300)), at: 1)
+    #expect(effects == [])
+    #expect(brain.state == .carried)
+}
+
+@Test func tugMovedKeepsHimTuggingAndIsIgnoredOtherwise() {
+    let brain = makeTugging()
+    let pulling = brain.handle(.tugMoved(to: CGPoint(x: 600, y: 320), force: 0.7), at: 2)
+    #expect(pulling == [], "the drag is the scene's business; the brain just holds on")
+    #expect(brain.state == .tugging)
+
+    let idleBrain = makeBrain()
+    #expect(idleBrain.handle(.tugMoved(to: CGPoint(x: 600, y: 320), force: 0.7), at: 1) == [])
+    #expect(idleBrain.state == .idle)
+}
+
+@Test func tugMovedDoesNotResetTheTimeout() {
+    // A user who keeps waggling the rope can't stall the showdown forever.
+    let brain = makeTugging()
+    for step in 1...5 {
+        _ = brain.handle(.tugMoved(to: CGPoint(x: 600, y: 300), force: 0.5), at: 1 + Double(step))
+    }
+    let effects = brain.handle(.tick, at: 1 + brain.tuning.tugTimeout + 0.1)
+    #expect(brain.state != .tugging, "the tugTimeout still fires, got \(effects)")
+}
+
+@Test func releasingTheRopeEndsTheTug() {
+    let brain = makeTugging()
+    let effects = brain.handle(.tugEnded, at: 4)
+    #expect(brain.state == .idle)
+    #expect(effects.contains(.stopTug))
+    #expect(effects.contains(.dropToy(.rope)))
+    #expect(effects.contains(.play(.idle)))
+}
+
+@Test func tugEndedIsIgnoredWhenNotTugging() {
+    let brain = makeBrain()
+    let effects = brain.handle(.tugEnded, at: 1)
+    #expect(effects == [])
+    #expect(brain.state == .idle)
+}
+
+@Test func winningTheTugTakesThePrizeForAVictoryLap() {
+    let brain = makeTugging(winChance: 1.0)
+    let effects = brain.handle(.tick, at: 1 + brain.tuning.tugTimeout + 0.1)
+    #expect(brain.state == .returningToy(.rope))
+    #expect(effects.contains(.stopTug))
+    #expect(effects.contains(.pickUpToy(.rope)))
+    #expect(effects.contains(.celebrate))
+    #expect(moveTarget(in: effects)?.speed == brain.tuning.carrySpeed,
+            "he trots off with it rather than teleporting")
+
+    let lap = brain.handle(.arrived, at: 20)
+    #expect(brain.state == .idle)
+    #expect(lap.contains(.dropToy(.rope)))
+}
+
+@Test func losingTheTugDropsTheRope() {
+    let brain = makeTugging(winChance: 0)
+    #expect(brain.handle(.tick, at: 1 + brain.tuning.tugTimeout - 0.1) == [])
+
+    let effects = brain.handle(.tick, at: 1 + brain.tuning.tugTimeout + 0.1)
+    #expect(brain.state == .idle)
+    #expect(effects.contains(.stopTug))
+    #expect(effects.contains(.dropToy(.rope)))
+    #expect(!effects.contains(.pickUpToy(.rope)))
+}
+
+@Test func tugOutcomeIsDeterministicAndSplitsBothWays() {
+    // A coin-flip knob driven by the seeded RNG: same seed, same result;
+    // across seeds, both endings show up.
+    var wins = 0
+    for seed in UInt64(1)...20 {
+        let first = makeTugging(winChance: 0.5, seed: seed)
+        _ = first.handle(.tick, at: 1 + first.tuning.tugTimeout + 0.1)
+        let second = makeTugging(winChance: 0.5, seed: seed)
+        _ = second.handle(.tick, at: 1 + second.tuning.tugTimeout + 0.1)
+        #expect(first.state == second.state, "seed \(seed) must replay identically")
+        if first.state == .returningToy(.rope) { wins += 1 }
+    }
+    #expect(wins > 0 && wins < 20, "a 50/50 knob should not be one-sided, got \(wins)/20")
+}
+
+@Test func victoryTrotStaysOnScreen() {
+    for seed in UInt64(1)...12 {
+        let brain = makeBrain(seed: seed) { $0.tugWinChance = 1.0 }
+        brain.position = CGPoint(x: 70, y: 70) // wedged in a corner
+        _ = brain.handle(.tugStarted(at: CGPoint(x: 120, y: 90)), at: 1)
+        let effects = brain.handle(.tick, at: 1 + brain.tuning.tugTimeout + 0.1)
+        let target = moveTarget(in: effects)?.point
+        #expect(target != nil, "seed \(seed): the victory lap needs somewhere to go")
+        if let target {
+            #expect((0...800).contains(target.x), "seed \(seed): x=\(target.x)")
+            #expect((0...600).contains(target.y), "seed \(seed): y=\(target.y)")
+        }
+    }
+}
+
+@Test func treatDuringTugStopsIt() {
+    let brain = makeTugging()
+    let effects = brain.handle(.treatDropped(at: CGPoint(x: 100, y: 100)), at: 3)
+    #expect(brain.state == .chasingTreat, "peanut butter outranks the rope")
+    #expect(effects.contains(.stopTug))
+    #expect(effects.contains(.removeToy(.rope)))
+}
+
+@Test func pettingDuringTugStopsIt() {
+    let brain = makeTugging()
+    let effects = brain.handle(.petted, at: 3)
+    #expect(brain.state == .beingPetted)
+    #expect(effects.contains(.stopTug))
+}
+
+@Test func pickingHimUpDuringTugStopsIt() {
+    let brain = makeTugging()
+    let effects = brain.handle(.pickedUp, at: 3)
+    #expect(brain.state == .carried)
+    #expect(effects.contains(.stopTug))
+    #expect(effects.contains(.removeToy(.rope)))
+}
+
+@Test func commandDuringTugStopsIt() {
+    let brain = makeTugging()
+    let effects = brain.handle(.command(.sit), at: 3)
+    #expect(brain.state == .sitting)
+    #expect(effects.contains(.stopTug))
 }

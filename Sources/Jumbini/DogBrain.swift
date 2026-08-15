@@ -159,6 +159,9 @@ struct BrainTuning {
     var trickDuration: TimeInterval = 1.5
     var shakeToyDuration: TimeInterval = 2.0
     var tugTimeout: TimeInterval = 12
+    /// Odds he wins when a tug-of-war goes the distance. A straight coin
+    /// flip: he's a small dog with a lot of conviction.
+    var tugWinChance: Double = 0.5
 }
 
 /// Deterministic RNG for tests (SplitMix64).
@@ -214,6 +217,8 @@ final class DogBrain {
     private var chasedToy: ToyKind?
     /// Where he stood when a toy was thrown — the frisbee's return point.
     private var toyReturnPoint: CGPoint?
+    /// Where the tug is being pulled from (the free end of the rope).
+    private var tugPullPoint: CGPoint?
     /// State to resume after a petting session (dog stays sitting/lying).
     private var petReturn: DogState?
     /// State to resume after a bark (same pattern as `petReturn`).
@@ -256,9 +261,19 @@ final class DogBrain {
             return handleSystemSignal(signal, at: now)
         case .toyThrown(let kind, let landing, let origin):
             return handleToyThrown(kind: kind, landing: landing, origin: origin, at: now)
-        case .tugStarted, .tugMoved, .tugEnded:
-            // Vocabulary landed ahead of behavior — feature branches wire these.
+        case .tugStarted(let point):
+            return handleTugStarted(at: point, now: now)
+        case .tugMoved(let point, _):
+            guard state == .tugging else { return [] }
+            // The pull itself is the scene's problem (rope stretch, yanks).
+            // The brain only notes which way it's coming from, so a win
+            // sends him trotting off in the opposite direction.
+            tugPullPoint = point
             return []
+        case .tugEnded:
+            guard state == .tugging else { return [] }
+            tugPullPoint = nil
+            return [.stopTug, .dropToy(.rope)] + enterIdle(at: now)
         }
     }
 
@@ -293,6 +308,8 @@ final class DogBrain {
             // Squeaker exhausted: spit it out and wander off.
             chasedToy = nil
             return [.dropToy(.squeaky)] + enterIdle(at: now)
+        case .tugging:
+            return resolveTug(at: now)
         case .beingPetted:
             return endPetting(at: now)
         case .barking:
@@ -471,6 +488,58 @@ final class DogBrain {
             return []
         }
     }
+
+    /// The user grabbed the free end of the rope and pulled. He plants his
+    /// feet and holds on until someone gives — the `tugTimeout` deadline is
+    /// the showdown, and it is NOT extended by pulling harder.
+    private func handleTugStarted(at point: CGPoint, now: TimeInterval) -> [DogEffect] {
+        // Not while he's in your arms — you can't have it both ways.
+        guard state != .carried else { return [] }
+        tugPullPoint = point
+        guard state != .tugging else { return [] } // already braced
+        let cleanup = interruptionCleanup()
+        petReturn = nil
+        state = .tugging
+        deadline = now + tuning.tugTimeout
+        return [.stopMoving] + cleanup + [.startTug, .play(.tug)]
+    }
+
+    /// Nobody let go: the rope decides it. A win means he takes the prize on
+    /// a short, insufferably proud trot AWAY from whoever was pulling.
+    private func resolveTug(at now: TimeInterval) -> [DogEffect] {
+        let won = Double.random(in: 0..<1, using: &rng) < tuning.tugWinChance
+        let pull = tugPullPoint
+        tugPullPoint = nil
+        guard won else {
+            return [.stopTug, .dropToy(.rope)] + enterIdle(at: now)
+        }
+        state = .returningToy(.rope)
+        deadline = nil
+        toyReturnPoint = nil
+        return [.stopTug, .pickUpToy(.rope), .celebrate,
+                .play(.carryWalk), .moveTo(victoryTrot(from: pull), speed: tuning.carrySpeed)]
+    }
+
+    /// A short retreat directly away from the pull, kept inside the margins.
+    private func victoryTrot(from pull: CGPoint?) -> CGPoint {
+        var dx = position.x - (pull?.x ?? position.x + 1)
+        var dy = position.y - (pull?.y ?? position.y)
+        let length = hypot(dx, dy)
+        if length < 0.001 {
+            dx = -1; dy = 0
+        } else {
+            dx /= length; dy /= length
+        }
+        let margin = tuning.wanderMargin
+        let step = Self.tugVictoryTrot
+        return CGPoint(
+            x: min(max(position.x + dx * step, margin), max(margin, bounds.width - margin)),
+            y: min(max(position.y + dy * step, margin), max(margin, bounds.height - margin))
+        )
+    }
+
+    /// How far he swaggers off with a won rope.
+    private static let tugVictoryTrot: CGFloat = 60
 
     private func startToyChase(kind: ToyKind, landing: CGPoint, origin: CGPoint) -> [DogEffect] {
         state = .chasingFrisbee
@@ -764,6 +833,11 @@ final class DogBrain {
         case .shakingToy:
             chasedToy = nil
             return [.removeToy(.squeaky)]
+        case .tugging:
+            // The scene must drop the user's drag immediately, or they'd be
+            // left waggling a rope he has walked away from.
+            tugPullPoint = nil
+            return [.stopTug, .removeToy(.rope)]
         case .zoomies:
             return [.stopZoomies]
         case .sniffingMouse, .stalkingMouse, .pouncing:
