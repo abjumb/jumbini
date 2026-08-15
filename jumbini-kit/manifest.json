@@ -1,0 +1,811 @@
+{
+ "generated_for": "Jumbini / treat-box session",
+ "count": 161,
+ "assets": [
+  {
+   "category": "treat-box",
+   "name": "treat_box_base.png",
+   "url": "https://api.pixellab.ai/mcp/images/32edcd9f-6d8d-4fd6-8a48-5fda16ef4bf8/download?index=1"
+  },
+  {
+   "category": "treat-box/candidates",
+   "name": "pro_00.png",
+   "url": "https://api.pixellab.ai/mcp/images/32edcd9f-6d8d-4fd6-8a48-5fda16ef4bf8/download?index=0"
+  },
+  {
+   "category": "treat-box/candidates",
+   "name": "pro_01.png",
+   "url": "https://api.pixellab.ai/mcp/images/32edcd9f-6d8d-4fd6-8a48-5fda16ef4bf8/download?index=1"
+  },
+  {
+   "category": "treat-box/candidates",
+   "name": "pro_02.png",
+   "url": "https://api.pixellab.ai/mcp/images/32edcd9f-6d8d-4fd6-8a48-5fda16ef4bf8/download?index=2"
+  },
+  {
+   "category": "treat-box/candidates",
+   "name": "pro_03.png",
+   "url": "https://api.pixellab.ai/mcp/images/32edcd9f-6d8d-4fd6-8a48-5fda16ef4bf8/download?index=3"
+  },
+  {
+   "category": "treat-box/candidates",
+   "name": "pro_04.png",
+   "url": "https://api.pixellab.ai/mcp/images/32edcd9f-6d8d-4fd6-8a48-5fda16ef4bf8/download?index=4"
+  },
+  {
+   "category": "treat-box/candidates",
+   "name": "pro_05.png",
+   "url": "https://api.pixellab.ai/mcp/images/32edcd9f-6d8d-4fd6-8a48-5fda16ef4bf8/download?index=5"
+  },
+  {
+   "category": "treat-box/candidates",
+   "name": "pro_06.png",
+   "url": "https://api.pixellab.ai/mcp/images/32edcd9f-6d8d-4fd6-8a48-5fda16ef4bf8/download?index=6"
+  },
+  {
+   "category": "treat-box/candidates",
+   "name": "pro_07.png",
+   "url": "https://api.pixellab.ai/mcp/images/32edcd9f-6d8d-4fd6-8a48-5fda16ef4bf8/download?index=7"
+  },
+  {
+   "category": "treat-box/candidates",
+   "name": "pro_08.png",
+   "url": "https://api.pixellab.ai/mcp/images/32edcd9f-6d8d-4fd6-8a48-5fda16ef4bf8/download?index=8"
+  },
+  {
+   "category": "treat-box/candidates",
+   "name": "pro_09.png",
+   "url": "https://api.pixellab.ai/mcp/images/32edcd9f-6d8d-4fd6-8a48-5fda16ef4bf8/download?index=9"
+  },
+  {
+   "category": "treat-box/candidates",
+   "name": "pro_10.png",
+   "url": "https://api.pixellab.ai/mcp/images/32edcd9f-6d8d-4fd6-8a48-5fda16ef4bf8/download?index=10"
+  },
+  {
+   "category": "treat-box/candidates",
+   "name": "pro_11.png",
+   "url": "https://api.pixellab.ai/mcp/images/32edcd9f-6d8d-4fd6-8a48-5fda16ef4bf8/download?index=11"
+  },
+  {
+   "category": "treat-box/candidates",
+   "name": "pro_12.png",
+   "url": "https://api.pixellab.ai/mcp/images/32edcd9f-6d8d-4fd6-8a48-5fda16ef4bf8/download?index=12"
+  },
+  {
+   "category": "treat-box/candidates",
+   "name": "pro_13.png",
+   "url": "https://api.pixellab.ai/mcp/images/32edcd9f-6d8d-4fd6-8a48-5fda16ef4bf8/download?index=13"
+  },
+  {
+   "category": "treat-box/candidates",
+   "name": "pro_14.png",
+   "url": "https://api.pixellab.ai/mcp/images/32edcd9f-6d8d-4fd6-8a48-5fda16ef4bf8/download?index=14"
+  },
+  {
+   "category": "treat-box/candidates",
+   "name": "pro_15.png",
+   "url": "https://api.pixellab.ai/mcp/images/32edcd9f-6d8d-4fd6-8a48-5fda16ef4bf8/download?index=15"
+  },
+  {
+   "category": "treat-box/candidates",
+   "name": "pixen_a.png",
+   "url": "https://api.pixellab.ai/mcp/images/91ebe9e6-e267-4390-be05-339d3afc40c3/download"
+  },
+  {
+   "category": "treat-box/candidates",
+   "name": "pixen_b.png",
+   "url": "https://api.pixellab.ai/mcp/images/2b665b3a-3f59-4c82-8e2c-20bfcd459008/download"
+  },
+  {
+   "category": "treat-box/wobble",
+   "name": "treat_box_wobble_00.png",
+   "url": "https://api.pixellab.ai/mcp/images/19462904-447f-4ac9-98e1-40f681ccfca5/download?index=0"
+  },
+  {
+   "category": "treat-box/wobble",
+   "name": "treat_box_wobble_01.png",
+   "url": "https://api.pixellab.ai/mcp/images/19462904-447f-4ac9-98e1-40f681ccfca5/download?index=1"
+  },
+  {
+   "category": "treat-box/wobble",
+   "name": "treat_box_wobble_02.png",
+   "url": "https://api.pixellab.ai/mcp/images/19462904-447f-4ac9-98e1-40f681ccfca5/download?index=2"
+  },
+  {
+   "category": "treat-box/wobble",
+   "name": "treat_box_wobble_03.png",
+   "url": "https://api.pixellab.ai/mcp/images/19462904-447f-4ac9-98e1-40f681ccfca5/download?index=3"
+  },
+  {
+   "category": "treat-box/wobble",
+   "name": "treat_box_wobble_04.png",
+   "url": "https://api.pixellab.ai/mcp/images/19462904-447f-4ac9-98e1-40f681ccfca5/download?index=4"
+  },
+  {
+   "category": "treat-box/wobble",
+   "name": "treat_box_wobble_05.png",
+   "url": "https://api.pixellab.ai/mcp/images/19462904-447f-4ac9-98e1-40f681ccfca5/download?index=5"
+  },
+  {
+   "category": "treat-box/wobble",
+   "name": "treat_box_wobble_06.png",
+   "url": "https://api.pixellab.ai/mcp/images/19462904-447f-4ac9-98e1-40f681ccfca5/download?index=6"
+  },
+  {
+   "category": "treat-box/wobble",
+   "name": "treat_box_wobble_07.png",
+   "url": "https://api.pixellab.ai/mcp/images/19462904-447f-4ac9-98e1-40f681ccfca5/download?index=7"
+  },
+  {
+   "category": "treat-box/wobble",
+   "name": "treat_box_wobble_08.png",
+   "url": "https://api.pixellab.ai/mcp/images/19462904-447f-4ac9-98e1-40f681ccfca5/download?index=8"
+  },
+  {
+   "category": "treat-box/topdown",
+   "name": "treat_box_topdown_00.png",
+   "url": "https://api.pixellab.ai/mcp/images/a674a2c1-9ec1-41b4-96a8-32e98ae70066/download?index=0"
+  },
+  {
+   "category": "treat-box/topdown",
+   "name": "treat_box_topdown_01.png",
+   "url": "https://api.pixellab.ai/mcp/images/a674a2c1-9ec1-41b4-96a8-32e98ae70066/download?index=1"
+  },
+  {
+   "category": "treat-box/topdown",
+   "name": "treat_box_topdown_02.png",
+   "url": "https://api.pixellab.ai/mcp/images/a674a2c1-9ec1-41b4-96a8-32e98ae70066/download?index=2"
+  },
+  {
+   "category": "treat-box/topdown",
+   "name": "treat_box_topdown_03.png",
+   "url": "https://api.pixellab.ai/mcp/images/a674a2c1-9ec1-41b4-96a8-32e98ae70066/download?index=3"
+  },
+  {
+   "category": "treat-box/topdown",
+   "name": "treat_box_topdown_04.png",
+   "url": "https://api.pixellab.ai/mcp/images/a674a2c1-9ec1-41b4-96a8-32e98ae70066/download?index=4"
+  },
+  {
+   "category": "treat-box/topdown",
+   "name": "treat_box_topdown_05.png",
+   "url": "https://api.pixellab.ai/mcp/images/a674a2c1-9ec1-41b4-96a8-32e98ae70066/download?index=5"
+  },
+  {
+   "category": "treat-box/topdown",
+   "name": "treat_box_topdown_06.png",
+   "url": "https://api.pixellab.ai/mcp/images/a674a2c1-9ec1-41b4-96a8-32e98ae70066/download?index=6"
+  },
+  {
+   "category": "treat-box/topdown",
+   "name": "treat_box_topdown_07.png",
+   "url": "https://api.pixellab.ai/mcp/images/a674a2c1-9ec1-41b4-96a8-32e98ae70066/download?index=7"
+  },
+  {
+   "category": "treat-box/topdown",
+   "name": "treat_box_topdown_08.png",
+   "url": "https://api.pixellab.ai/mcp/images/a674a2c1-9ec1-41b4-96a8-32e98ae70066/download?index=8"
+  },
+  {
+   "category": "treat-box/topdown",
+   "name": "treat_box_topdown_09.png",
+   "url": "https://api.pixellab.ai/mcp/images/a674a2c1-9ec1-41b4-96a8-32e98ae70066/download?index=9"
+  },
+  {
+   "category": "treat-box/topdown",
+   "name": "treat_box_topdown_10.png",
+   "url": "https://api.pixellab.ai/mcp/images/a674a2c1-9ec1-41b4-96a8-32e98ae70066/download?index=10"
+  },
+  {
+   "category": "treat-box/topdown",
+   "name": "treat_box_topdown_11.png",
+   "url": "https://api.pixellab.ai/mcp/images/a674a2c1-9ec1-41b4-96a8-32e98ae70066/download?index=11"
+  },
+  {
+   "category": "treat-box/topdown",
+   "name": "treat_box_topdown_12.png",
+   "url": "https://api.pixellab.ai/mcp/images/a674a2c1-9ec1-41b4-96a8-32e98ae70066/download?index=12"
+  },
+  {
+   "category": "treat-box/topdown",
+   "name": "treat_box_topdown_13.png",
+   "url": "https://api.pixellab.ai/mcp/images/a674a2c1-9ec1-41b4-96a8-32e98ae70066/download?index=13"
+  },
+  {
+   "category": "treat-box/topdown",
+   "name": "treat_box_topdown_14.png",
+   "url": "https://api.pixellab.ai/mcp/images/a674a2c1-9ec1-41b4-96a8-32e98ae70066/download?index=14"
+  },
+  {
+   "category": "treat-box/topdown",
+   "name": "treat_box_topdown_15.png",
+   "url": "https://api.pixellab.ai/mcp/images/a674a2c1-9ec1-41b4-96a8-32e98ae70066/download?index=15"
+  },
+  {
+   "category": "treat-box/opened",
+   "name": "treat_box_opened_00.png",
+   "url": "https://api.pixellab.ai/mcp/images/2a4b3c9e-a4b6-4729-bd51-d3c299de8a37/download?index=0"
+  },
+  {
+   "category": "treat-box/opened",
+   "name": "treat_box_opened_01.png",
+   "url": "https://api.pixellab.ai/mcp/images/2a4b3c9e-a4b6-4729-bd51-d3c299de8a37/download?index=1"
+  },
+  {
+   "category": "treat-box/opened",
+   "name": "treat_box_opened_02.png",
+   "url": "https://api.pixellab.ai/mcp/images/2a4b3c9e-a4b6-4729-bd51-d3c299de8a37/download?index=2"
+  },
+  {
+   "category": "treat-box/opened",
+   "name": "treat_box_opened_03.png",
+   "url": "https://api.pixellab.ai/mcp/images/2a4b3c9e-a4b6-4729-bd51-d3c299de8a37/download?index=3"
+  },
+  {
+   "category": "treat-box/opened",
+   "name": "treat_box_opened_04.png",
+   "url": "https://api.pixellab.ai/mcp/images/2a4b3c9e-a4b6-4729-bd51-d3c299de8a37/download?index=4"
+  },
+  {
+   "category": "treat-box/opened",
+   "name": "treat_box_opened_05.png",
+   "url": "https://api.pixellab.ai/mcp/images/2a4b3c9e-a4b6-4729-bd51-d3c299de8a37/download?index=5"
+  },
+  {
+   "category": "treat-box/opened",
+   "name": "treat_box_opened_06.png",
+   "url": "https://api.pixellab.ai/mcp/images/2a4b3c9e-a4b6-4729-bd51-d3c299de8a37/download?index=6"
+  },
+  {
+   "category": "treat-box/opened",
+   "name": "treat_box_opened_07.png",
+   "url": "https://api.pixellab.ai/mcp/images/2a4b3c9e-a4b6-4729-bd51-d3c299de8a37/download?index=7"
+  },
+  {
+   "category": "treat-box/opened",
+   "name": "treat_box_opened_08.png",
+   "url": "https://api.pixellab.ai/mcp/images/2a4b3c9e-a4b6-4729-bd51-d3c299de8a37/download?index=8"
+  },
+  {
+   "category": "treat-box/opened",
+   "name": "treat_box_opened_09.png",
+   "url": "https://api.pixellab.ai/mcp/images/2a4b3c9e-a4b6-4729-bd51-d3c299de8a37/download?index=9"
+  },
+  {
+   "category": "treat-box/opened",
+   "name": "treat_box_opened_10.png",
+   "url": "https://api.pixellab.ai/mcp/images/2a4b3c9e-a4b6-4729-bd51-d3c299de8a37/download?index=10"
+  },
+  {
+   "category": "treat-box/opened",
+   "name": "treat_box_opened_11.png",
+   "url": "https://api.pixellab.ai/mcp/images/2a4b3c9e-a4b6-4729-bd51-d3c299de8a37/download?index=11"
+  },
+  {
+   "category": "treat-box/opened",
+   "name": "treat_box_opened_12.png",
+   "url": "https://api.pixellab.ai/mcp/images/2a4b3c9e-a4b6-4729-bd51-d3c299de8a37/download?index=12"
+  },
+  {
+   "category": "treat-box/opened",
+   "name": "treat_box_opened_13.png",
+   "url": "https://api.pixellab.ai/mcp/images/2a4b3c9e-a4b6-4729-bd51-d3c299de8a37/download?index=13"
+  },
+  {
+   "category": "treat-box/opened",
+   "name": "treat_box_opened_14.png",
+   "url": "https://api.pixellab.ai/mcp/images/2a4b3c9e-a4b6-4729-bd51-d3c299de8a37/download?index=14"
+  },
+  {
+   "category": "treat-box/opened",
+   "name": "treat_box_opened_15.png",
+   "url": "https://api.pixellab.ai/mcp/images/2a4b3c9e-a4b6-4729-bd51-d3c299de8a37/download?index=15"
+  },
+  {
+   "category": "treat-box/crushed",
+   "name": "treat_box_crushed_00.png",
+   "url": "https://api.pixellab.ai/mcp/images/46a02fb8-b37a-4c01-9142-328b122ea541/download?index=0"
+  },
+  {
+   "category": "treat-box/crushed",
+   "name": "treat_box_crushed_01.png",
+   "url": "https://api.pixellab.ai/mcp/images/46a02fb8-b37a-4c01-9142-328b122ea541/download?index=1"
+  },
+  {
+   "category": "treat-box/crushed",
+   "name": "treat_box_crushed_02.png",
+   "url": "https://api.pixellab.ai/mcp/images/46a02fb8-b37a-4c01-9142-328b122ea541/download?index=2"
+  },
+  {
+   "category": "treat-box/crushed",
+   "name": "treat_box_crushed_03.png",
+   "url": "https://api.pixellab.ai/mcp/images/46a02fb8-b37a-4c01-9142-328b122ea541/download?index=3"
+  },
+  {
+   "category": "treat-box/crushed",
+   "name": "treat_box_crushed_04.png",
+   "url": "https://api.pixellab.ai/mcp/images/46a02fb8-b37a-4c01-9142-328b122ea541/download?index=4"
+  },
+  {
+   "category": "treat-box/crushed",
+   "name": "treat_box_crushed_05.png",
+   "url": "https://api.pixellab.ai/mcp/images/46a02fb8-b37a-4c01-9142-328b122ea541/download?index=5"
+  },
+  {
+   "category": "treat-box/crushed",
+   "name": "treat_box_crushed_06.png",
+   "url": "https://api.pixellab.ai/mcp/images/46a02fb8-b37a-4c01-9142-328b122ea541/download?index=6"
+  },
+  {
+   "category": "treat-box/crushed",
+   "name": "treat_box_crushed_07.png",
+   "url": "https://api.pixellab.ai/mcp/images/46a02fb8-b37a-4c01-9142-328b122ea541/download?index=7"
+  },
+  {
+   "category": "treat-box/crushed",
+   "name": "treat_box_crushed_08.png",
+   "url": "https://api.pixellab.ai/mcp/images/46a02fb8-b37a-4c01-9142-328b122ea541/download?index=8"
+  },
+  {
+   "category": "treat-box/crushed",
+   "name": "treat_box_crushed_09.png",
+   "url": "https://api.pixellab.ai/mcp/images/46a02fb8-b37a-4c01-9142-328b122ea541/download?index=9"
+  },
+  {
+   "category": "treat-box/crushed",
+   "name": "treat_box_crushed_10.png",
+   "url": "https://api.pixellab.ai/mcp/images/46a02fb8-b37a-4c01-9142-328b122ea541/download?index=10"
+  },
+  {
+   "category": "treat-box/crushed",
+   "name": "treat_box_crushed_11.png",
+   "url": "https://api.pixellab.ai/mcp/images/46a02fb8-b37a-4c01-9142-328b122ea541/download?index=11"
+  },
+  {
+   "category": "treat-box/crushed",
+   "name": "treat_box_crushed_12.png",
+   "url": "https://api.pixellab.ai/mcp/images/46a02fb8-b37a-4c01-9142-328b122ea541/download?index=12"
+  },
+  {
+   "category": "treat-box/crushed",
+   "name": "treat_box_crushed_13.png",
+   "url": "https://api.pixellab.ai/mcp/images/46a02fb8-b37a-4c01-9142-328b122ea541/download?index=13"
+  },
+  {
+   "category": "treat-box/crushed",
+   "name": "treat_box_crushed_14.png",
+   "url": "https://api.pixellab.ai/mcp/images/46a02fb8-b37a-4c01-9142-328b122ea541/download?index=14"
+  },
+  {
+   "category": "treat-box/crushed",
+   "name": "treat_box_crushed_15.png",
+   "url": "https://api.pixellab.ai/mcp/images/46a02fb8-b37a-4c01-9142-328b122ea541/download?index=15"
+  },
+  {
+   "category": "jumbini/sprites",
+   "name": "bark_puff_0.png",
+   "url": "https://api.pixellab.ai/mcp/images/aae61485-1e79-4cb6-95ae-d681bdaeac72/download"
+  },
+  {
+   "category": "jumbini/sprites",
+   "name": "bark_puff_1.png",
+   "url": "https://api.pixellab.ai/mcp/images/9c39b8c0-d1ab-4b10-99f6-ea29a3580cae/download"
+  },
+  {
+   "category": "jumbini/sprites",
+   "name": "bark_puff_2.png",
+   "url": "https://api.pixellab.ai/mcp/images/29cc7323-eacb-4b07-8184-3157e33a3caf/download"
+  },
+  {
+   "category": "jumbini/sprites",
+   "name": "deposit_1.png",
+   "url": "https://api.pixellab.ai/mcp/images/df3c408e-8067-4d62-a09b-414cbf222869/download"
+  },
+  {
+   "category": "jumbini/sprites",
+   "name": "deposit_2.png",
+   "url": "https://api.pixellab.ai/mcp/images/043bd666-eea8-42b3-887d-0cfd2854cb2d/download"
+  },
+  {
+   "category": "jumbini/sprites",
+   "name": "deposit_3.png",
+   "url": "https://api.pixellab.ai/mcp/images/aed14db9-d6f6-4bf3-968a-f5419218af3d/download"
+  },
+  {
+   "category": "jumbini/sprites",
+   "name": "steam_0.png",
+   "url": "https://api.pixellab.ai/mcp/images/1fd24de2-c3ec-4fb3-beda-7eb30a7c4078/download"
+  },
+  {
+   "category": "jumbini/sprites",
+   "name": "steam_1.png",
+   "url": "https://api.pixellab.ai/mcp/images/32404a83-af4a-42c4-b4be-9975c775b734/download"
+  },
+  {
+   "category": "jumbini/sprites",
+   "name": "steam_2.png",
+   "url": "https://api.pixellab.ai/mcp/images/1d522946-9e8a-4cb7-87ca-cce0f9bbba0e/download"
+  },
+  {
+   "category": "jumbini/sprites",
+   "name": "fly_0.png",
+   "url": "https://api.pixellab.ai/mcp/images/3c547e09-8e30-4a84-a6d2-63d3f74cebdb/download"
+  },
+  {
+   "category": "jumbini/sprites",
+   "name": "fly_1.png",
+   "url": "https://api.pixellab.ai/mcp/images/566b1af0-1256-49ed-9f3d-a73a21057124/download"
+  },
+  {
+   "category": "jumbini/sprites",
+   "name": "deposit_dry.png",
+   "url": "https://api.pixellab.ai/mcp/images/b6185003-6580-479e-a417-67e11625f4f1/download"
+  },
+  {
+   "category": "jumbini/sprites",
+   "name": "shadow_blob.png",
+   "url": "https://api.pixellab.ai/mcp/images/427c3b19-1874-4aaf-8e8e-9d099f341eef/download"
+  },
+  {
+   "category": "jumbini/sprites",
+   "name": "dust_0.png",
+   "url": "https://api.pixellab.ai/mcp/images/9a139730-5ae2-4fa0-baf1-3b4740be298a/download"
+  },
+  {
+   "category": "jumbini/sprites",
+   "name": "dust_1.png",
+   "url": "https://api.pixellab.ai/mcp/images/1d5e5580-8443-4fd1-8281-9c8636b3f23a/download"
+  },
+  {
+   "category": "jumbini/sprites",
+   "name": "dust_2.png",
+   "url": "https://api.pixellab.ai/mcp/images/b02d694c-7100-4c52-8033-d9c8447204a6/download"
+  },
+  {
+   "category": "jumbini/sprites",
+   "name": "dust_3.png",
+   "url": "https://api.pixellab.ai/mcp/images/8f4033b8-e8a1-4411-ba53-1c631cc09b8c/download"
+  },
+  {
+   "category": "jumbini/sprites",
+   "name": "sparkle_0.png",
+   "url": "https://api.pixellab.ai/mcp/images/5510d58e-4e8d-4e17-9203-15b9445fe267/download"
+  },
+  {
+   "category": "jumbini/sprites",
+   "name": "sparkle_1.png",
+   "url": "https://api.pixellab.ai/mcp/images/bb5f89d1-d293-4bcb-bb55-d38b4a4e7616/download"
+  },
+  {
+   "category": "jumbini/sprites",
+   "name": "sparkle_2.png",
+   "url": "https://api.pixellab.ai/mcp/images/bc13740a-b022-4594-b1e7-bca2a1384476/download"
+  },
+  {
+   "category": "jumbini/sprites",
+   "name": "sparkle_3.png",
+   "url": "https://api.pixellab.ai/mcp/images/f8b6e065-934d-4004-97bc-7d18b8950388/download"
+  },
+  {
+   "category": "jumbini/sprites",
+   "name": "confetti_0.png",
+   "url": "https://api.pixellab.ai/mcp/images/b229831a-e3d4-4dfd-88d9-ddc1e25ba2f2/download"
+  },
+  {
+   "category": "jumbini/sprites",
+   "name": "confetti_1.png",
+   "url": "https://api.pixellab.ai/mcp/images/01d9dda0-9877-4316-946b-9347a4109ecb/download"
+  },
+  {
+   "category": "jumbini/sprites",
+   "name": "confetti_2.png",
+   "url": "https://api.pixellab.ai/mcp/images/5b11673d-1509-42f3-b3da-c765871c8d9c/download"
+  },
+  {
+   "category": "jumbini/sprites",
+   "name": "rain_0.png",
+   "url": "https://api.pixellab.ai/mcp/images/3858bf66-a1c1-4e5f-8397-3bd87c9f98d9/download"
+  },
+  {
+   "category": "jumbini/sprites",
+   "name": "rain_1.png",
+   "url": "https://api.pixellab.ai/mcp/images/b8c3638c-9363-4dc5-97c9-3566f012f49e/download"
+  },
+  {
+   "category": "jumbini/sprites",
+   "name": "rain_2.png",
+   "url": "https://api.pixellab.ai/mcp/images/ec7c17b0-d859-4c92-9a29-c4f2687a4042/download"
+  },
+  {
+   "category": "jumbini/sprites",
+   "name": "puddle.png",
+   "url": "https://api.pixellab.ai/mcp/images/a79894b2-593c-4d0f-a9a6-90cb69b10171/download"
+  },
+  {
+   "category": "jumbini/sprites",
+   "name": "frisbee_0.png",
+   "url": "https://api.pixellab.ai/mcp/images/c42397d2-5ef7-4578-ae3e-86b6441e33c8/download"
+  },
+  {
+   "category": "jumbini/sprites",
+   "name": "frisbee_1.png",
+   "url": "https://api.pixellab.ai/mcp/images/a3eda7f8-4b05-41f4-951f-eb90cd8c141c/download"
+  },
+  {
+   "category": "jumbini/sprites",
+   "name": "frisbee_2.png",
+   "url": "https://api.pixellab.ai/mcp/images/714b18cb-1124-40c6-a68a-b947a12c0a9c/download"
+  },
+  {
+   "category": "jumbini/sprites",
+   "name": "frisbee_3.png",
+   "url": "https://api.pixellab.ai/mcp/images/fb25be8a-91ed-4734-94b1-62cc0fa6ff0a/download"
+  },
+  {
+   "category": "jumbini/sprites",
+   "name": "frisbee_mouth.png",
+   "url": "https://api.pixellab.ai/mcp/images/31403568-1e14-4d17-a5e1-822161fb8bcb/download"
+  },
+  {
+   "category": "jumbini/sprites",
+   "name": "toy_chicken.png",
+   "url": "https://api.pixellab.ai/mcp/images/35c4679b-a0cc-4e93-a20a-48f2703c2062/download"
+  },
+  {
+   "category": "jumbini/sprites",
+   "name": "toy_squash_0.png",
+   "url": "https://api.pixellab.ai/mcp/images/78712bff-21fb-442e-a6c3-e24eedad43fb/download"
+  },
+  {
+   "category": "jumbini/sprites",
+   "name": "toy_squash_1.png",
+   "url": "https://api.pixellab.ai/mcp/images/e60f4a78-04d8-4948-820f-dc2596da7d40/download"
+  },
+  {
+   "category": "jumbini/sprites",
+   "name": "toy_squash_2.png",
+   "url": "https://api.pixellab.ai/mcp/images/c74bc1dd-3b90-4521-85db-f6b64e557f74/download"
+  },
+  {
+   "category": "jumbini/sprites",
+   "name": "rope_left.png",
+   "url": "https://api.pixellab.ai/mcp/images/4748199b-b912-4506-b064-7ad4998eae9b/download"
+  },
+  {
+   "category": "jumbini/sprites",
+   "name": "rope_mid.png",
+   "url": "https://api.pixellab.ai/mcp/images/601fac13-80c2-4cb9-8583-7596878665dc/download"
+  },
+  {
+   "category": "jumbini/sprites",
+   "name": "rope_right.png",
+   "url": "https://api.pixellab.ai/mcp/images/3b8dfb00-84e1-4b27-8e95-7dcf685818e2/download"
+  },
+  {
+   "category": "jumbini/sprites",
+   "name": "rope_taut_left.png",
+   "url": "https://api.pixellab.ai/mcp/images/75d73e93-6b3b-46f4-ba73-b50530a5f13f/download"
+  },
+  {
+   "category": "jumbini/sprites",
+   "name": "rope_taut_mid.png",
+   "url": "https://api.pixellab.ai/mcp/images/7730b04c-0e84-41e4-b67e-dfdfdfe4096b/download"
+  },
+  {
+   "category": "jumbini/sprites",
+   "name": "rope_taut_right.png",
+   "url": "https://api.pixellab.ai/mcp/images/331e1e4d-8552-4c65-a186-72efe840f97f/download"
+  },
+  {
+   "category": "jumbini/ui",
+   "name": "emote_bubble.png",
+   "url": "https://api.pixellab.ai/mcp/images/924ab2bf-3b22-4246-91d7-72e137aae482/download"
+  },
+  {
+   "category": "jumbini/ui",
+   "name": "icon_alert.png",
+   "url": "https://api.pixellab.ai/mcp/images/b24a9252-147f-48d9-961d-22204d28cd32/download"
+  },
+  {
+   "category": "jumbini/ui",
+   "name": "icon_question.png",
+   "url": "https://api.pixellab.ai/mcp/images/7dd0ccb7-07b7-4514-b3ee-3fe5fd0ba181/download"
+  },
+  {
+   "category": "jumbini/ui",
+   "name": "icon_sleep.png",
+   "url": "https://api.pixellab.ai/mcp/images/732cf1d5-c8e4-4fc8-87e5-c8fc3a910d71/download"
+  },
+  {
+   "category": "jumbini/ui",
+   "name": "icon_party.png",
+   "url": "https://api.pixellab.ai/mcp/images/2b5b9762-4de2-4c00-89e7-89a634c0a2e2/download"
+  },
+  {
+   "category": "jumbini/ui",
+   "name": "icon_battery.png",
+   "url": "https://api.pixellab.ai/mcp/images/a34858e8-c563-4b2b-ae1c-666bdd250ec9/download"
+  },
+  {
+   "category": "jumbini/ui",
+   "name": "icon_moon.png",
+   "url": "https://api.pixellab.ai/mcp/images/91d14ff6-1a03-450d-ad66-f6b16c20f03b/download"
+  },
+  {
+   "category": "jumbini/ui",
+   "name": "icon_flame.png",
+   "url": "https://api.pixellab.ai/mcp/images/fe8cd7b9-f250-416c-9f85-9e0f667b92fd/download"
+  },
+  {
+   "category": "jumbini/ui",
+   "name": "icon_gear.png",
+   "url": "https://api.pixellab.ai/mcp/images/fe4ede95-5854-4771-92b5-51818b77ea3d/download"
+  },
+  {
+   "category": "jumbini/ui",
+   "name": "badge_trick.png",
+   "url": "https://api.pixellab.ai/mcp/images/c5e4bf09-187b-4ed5-8be5-8f87c46e6df9/download"
+  },
+  {
+   "category": "jumbini/ui",
+   "name": "caption_plate.png",
+   "url": "https://api.pixellab.ai/mcp/images/d560aa71-f194-44c5-9306-91b8a0145504/download"
+  },
+  {
+   "category": "jumbini/ui",
+   "name": "paw_watermark.png",
+   "url": "https://api.pixellab.ai/mcp/images/68d9bc71-9486-407d-b3ad-53901389570a/download"
+  },
+  {
+   "category": "jumbini/ui",
+   "name": "icon_mute.png",
+   "url": "https://api.pixellab.ai/mcp/images/defe9854-353c-47a5-a4a0-61a3ad13e1ec/download"
+  },
+  {
+   "category": "jumbini/wardrobe",
+   "name": "beanie_s.png",
+   "url": "https://api.pixellab.ai/mcp/images/3b44e7d6-ca27-4db2-b06d-a3bd2b53d2db/download"
+  },
+  {
+   "category": "jumbini/wardrobe",
+   "name": "beanie_se.png",
+   "url": "https://api.pixellab.ai/mcp/images/877a413a-ccb7-4ecf-b137-a8655d202adc/download"
+  },
+  {
+   "category": "jumbini/wardrobe",
+   "name": "beanie_e.png",
+   "url": "https://api.pixellab.ai/mcp/images/404fb54c-ef70-4608-a4e2-15a64d24e97a/download"
+  },
+  {
+   "category": "jumbini/wardrobe",
+   "name": "beanie_ne.png",
+   "url": "https://api.pixellab.ai/mcp/images/50d309b1-3ebf-4786-a4f4-c0ea1ad15d20/download"
+  },
+  {
+   "category": "jumbini/wardrobe",
+   "name": "cowboy_s.png",
+   "url": "https://api.pixellab.ai/mcp/images/8116bc2b-4671-408e-8bc2-ad563a862a59/download"
+  },
+  {
+   "category": "jumbini/wardrobe",
+   "name": "cowboy_se.png",
+   "url": "https://api.pixellab.ai/mcp/images/c6460343-1a5c-4710-a3b0-dbf1c6763de7/download"
+  },
+  {
+   "category": "jumbini/wardrobe",
+   "name": "cowboy_e.png",
+   "url": "https://api.pixellab.ai/mcp/images/f46ac582-5a50-40e1-9ab4-4cb57ca9dac0/download"
+  },
+  {
+   "category": "jumbini/wardrobe",
+   "name": "cowboy_ne.png",
+   "url": "https://api.pixellab.ai/mcp/images/081f9006-f4e3-4eba-8c8f-f66a734bc1b0/download"
+  },
+  {
+   "category": "jumbini/wardrobe",
+   "name": "party_s.png",
+   "url": "https://api.pixellab.ai/mcp/images/9f29b96f-9d97-4e83-a9c2-cd35673b5c24/download"
+  },
+  {
+   "category": "jumbini/wardrobe",
+   "name": "party_se.png",
+   "url": "https://api.pixellab.ai/mcp/images/bd848a42-7448-4946-829c-2c9b274b6854/download"
+  },
+  {
+   "category": "jumbini/wardrobe",
+   "name": "party_e.png",
+   "url": "https://api.pixellab.ai/mcp/images/0ac348fc-b3df-409d-90cc-8491eca9c7fc/download"
+  },
+  {
+   "category": "jumbini/wardrobe",
+   "name": "party_ne.png",
+   "url": "https://api.pixellab.ai/mcp/images/28109bef-20a8-4208-b7c3-08378f5cf75d/download"
+  },
+  {
+   "category": "jumbini/wardrobe",
+   "name": "tophat_s.png",
+   "url": "https://api.pixellab.ai/mcp/images/b044657a-e8c7-4c0a-bda8-111ff1db19af/download"
+  },
+  {
+   "category": "jumbini/wardrobe",
+   "name": "tophat_se.png",
+   "url": "https://api.pixellab.ai/mcp/images/4b9b7877-9dfa-48d7-b454-36fbb4cda0e6/download"
+  },
+  {
+   "category": "jumbini/wardrobe",
+   "name": "tophat_e.png",
+   "url": "https://api.pixellab.ai/mcp/images/2ea04c4a-49da-4ddd-92c4-653229b071c6/download"
+  },
+  {
+   "category": "jumbini/wardrobe",
+   "name": "tophat_ne.png",
+   "url": "https://api.pixellab.ai/mcp/images/c24d8f5a-1485-4c36-afd9-c4ca0a7cb2b9/download"
+  },
+  {
+   "category": "jumbini/wardrobe",
+   "name": "bandana_s.png",
+   "url": "https://api.pixellab.ai/mcp/images/e92b9bd8-964a-478b-817e-715f74b35d76/download"
+  },
+  {
+   "category": "jumbini/wardrobe",
+   "name": "bandana_se.png",
+   "url": "https://api.pixellab.ai/mcp/images/e167a975-3111-4a42-b2d1-54612097f860/download"
+  },
+  {
+   "category": "jumbini/wardrobe",
+   "name": "bandana_e.png",
+   "url": "https://api.pixellab.ai/mcp/images/5d3efafd-dd21-440f-a536-2ee474f03758/download"
+  },
+  {
+   "category": "jumbini/wardrobe",
+   "name": "bandana_ne.png",
+   "url": "https://api.pixellab.ai/mcp/images/8900f3a9-ca00-4475-b62f-334704a1fea1/download"
+  },
+  {
+   "category": "jumbini/wardrobe",
+   "name": "shades_s.png",
+   "url": "https://api.pixellab.ai/mcp/images/e7a7da8e-e76c-4c37-8c65-aaa966763ba2/download"
+  },
+  {
+   "category": "jumbini/wardrobe",
+   "name": "shades_se.png",
+   "url": "https://api.pixellab.ai/mcp/images/352cdbfd-1882-4c1c-a888-6f038737ebe9/download"
+  },
+  {
+   "category": "jumbini/wardrobe",
+   "name": "shades_e.png",
+   "url": "https://api.pixellab.ai/mcp/images/0802ee52-c775-4bc2-a92a-6349b575964a/download"
+  },
+  {
+   "category": "jumbini/wardrobe",
+   "name": "shades_ne.png",
+   "url": "https://api.pixellab.ai/mcp/images/bc24ed68-c1d8-45a5-ac7c-c8079355e618/download"
+  },
+  {
+   "category": "jumbini/wardrobe",
+   "name": "raincoat_s.png",
+   "url": "https://api.pixellab.ai/mcp/images/368616ac-2de1-47a1-be99-b762ff6c8826/download"
+  },
+  {
+   "category": "jumbini/wardrobe",
+   "name": "raincoat_se.png",
+   "url": "https://api.pixellab.ai/mcp/images/9e13a27d-b525-4783-abdf-98e001835961/download"
+  },
+  {
+   "category": "jumbini/wardrobe",
+   "name": "raincoat_e.png",
+   "url": "https://api.pixellab.ai/mcp/images/15a3dece-b145-4d4e-93b0-759bf5a2ef6d/download"
+  },
+  {
+   "category": "jumbini/wardrobe",
+   "name": "raincoat_ne.png",
+   "url": "https://api.pixellab.ai/mcp/images/75bf5cdb-cb66-4ef2-87da-25ba31776ea9/download"
+  },
+  {
+   "category": "jumba-character",
+   "name": "jumba_all_states.zip",
+   "url": "https://api.pixellab.ai/mcp/characters/cfdc75ba-5174-4f2d-9eef-5ff32fef2e32/download"
+  }
+ ]
+}

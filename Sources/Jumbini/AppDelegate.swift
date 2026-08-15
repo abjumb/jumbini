@@ -1,4 +1,5 @@
 import AppKit
+import Carbon.HIToolbox
 import SpriteKit
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -10,6 +11,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var hungerItem: NSMenuItem?
     private var treatsItem: NSMenuItem?
     private var treatsEaten = 0
+
+    // Jumbini Cam: Carbon hotkey handles, released in applicationWillTerminate.
+    private var camHotKeyRef: EventHotKeyRef?
+    private var camEventHandlerRef: EventHandlerRef?
+
+    // System reactions: ambient machine watcher, stopped in applicationWillTerminate.
+    private var systemMonitor: SystemMonitor?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         setUpStatusItem()
@@ -26,18 +34,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             name: Notification.Name("JumbiniAteTreat"),
             object: nil
         )
+        // System reactions block: must follow setUpOverlay(), which creates
+        // the scene the signals are delivered to.
+        startSystemMonitor()
+        // System reactions block end.
+        // Jumbini Cam block: global hotkey ⌥⇧J (Carbon; no accessibility
+        // permission needed, unlike a CGEvent tap). Keep as the last line of
+        // this method — self-contained, order-independent.
+        registerCamHotKey()
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        unregisterCamHotKey()
+        // System reactions: drop the poll timer and the thermal observer.
+        systemMonitor?.stop()
+        systemMonitor = nil
     }
 
     // MARK: - Overlay
 
+    /// ONE overlay over the union of every display, rather than one per
+    /// screen. The dog then has a single continuous world to live in: walking
+    /// off the right edge of one monitor and onto the next is just walking,
+    /// with no hand-off of him, his hat, or whatever is in his mouth. What it
+    /// costs is dead zones — the corners of that bounding box that belong to
+    /// no display — and `ScreenLayout` is what keeps him out of those.
     private func setUpOverlay() {
-        guard let screen = NSScreen.main else { return }
-        let window = OverlayWindow(screen: screen)
-        let skView = SKView(frame: NSRect(origin: .zero, size: screen.frame.size))
+        let layout = ScreenLayout.current()
+        guard layout.size.width > 0, layout.size.height > 0 else { return }
+        let window = OverlayWindow(frame: layout.unionFrame)
+        let skView = SKView(frame: NSRect(origin: .zero, size: layout.size))
         skView.allowsTransparency = true
         skView.preferredFramesPerSecond = 60
 
-        let scene = PetScene(size: screen.frame.size)
+        let scene = PetScene(layout: layout)
         scene.overlayWindow = window
         window.contentView = skView
         skView.presentScene(scene)
@@ -48,12 +78,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.scene = scene
     }
 
+    /// A display was plugged in, unplugged, rearranged or had its resolution
+    /// changed. Rebuild the world around the dog rather than around the app:
+    /// the overlay is resized to the new union, and the scene translates and
+    /// rescues everything living in it. Order matters — the window and view
+    /// have to be the new size before the scene starts clamping into it.
     @objc private func screenParametersChanged() {
-        guard let screen = NSScreen.main, let window, let skView, let scene else { return }
-        window.setFrame(screen.frame, display: true)
-        skView.frame = NSRect(origin: .zero, size: screen.frame.size)
-        scene.size = screen.frame.size
-        scene.clampEntitiesOnScreen()
+        guard let window, let skView, let scene else { return }
+        let layout = ScreenLayout.current()
+        guard layout.size.width > 0, layout.size.height > 0 else { return }
+        window.setFrame(layout.unionFrame, display: true)
+        skView.frame = NSRect(origin: .zero, size: layout.size)
+        scene.size = layout.size
+        scene.apply(layout: layout)
     }
 
     // MARK: - Status item
@@ -86,6 +123,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         treatsItem.isEnabled = false
         menu.addItem(treatsItem)
         menu.addItem(.separator())
+        // Jumbini Cam block: between the counters separator and Pause. Stays
+        // enabled while paused — the capture renders offscreen and still works.
+        let camItem = NSMenuItem(title: "Jumbini Cam", action: #selector(captureJumbiniCam), keyEquivalent: "j")
+        camItem.keyEquivalentModifierMask = [.option, .shift]
+        camItem.target = self
+        menu.addItem(camItem)
+        // Jumbini Cam block end.
+        let muteItem = NSMenuItem(title: "Mute Sounds", action: #selector(toggleMute(_:)), keyEquivalent: "")
+        muteItem.target = self
+        muteItem.state = UserDefaults.standard.bool(forKey: "soundMuted") ? .on : .off
+        // Alex's icon, colored — deliberately NOT a template image, same call
+        // as the menu bar dog above: this app's art is pixel art, and macOS
+        // would flatten it to a monochrome silhouette.
+        if let url = Bundle.module.url(forResource: "icon_mute", withExtension: "png", subdirectory: "sprites"),
+           let image = NSImage(contentsOf: url) {
+            image.size = NSSize(width: 16, height: 16)
+            muteItem.image = image
+        }
+        menu.addItem(muteItem)
         let pauseItem = NSMenuItem(title: "Pause", action: #selector(togglePause(_:)), keyEquivalent: "")
         pauseItem.target = self
         menu.addItem(pauseItem)
@@ -108,9 +164,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hungerItem?.title = "Hunger: ██████████ 100%"
     }
 
+    @objc private func toggleMute(_ sender: NSMenuItem) {
+        let defaults = UserDefaults.standard
+        let muted = !defaults.bool(forKey: "soundMuted")
+        defaults.set(muted, forKey: "soundMuted")
+        sender.state = muted ? .on : .off
+    }
+
     @objc private func togglePause(_ sender: NSMenuItem) {
         isPaused.toggle()
         sender.title = isPaused ? "Resume" : "Pause"
+        // Window walking: stop polling the window server while he's away.
+        scene?.setWindowWatching(!isPaused)
         if isPaused {
             skView?.isPaused = true
             window?.orderOut(nil)
@@ -118,5 +183,102 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             skView?.isPaused = false
             window?.orderFrontRegardless()
         }
+    }
+
+    // MARK: - System reactions
+
+    /// Start watching the machine and forward what it notices to the dog.
+    /// The monitor is entirely self-contained: any source that can't work on
+    /// this Mac degrades to silence, so there is nothing to check here.
+    private func startSystemMonitor() {
+        let monitor = SystemMonitor()
+        monitor.onSignal = { [weak self] signal in
+            // SystemMonitor guarantees main-thread delivery, which is what
+            // the scene needs. Paused means the overlay is hidden and the
+            // view is frozen — the dog should not be reacting to anything.
+            guard let self, !self.isPaused else { return }
+            self.scene?.receive(signal)
+        }
+        monitor.start()
+        systemMonitor = monitor
+    }
+
+    // MARK: - Jumbini Cam
+
+    /// 'JBCM' — identifies our hotkey in the Carbon handler.
+    private static let camHotKeySignature: OSType = 0x4A42_434D
+
+    /// Global ⌥⇧J via Carbon RegisterEventHotKey: works system-wide without
+    /// accessibility permission (a CGEvent tap would prompt for it).
+    private func registerCamHotKey() {
+        var eventType = EventTypeSpec(
+            eventClass: OSType(kEventClassKeyboard),
+            eventKind: UInt32(kEventHotKeyPressed)
+        )
+        // C function pointer — no captures; self travels through userData.
+        let handler: EventHandlerUPP = { _, event, userData in
+            guard let event, let userData else { return OSStatus(eventNotHandledErr) }
+            var hotKeyID = EventHotKeyID()
+            let status = GetEventParameter(
+                event, EventParamName(kEventParamDirectObject),
+                EventParamType(typeEventHotKeyID), nil,
+                MemoryLayout<EventHotKeyID>.size, nil, &hotKeyID
+            )
+            guard status == noErr, hotKeyID.signature == AppDelegate.camHotKeySignature else {
+                return OSStatus(eventNotHandledErr)
+            }
+            let delegate = Unmanaged<AppDelegate>.fromOpaque(userData).takeUnretainedValue()
+            // Carbon dispatches on the main thread already; the async hop is
+            // cheap insurance that the SpriteKit render happens on main.
+            DispatchQueue.main.async { delegate.captureJumbiniCam() }
+            return noErr
+        }
+        InstallEventHandler(
+            GetApplicationEventTarget(), handler, 1, &eventType,
+            Unmanaged.passUnretained(self).toOpaque(), &camEventHandlerRef
+        )
+        let hotKeyID = EventHotKeyID(signature: Self.camHotKeySignature, id: 1)
+        let status = RegisterEventHotKey(
+            UInt32(kVK_ANSI_J), UInt32(optionKey | shiftKey), hotKeyID,
+            GetApplicationEventTarget(), 0, &camHotKeyRef
+        )
+        if status != noErr {
+            // Another app owns ⌥⇧J: degrade gracefully, the menu item still works.
+            NSLog("Jumbini Cam: hotkey registration failed (OSStatus \(status))")
+        }
+    }
+
+    private func unregisterCamHotKey() {
+        if let camHotKeyRef {
+            UnregisterEventHotKey(camHotKeyRef)
+            self.camHotKeyRef = nil
+        }
+        if let camEventHandlerRef {
+            RemoveEventHandler(camEventHandlerRef)
+            self.camEventHandlerRef = nil
+        }
+    }
+
+    /// Hotkey and menu item both land here: snapshot the dog (plus anything
+    /// worn or carried), straight to the clipboard. Also works while paused:
+    /// texture(from:) renders offscreen, so the hidden overlay window doesn't
+    /// matter — the scene just skips the flash then.
+    @objc fileprivate func captureJumbiniCam() {
+        guard let image = scene?.captureJumbini() else { return }
+        copyCamImageToPasteboard(image)
+    }
+
+    /// PNG first (what most apps want from a "screenshot"), then the NSImage
+    /// object so anything reading via NSImage(pasteboard:)/TIFF works too.
+    private func copyCamImageToPasteboard(_ image: NSImage) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        if let tiff = image.tiffRepresentation,
+           let rep = NSBitmapImageRep(data: tiff),
+           let png = rep.representation(using: .png, properties: [:]) {
+            pasteboard.declareTypes([.png], owner: nil)
+            pasteboard.setData(png, forType: .png)
+        }
+        pasteboard.writeObjects([image])
     }
 }

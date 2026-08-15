@@ -34,14 +34,14 @@ PAL = {
     "B": (107, 150, 216, 255),   # bed plush blue
     "b": (70, 105, 170, 255),    # bed shadow blue
     "F": (168, 200, 240, 255),   # bed fuzz / inner cushion
-    "J": (208, 222, 232, 150),   # jar glass
-    "j": (150, 170, 185, 220),   # jar glass edge
+    "j": (150, 170, 185, 220),   # sunglasses lens sheen
     "U": (178, 170, 158, 255),   # rabbit toy plush fur (warm grey-tan)
     "u": (132, 124, 114, 255),   # rabbit toy fur shadow / floppy ear
+    "Y": (247, 205, 70, 255),    # party-hat yellow
     ".": (0, 0, 0, 0),           # transparent
 }
 
-LIGHTS = set("WwtTPpVU")  # colors that get a dark rim where they meet transparency
+LIGHTS = set("WwtTPpVUYR")  # colors that get a dark rim where they meet transparency
 
 
 class Grid:
@@ -86,6 +86,33 @@ class Grid:
                             break
         for x, y in edges:
             self.g[y][x] = "O"
+
+    def outline(self, c="O"):
+        """Halo the silhouette from the OUTSIDE (rim() recolors the shape's own
+        edge pixels, which eats details thinner than 3px). Needs a 1px
+        transparent margin to draw into."""
+        edges = []
+        for y in range(self.h):
+            for x in range(self.w):
+                if self.g[y][x] != ".":
+                    continue
+                for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                    nx, ny = x + dx, y + dy
+                    if (0 <= nx < self.w and 0 <= ny < self.h
+                            and self.g[ny][nx] not in (".", c)):
+                        edges.append((x, y))
+                        break
+        for x, y in edges:
+            self.g[y][x] = c
+
+
+def from_art(art):
+    """Grid from a list of equal-length palette-character rows (top row first)."""
+    g = Grid(len(art[0]), len(art))
+    for y, line in enumerate(art):
+        for x, ch in enumerate(line):
+            g.g[y][x] = ch
+    return g
 
 
 # ---------------------------------------------------------------- dog parts
@@ -321,30 +348,6 @@ def bed_frame():
     return g
 
 
-def jar_frame():
-    """Glass treat jar with a copper lid and a white 'PB' label."""
-    g = Grid(22, 26)
-    g.rect(3, 5, 18, 24, "J")                           # glass body
-    for y in range(5, 25):                              # glass edges
-        g.px(3, y, "j"); g.px(18, y, "j")
-    g.rect(4, 24, 17, 24, "j")
-    g.rect(4, 5, 17, 5, "j")
-    for x, y in ((6, 8), (10, 7), (14, 8), (8, 9), (12, 9)):
-        g.px(x, y, "T")                                 # treats visible inside
-    g.rect(4, 0, 17, 3, "T")                            # lid
-    g.rect(4, 0, 17, 0, "t")
-    g.rect(5, 11, 16, 19, "W")                          # label
-    P = ["XX.", "X.X", "XX.", "X..", "X.."]
-    B = ["XX.", "X.X", "XX.", "X.X", "XX."]
-    for glyph, gx in ((P, 7), (B, 12)):
-        for row, line in enumerate(glyph):
-            for col, ch in enumerate(line):
-                if ch == "X":
-                    g.px(gx + col, 13 + row, "O")
-    g.rim()
-    return g
-
-
 def treat_frame():
     """A little peanut-butter bone."""
     g = Grid(12, 8)
@@ -393,6 +396,84 @@ def heart_frame():
     return g
 
 
+# ---------------------------------------------------------------- wardrobe
+# Placeholder accessories (single frame each). Drawn front-facing and roughly
+# symmetric; the app owns ALL positioning (anchor code in PetScene/Dog), so
+# nothing here bakes in an offset — real 48x48 art can swap in later.
+
+def partyhat_frame():
+    """Striped birthday cone with a pompom on top."""
+    g = Grid(12, 16)
+    for y in range(4, 16):                              # cone widens downward
+        hw = 0.6 + (y - 4) * 0.38
+        for x in range(int(round(5.5 - hw)), int(round(5.5 + hw)) + 1):
+            g.px(x, y, "Y" if ((x + y) // 3) % 2 == 0 else "R")
+    g.ellipse(5.5, 2, 1.8, 1.8, "V")                    # pompom
+    g.rim()
+    return g
+
+
+def tophat_frame():
+    """Black silk top hat with a red ribbon band."""
+    g = Grid(14, 14)
+    g.rect(3, 0, 10, 10, "K")                           # crown
+    g.rect(3, 0, 10, 0, "k")                            # silk sheen on top
+    g.rect(9, 1, 9, 7, "k")                             # side sheen
+    g.rect(3, 8, 10, 10, "R")                           # ribbon band
+    g.px(3, 9, "r"); g.px(10, 9, "r")
+    g.rect(1, 11, 12, 12, "K")                          # brim
+    g.px(0, 11, "k"); g.px(13, 11, "k")                 # upturned brim tips
+    g.rect(2, 12, 11, 12, "D")                          # brim underside
+    g.rim()
+    return g
+
+
+def cowboyhat_frame():
+    """Tan felt hat: dented crown, wide brim curled up at the edges."""
+    g = Grid(18, 10)
+    g.rect(6, 1, 11, 5, "T")                            # crown
+    g.px(7, 0, "T"); g.px(10, 0, "T")                   # dented top
+    g.rect(7, 1, 8, 3, "t")                             # felt highlight
+    g.rect(6, 6, 11, 6, "O")                            # hat band
+    g.rect(1, 7, 16, 8, "T")                            # wide brim
+    g.px(0, 6, "T"); g.px(17, 6, "T")                   # curled-up edges
+    g.px(0, 7, "T"); g.px(17, 7, "T")
+    g.rect(2, 7, 6, 7, "t")                             # brim sheen
+    g.rim()
+    return g
+
+
+def bandana_frame():
+    """Red neck kerchief: rolled band up top, polka-dot triangle hanging below."""
+    g = Grid(16, 10)
+    g.rect(1, 0, 14, 1, "R")                            # rolled band
+    g.px(0, 1, "R"); g.px(15, 1, "R")                   # band wrapping back
+    for y in range(2, 9):                               # hanging triangle
+        g.rect(y - 1, y, 15 - (y - 1), y, "R")
+    g.px(7, 9, "R"); g.px(8, 9, "R")                    # tip
+    for x, y in ((12, 3), (11, 4), (10, 5), (9, 6), (8, 7)):
+        g.px(x, y, "r")                                 # fold shading
+    for x, y in ((4, 3), (9, 3), (6, 5), (11, 2), (7, 7)):
+        g.px(x, y, "W")                                 # polka dots
+    g.rim()
+    return g
+
+
+def sunglasses_frame():
+    """Two dark lenses, browline bridge, temple arms out to the sides."""
+    g = Grid(16, 6)
+    g.rect(0, 0, 15, 0, "O")                            # browline + temple arms
+    g.rect(2, 0, 6, 4, "O")                             # left lens
+    g.rect(9, 0, 13, 4, "O")                            # right lens
+    for x in (2, 6, 9, 13):                             # rounded lens bottoms
+        g.px(x, 4, ".")
+    g.rect(7, 1, 8, 1, "O")                             # bridge
+    g.px(3, 1, "j"); g.px(10, 1, "j")                   # glass sheen
+    g.px(4, 2, "j"); g.px(11, 2, "j")
+    g.px(3, 2, "V"); g.px(10, 2, "V")                   # glint
+    return g
+
+
 # ---------------------------------------------------------------- output
 
 def to_rgba_rows(grids):
@@ -434,16 +515,20 @@ def main():
     out = os.path.join(here, "..", "Sources", "Jumbini", "Resources", "sprites")
     preview_path = sys.argv[1] if len(sys.argv) > 1 else None
 
-    # The dog itself now uses Alex's hand-made 8-directional art (see
-    # Tools/import_jumba.py); this tool only generates the props. Pass
-    # --all to also emit the original generated-dog sheets (fallback art).
+    # The dog uses Alex's hand-made 8-directional art (Tools/import_jumba.py)
+    # and most of the props are now his too (Tools/import_kit_props.py). What
+    # is left here is the art nobody has drawn a replacement for. Pass --all to
+    # also emit the original generated-dog sheets (fallback art).
     sheets = {
         "ball": [ball_frame(r) for r in range(4)],
         "heart": [heart_frame()],
         "bed": [bed_frame()],
-        "jar": [jar_frame()],
         "treat": [treat_frame()],
         "rabbit": [rabbit_frame()],
+        # Retired stand-ins, kept only as a record of what they looked like:
+        # the props (deposit/frisbee/squeaky/rope) now come from Alex's kit via
+        # Tools/import_kit_props.py, and the wardrobe from import_kit_art.py.
+        # Their *_frame() generators are left below, unreferenced.
     }
     if "--all" in sys.argv:
         sheets.update({

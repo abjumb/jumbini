@@ -2,10 +2,17 @@
 """Import Jumba's hand-made sprite export into the app's resources.
 
 - Strips baked-in white backgrounds (edge flood fill — interior whites like the
-  chest blaze and socks are protected by the dark outline).
+  chest blaze and socks are protected by the dark outline), but ONLY when a
+  file actually has one. Most of the jumbini-kit art already ships with a
+  transparent backdrop; running the fill over those would nibble legitimate
+  white pixels (teeth, socks, eye glints) that touch the sprite's edge.
 - Flattens the export layout into Resources/jumba/<state>_<direction>.png.
 
-Usage: python3 Tools/import_jumba.py /path/to/jumbini-poopchini
+Every source is optional: the importer is re-runnable and silently skips any
+folder that isn't in the tree, so an old export going missing can never break
+the art that's already committed.
+
+Usage: python3 Tools/import_jumba.py [/path/to/jumbini-poopchini]
 """
 import os
 import struct
@@ -98,15 +105,37 @@ def strip_background(w, h, rows, threshold=240):
         for x in (0, w - 1):
             if is_outside(x, y) and not seen[y][x]:
                 queue.append((x, y)); seen[y][x] = True
+    found = []
     while queue:
         x, y = queue.popleft()
         if is_white(x, y):
-            rows[y][x * 4 + 3] = 0
+            found.append((x, y))
         for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
             nx, ny = x + dx, y + dy
             if 0 <= nx < w and 0 <= ny < h and not seen[ny][nx] and is_outside(nx, ny):
                 seen[ny][nx] = True
                 queue.append((nx, ny))
+    for x, y in found:
+        rows[y][x * 4 + 3] = 0
+    return len(found)
+
+
+# A backdrop covers most of the canvas. Anything smaller that the flood fill
+# reaches is part of the dog — a white sock, tooth or eye glint that happens to
+# sit against the transparent edge — and must be left alone. Measured on
+# jumbini-kit: the one backdropped state clears 58-67% of its pixels, every
+# already-transparent state clears at most 1%.
+BACKDROP_MIN_FRACTION = 0.10
+
+
+def strip_background_if_backdrop(w, h, rows, threshold=240):
+    """Strip the backdrop only if there is one. Returns True if it stripped."""
+    probe = [bytearray(r) for r in rows]
+    if strip_background(w, h, probe, threshold) < BACKDROP_MIN_FRACTION * w * h:
+        return False
+    for i, row in enumerate(probe):
+        rows[i] = row
+    return True
 
 # ------------------------------------------------------------- import
 
@@ -128,14 +157,93 @@ EXTRA_STATES = {
     "hunch": "hunched-over-state/hunched_over_defecat",
 }
 
+# ---------------------------------------------------------------- jumbini-kit
+# The full hand-made character kit, committed at jumbini-kit/dog-states. Same
+# <state>/rotations/<direction>.png layout as the older exports, 44 states in
+# two coat families. This is the authoritative source; the maps above only
+# still exist so the pre-kit exports keep importing if someone has them.
+KIT_ROOT = "jumbini-kit/dog-states"
+
+# app sprite name -> kit folder. Names on the left are the ones SpriteLoader
+# already looks up, so importing a row here is all it takes to light a state up.
+#
+# idle/sit come from the *_2 folders on purpose: `Idle` and `sitting_down` are
+# the pre-fix exports (tan eyes, and `Idle` is the only file in the whole kit
+# that still carries a baked white backdrop), while `Idle_2`/`sitting_down_2`
+# are the same poses with the corrected white eye glints that every other kit
+# state has. Taking the v1s would leave his eyes changing colour every time he
+# barked. `sprinting_really_fas`/`_2`, by contrast, are two genuine run frames.
+KIT_STATES = {
+    "idle": "Idle_2",
+    "sit": "sitting_down_2",
+    "sleep": "sleeping_curled_up",
+    "run1": "sprinting_really_fas",
+    "run2": "sprinting_really_fas_2",
+    "sniff": "sniffing_the_ground",
+    "hunch": "hunched_over_defecat",
+    "bark": "barking",
+    "stalk": "stalk",
+    "pounce": "pounce",
+    "paw": "paw",
+    "highfive": "highfive",
+    "playdead": "playdead",
+    "fall": "fall",
+    "land": "land",
+    "peek": "peek",
+    "brace": "brace",
+    "alert": "alert",
+    "whine": "whine",
+    "pin": "pin",
+    "growl": "growling_very_angril",
+}
+
+# The alternate coat, imported under a `shaggy_` prefix so SpriteLoader can
+# resolve `shaggy_<state>_<direction>` and fall back to classic per animation.
+# Shaggy has no second sprint frame and no `Very_Shaggy` counterpart for the
+# other poses; SpriteLoader covers the gaps.
+KIT_SHAGGY_STATES = {
+    "shaggy_idle": "Shaggy",
+    "shaggy_sit": "Shaggy_sitting",
+    "shaggy_sleep": "Shaggy_sleeping",
+    "shaggy_run1": "Shaggy_sprinting",
+    "shaggy_sniff": "Shaggy_sniffing",
+    "shaggy_hunch": "Shaggy_hunched",
+    "shaggy_bark": "Shaggy_barking",
+    "shaggy_stalk": "Shaggy_stalk",
+    "shaggy_pounce": "Shaggy_pounce",
+    "shaggy_paw": "Shaggy_paw",
+    "shaggy_highfive": "Shaggy_highfive",
+    "shaggy_playdead": "Shaggy_playdead",
+    "shaggy_fall": "Shaggy_fall",
+    "shaggy_land": "Shaggy_land",
+    "shaggy_peek": "Shaggy_peek",
+    "shaggy_brace": "Shaggy_brace",
+    "shaggy_alert": "Shaggy_alert",
+    "shaggy_whine": "Shaggy_whine",
+    "shaggy_pin": "Shaggy_pin",
+    "shaggy_growl": "Shaggy_growling",
+}
+
 
 def import_rotations(src_folder, state, dst):
     for direction in DIRECTIONS:
         path = os.path.join(src_folder, "rotations", f"{direction}.png")
         w, h, rows = read_png(path)
-        strip_background(w, h, rows)
+        strip_background_if_backdrop(w, h, rows)
         write_png(os.path.join(dst, f"{state}_{direction}.png"), w, h, rows)
     return len(DIRECTIONS)
+
+
+def import_states(root, states, dst):
+    """Import a folder->state map, skipping sources that aren't there."""
+    count = 0
+    for state, folder in states.items():
+        src = os.path.join(root, folder)
+        if os.path.isdir(os.path.join(src, "rotations")):
+            count += import_rotations(src, state, dst)
+        else:
+            print(f"note: {folder} missing, skipping")
+    return count
 
 
 def convert(src, dst):
@@ -143,23 +251,25 @@ def convert(src, dst):
     # its imported output, so sources are re-imported only when present.
     count = 0
     if os.path.isdir(src):
-        for state, folder in STATES.items():
-            count += import_rotations(os.path.join(src, folder), state, dst)
-        # Bark: 6 frames, east only (the app mirrors it for west-ish facings).
+        count += import_states(src, STATES, dst)
+        # Bark: 6 frames, east only. Superseded by the kit's 8-rotation
+        # `barking` state, but kept as SpriteLoader's mirrored fallback.
         for i in range(6):
             path = os.path.join(src, "sitting_down", "animations", "Bark", "east", f"frame_{i:03d}.png")
             w, h, rows = read_png(path)
-            strip_background(w, h, rows)
+            strip_background_if_backdrop(w, h, rows)
             write_png(os.path.join(dst, f"bark_{i}.png"), w, h, rows)
             count += 1
     else:
         print(f"note: {src} missing, skipping base states (already imported)")
     root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
-    for state, folder in EXTRA_STATES.items():
-        if os.path.isdir(os.path.join(root, folder)):
-            count += import_rotations(os.path.join(root, folder), state, dst)
-        else:
-            print(f"note: {folder} missing, skipping")
+    count += import_states(root, EXTRA_STATES, dst)
+    kit = os.path.join(root, KIT_ROOT)
+    if os.path.isdir(kit):
+        count += import_states(kit, KIT_STATES, dst)
+        count += import_states(kit, KIT_SHAGGY_STATES, dst)
+    else:
+        print(f"note: {KIT_ROOT} missing, skipping the character kit")
     return count
 
 

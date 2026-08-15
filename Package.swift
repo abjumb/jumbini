@@ -7,7 +7,10 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "Jumbini",
-            resources: [.copy("Resources/sprites"), .copy("Resources/jumba"), .copy("Resources/Icons")],
+            resources: [
+                .copy("Resources/sprites"), .copy("Resources/jumba"),
+                .copy("Resources/Icons"), .copy("Resources/audio"),
+            ],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .testTarget(

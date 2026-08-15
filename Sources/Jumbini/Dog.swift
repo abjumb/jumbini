@@ -11,6 +11,8 @@ final class Dog: SKSpriteNode {
 
     private(set) var facing: Facing = .south
     private var lastRequested: DogAnimation = .idle
+    /// What's actually on screen — `lastRequested` unless a flourish is over it.
+    private var current: DogAnimation = .idle
     private var celebrating = false
 
     /// Tint fallback per animation if a sprite file is missing.
@@ -37,6 +39,78 @@ final class Dog: SKSpriteNode {
     /// A carried ball hides behind him when he faces away from the viewer.
     var mouthZOffset: CGFloat { facing.isNorthish ? -1 : 1 }
 
+    /// The places a wardrobe piece can hang off him. The catalog names a
+    /// place ("this is eyewear"), not a nudge ("this is 3pt lower than the
+    /// hats") — which is what keeps the per-item numbers down to one.
+    enum WearSlot: Hashable {
+        case crown, eyes, neck, body
+    }
+
+    /// Where each slot sits, as a fraction of the art canvas measured DOWN
+    /// from its top. Two columns because Jumba's art comes in two canvas
+    /// families: the 48x48 poses (idle, walk, sleep, sniff…) and the taller
+    /// 68x76 sit/bark exports, which draw him lower in frame. Read off
+    /// idle_south and sit_south — crown is the top of his head, eyes the eye
+    /// row, neck the collar line, body mid-chest.
+    private static let slotRows: [WearSlot: (short: CGFloat, tall: CGFloat)] = [
+        .crown: (0.14, 0.28),
+        .eyes: (0.29, 0.37),
+        .neck: (0.50, 0.52),
+        .body: (0.62, 0.60),
+    ]
+
+    /// Sideways lean of the anchor, as a fraction of the node width: facing
+    /// east or west he is drawn with his head off the canvas centre, and a
+    /// hat belongs over the head, not the shoulder.
+    private static let headLean: (short: CGFloat, tall: CGFloat) = (0.145, 0.10)
+
+    /// Where a worn piece hangs, relative to the dog's centre. Uses the live
+    /// node size, so the anchor tracks pose changes (the sit art renders
+    /// taller than idle) without the art knowing anything about poses.
+    func wearAnchor(_ slot: WearSlot) -> CGPoint {
+        let rows = Self.slotRows[slot] ?? (0.5, 0.5)
+        let tall = isTallCanvasPose
+        let v = renderedFacing.unitVector
+        return CGPoint(
+            x: v.x * size.width * (tall ? Self.headLean.tall : Self.headLean.short),
+            y: size.height * (0.5 - (tall ? rows.tall : rows.short))
+        )
+    }
+
+    /// The sit/bark exports are drawn on a 68x76 canvas instead of 48x48, so
+    /// he sits lower in frame; every anchor shifts with him.
+    private var isTallCanvasPose: Bool { (texture?.size().height ?? 48) > 60 }
+
+    /// How big he is drawn right now relative to his baseline idle art. The
+    /// sit/bark sets render about a fifth larger (they were exported at a
+    /// different pixel density), and a hat has to grow with the head it's on.
+    var wearScale: CGFloat {
+        guard let texture, texture.size().height > 0 else { return 1 }
+        return (size.height / texture.size().height) / SpriteLibrary.baseScale
+    }
+
+    /// A worn piece tucks behind him when he faces away from the viewer.
+    var wearZOffset: CGFloat { renderedFacing.isNorthish ? -1 : 1 }
+
+    /// The direction the art on screen ACTUALLY faces, which is not always the
+    /// logical `facing`: the dangle pose always draws `sit_south`, and the
+    /// legacy bark/happy art only exists facing east (mirrored for westish
+    /// facings). Wardrobe placement keys off this, so sunglasses don't vanish
+    /// while he's dangling from the cursor looking straight at you.
+    var renderedFacing: Facing {
+        switch lastRequested {
+        case .dangle:
+            return .south
+        case .happy, .bark:
+            // The 8-rotation barking art draws him where he's looking. Only the
+            // old east-only strip needs SpriteLibrary's mirror rule mirrored here.
+            guard !SpriteLibrary.shared.hasDirectionalBark else { return facing }
+            return facing.unitVector.x < 0 ? .west : .east
+        default:
+            return facing
+        }
+    }
+
     // MARK: - Animation
 
     func play(_ animation: DogAnimation) {
@@ -45,12 +119,26 @@ final class Dog: SKSpriteNode {
         apply(animation)
     }
 
+    /// Re-render the pose he's already in. The art files behind an animation
+    /// can change under him (a coat swap), and the textures only reach the
+    /// screen when something asks for them again.
+    func refreshAnimation() { apply(current) }
+
     /// One-shot happy flourish that overlays the current animation briefly.
-    func celebrate() {
+    func celebrate() { flourish(.happy, duration: 0.9) }
+
+    /// One-shot touchdown absorb after a fall: he crumples for a moment, then
+    /// picks up whatever the brain asked for next.
+    func absorb() { flourish(.land, duration: 0.35) }
+
+    /// Play `animation` over the top of the current one, then snap back to
+    /// whatever `play(_:)` was last asked for (which may have changed while
+    /// the flourish was running).
+    private func flourish(_ animation: DogAnimation, duration: TimeInterval) {
         celebrating = true
-        apply(.happy)
+        apply(animation)
         run(.sequence([
-            .wait(forDuration: 0.9),
+            .wait(forDuration: duration),
             .run { [weak self] in
                 guard let self else { return }
                 self.celebrating = false
@@ -60,6 +148,7 @@ final class Dog: SKSpriteNode {
     }
 
     private func apply(_ animation: DogAnimation) {
+        current = animation
         removeAction(forKey: "anim")
         if let anim = SpriteLibrary.shared.animation(for: animation, facing: facing) {
             size = anim.nodeSize
@@ -100,6 +189,23 @@ final class Dog: SKSpriteNode {
         let move = SKAction.move(to: point, duration: TimeInterval(distance / speed))
         let done = SKAction.run { [weak self] in self?.onArrived?() }
         run(.sequence([move, done]), withKey: "move")
+    }
+
+    /// A leap along an arc — the hop onto a window's top edge. Shares the
+    /// "move" key with `move(to:speed:)`, so the two can never run at once
+    /// and `stopMoving()` cancels either of them.
+    func hop(to point: CGPoint, height: CGFloat, duration: TimeInterval) {
+        face(towards: point)
+        let start = position
+        let arc = SKAction.customAction(withDuration: duration) { node, elapsed in
+            let u = CGFloat(min(1, TimeInterval(elapsed) / duration))
+            node.position = CGPoint(
+                x: start.x + (point.x - start.x) * u,
+                y: start.y + (point.y - start.y) * u + height * 4 * u * (1 - u)
+            )
+        }
+        let done = SKAction.run { [weak self] in self?.onArrived?() }
+        run(.sequence([arc, done]), withKey: "move")
     }
 
     func stopMoving() {

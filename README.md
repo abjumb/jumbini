@@ -76,16 +76,16 @@ While he is mid-Spin-Forever, the first menu item becomes **Stop Spinning**.
 Changed your mind? Right-click anywhere while he is waiting and the fetch is off. He also
 gives up on his own after 10 seconds.
 
-### The peanut butter jar (bottom-right)
+### The treat box (bottom-right)
 
 | Do this | Get this |
 |---|---|
-| Click the jar | Take a treat. It rides your cursor |
+| Click the box | Take a treat — the box rocks, and the treat rides your cursor |
 | Click again anywhere | Drop the treat. He drops everything and sprints for it |
-| Drop it back on the jar | Put it away, no harm done |
-| Drag the jar | Move the jar (hold ⌥ to start the drag instantly) |
+| Drop it back on the box | Put it away, no harm done |
+| Drag the box | Move the box (hold ⌥ to start the drag instantly) |
 
-Peanut butter outranks everything: naps, fetch, commands, all of it. He eats it, gets
+Treats outrank everything: naps, fetch, commands, all of it. He eats it, gets
 hearts, and then, about a second later, hunches over. Treats go straight through him.
 
 Only one treat exists at a time. Drop a second one and he switches targets. Interrupt him
@@ -127,7 +127,7 @@ the result.
 Other scripts:
 
 ```bash
-./Scripts/test.sh            # run the test suite (59 tests)
+./Scripts/test.sh            # run the test suite (306 tests)
 ./Scripts/dmg.sh             # → build/Jumbini.dmg, drag-to-Applications layout
 ```
 
@@ -169,7 +169,7 @@ to apply. It never touches a node, a texture, or a clock.
 That buys determinism. The brain's randomness comes from an injected
 `RandomNumberGenerator` (a SplitMix64 seeded per test) and its timing comes from
 timestamps the caller passes in, so a test can wind the clock forward and assert on exact
-state transitions with zero flake and zero sleeping. All 59 tests build a brain with
+state transitions with zero flake and zero sleeping. The brain tests build one with
 `makeBrain(seed:tune:)`, zero out every autonomy probability, enable exactly one, and
 check what happens.
 
@@ -177,7 +177,7 @@ check what happens.
 
 | File | Lines | What lives there |
 |---|---|---|
-| `Sources/Jumbini/DogBrain.swift` | 438 | The state machine. 17 states, 10 events, 16 effects, every tuning knob |
+| `Sources/Jumbini/DogBrain.swift` | 1421 | The state machine. 29 states, 16 events, 28 effects, every tuning knob |
 | `Sources/Jumbini/PetScene.swift` | 629 | Applies effects, owns all mouse input, zoomies bounce physics, cursor-sniff stepping, click-through |
 | `Sources/Jumbini/Dog.swift` | 119 | The dog sprite: plays animations in whichever of 8 directions he faces, walks to targets, reports arrival |
 | `Sources/Jumbini/SpriteLoader.swift` | 184 | `Facing` (8 directions) and `SpriteLibrary` (texture cache, nearest-neighbor, strip-sheet slicing) |
@@ -190,7 +190,7 @@ check what happens.
 
 **Click-through is recomputed every frame.** The overlay window sets
 `ignoresMouseEvents = true` almost always, so your clicks land in your real apps. Once per
-frame `PetScene` checks whether the cursor is over the dog, the jar, or the bed (or a drag
+frame `PetScene` checks whether the cursor is over the dog, the treat box, or the bed (or a drag
 or an armed throw is in flight) and flips the flag. That is why he never eats a click you
 meant for Xcode.
 
@@ -218,7 +218,22 @@ registered in the `EXTRA_STATES` map at the top.
 `Resources/jumba/` is the durable copy of that art. The importer skips any source folder
 that is not present, so re-running it with a partial export is safe.
 
-The props (ball, heart, bed, jar, treat, rabbit) are generated code, not drawings:
+Most props are drawings too. `jumbini-kit/sprites/` and `jumbini-kit/treat-box/` are the
+durable source copies of Alex's prop and FX art; the importer copies the files the app
+loads into `Resources/sprites/`:
+
+```bash
+python3 Tools/import_kit_props.py
+```
+
+It renames the treat box's frames into the `name_<n>` convention
+`SpriteLibrary.propSequence` reads, and clears the editor backdrop that got flattened into
+a couple of frames. Its `IMPORT` list is explicit — a new file in the kit doesn't reach the
+bundle until it's listed there, which is also where the notes live on which delivered
+frames were unusable and why.
+
+What is left over (ball, heart, bed, treat, rabbit, and the placeholder wardrobe) is
+generated code, not drawings:
 
 ```bash
 python3 Tools/make_sprites.py
@@ -264,9 +279,9 @@ Stub the new case so the package compiles, then wire it up for real.
 Code is MIT. See [LICENSE](LICENSE).
 
 The artwork is not. Jumba is a real dog, the pixel art is of him, and it stays his:
-everything under `Resources/jumba/`, the bed variants, the icons, the art export folders,
-and the reference photo are all rights reserved. The generated props (ball, heart, jar,
-treat, rabbit, and the built-in bed) come out of `Tools/make_sprites.py` and are MIT like
-the rest of the code.
+everything under `Resources/jumba/` and `jumbini-kit/`, the bed variants, the icons, the
+art export folders, and the reference photo are all rights reserved. The generated props
+(ball, heart, treat, rabbit, and the built-in bed) come out of `Tools/make_sprites.py` and
+are MIT like the rest of the code.
 
 Fork it, build it, reuse the code. If you ship something derived from it, replace the dog.

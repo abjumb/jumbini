@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Jumbini — Asset Manifest Build</title>
+<style>
+  :root{
+    --bg:#14110f; --panel:#1e1a17; --line:#332c26;
+    --ink:#f2ece4; --muted:#a1968a; --accent:#c9a227; --pick:#8b5cf6; --warn:#d4693f;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:15px/1.55 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+    padding:32px 24px 72px}
+  .wrap{max-width:1200px;margin:0 auto}
+  h1{font-size:23px;margin:0 0 6px}
+  .sub{color:var(--muted);font-size:14px;margin:0 0 20px}
+  h2{font-size:17px;margin:34px 0 4px;color:var(--accent)}
+  h3{font-size:14px;margin:18px 0 6px}
+  .note{color:var(--muted);font-size:13px;margin:0 0 12px}
+  .callout{background:#241d18;border:1px solid var(--warn);border-radius:10px;
+    padding:13px 16px;margin:18px 0;font-size:13.5px}
+  .callout strong{color:var(--warn)}
+  .bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;
+    padding:12px 14px;background:var(--panel);border:1px solid var(--line);
+    border-radius:10px;margin-bottom:22px;position:sticky;top:12px;z-index:5}
+  .bar.static{position:static;border-color:var(--pick)}
+  .bar label{color:var(--muted);font-size:13px;margin-right:2px}
+  button{background:#2a2420;color:var(--ink);border:1px solid var(--line);
+    border-radius:7px;padding:6px 12px;font:inherit;font-size:13px;cursor:pointer}
+  button:hover{border-color:var(--accent)}
+  button[aria-pressed="true"]{background:var(--accent);color:#1a1410;border-color:var(--accent);font-weight:600}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px}
+  .row8{display:grid;grid-template-columns:repeat(8,1fr);gap:8px;
+    background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:12px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:9px;text-align:center}
+  .card.suspect{border-color:var(--warn)}
+  .cell{text-align:center}
+  .shot{display:flex;align-items:center;justify-content:center;height:96px;border-radius:6px;margin-bottom:6px;
+    background-color:#f5f3ef;
+    background-image:linear-gradient(45deg,#d9d4cc 25%,transparent 25%,transparent 75%,#d9d4cc 75%),
+      linear-gradient(45deg,#d9d4cc 25%,transparent 25%,transparent 75%,#d9d4cc 75%);
+    background-size:16px 16px;background-position:0 0,8px 8px}
+  .shot.dark{background-color:#26221e;background-image:
+      linear-gradient(45deg,#332e29 25%,transparent 25%,transparent 75%,#332e29 75%),
+      linear-gradient(45deg,#332e29 25%,transparent 25%,transparent 75%,#332e29 75%)}
+  img{image-rendering:pixelated;image-rendering:crisp-edges;display:block}
+  .nm{font-size:11px;color:var(--muted);word-break:break-all}
+  .statehead{display:flex;align-items:baseline;gap:10px;margin:16px 0 6px}
+  .statehead .id{font-size:11px;color:var(--muted)}
+  footer{color:var(--muted);font-size:13px;border-top:1px solid var(--line);padding-top:16px;margin-top:26px}
+  code{background:#2a2420;padding:1px 5px;border-radius:4px;font-size:12px}
+  a.zip{color:var(--accent);text-decoration:none;border-bottom:1px dotted var(--accent)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Jumbini &mdash; asset manifest build</h1>
+<p class="sub">Minimum-scope pass per ASSETS.md: 12 new dog pose states (8 rotations each = 96 sprites), 43 prop/FX frames, 13 emote/UI sprites, 28 wardrobe overlays. Audio delivered separately as a zip. Poses are 48&times;48 low top-down on Jumba's corrected-eye Idle, palette locked &mdash; export bundles drop straight into <code>Tools/import_jumba.py</code> EXTRA_STATES.</p>
+
+<div class="callout">
+  <strong>QA pass applied.</strong> Redrawn and verified after visual review: the taut-rope trio (now actual
+  horizontal rope segments, consistent set), confetti_2 (multicolor scatter), steam_1 and steam_2 (clean wisps),
+  frisbee_0 and frisbee_3 (both red &mdash; spin no longer flickers color), shades_s (speckle-free).
+  dust_0 and toy_squash_1 ship as-is per review. Remaining known issue: bandana_e still draws the dog wearing it.
+  Deferred: 6-frame bark cycles S/N, font atlas (license a pixel TTF), optional prance/catch/edge-arrow/cam icons.
+</div>
+
+<div class="bar">
+  <label>Zoom</label>
+  <button data-zoom="48">1&times;</button>
+  <button data-zoom="96" aria-pressed="true">2&times;</button>
+  <button data-zoom="144">3&times;</button>
+  <label style="margin-left:12px">Backdrop</label>
+  <button data-bg="light" aria-pressed="true">Light</button>
+  <button data-bg="dark">Dark</button>
+</div>
+
+<h2>1 &middot; Dog pose states (96 sprites)</h2>
+<p class="note">Download names follow the importer convention <code>&lt;state&gt;_&lt;direction&gt;.png</code>. The manifest's mirroring note applies: for lean builds keep S/SE/E/NE/N and mirror the rest &mdash; all 8 are here regardless since states generate all rotations at once.</p>
+<div id="states"></div>
+
+<h2>2 &middot; Props &amp; FX (43)</h2>
+<p class="note">Strip sheets ship as individual frames (<code>name_0..N</code>) &mdash; your loader takes frame width in code, or composite locally. Canvas sizes are the nearest legal generator size (16/20/24/32); content is drawn small within.</p>
+<div class="grid" id="props"></div>
+
+<h2>3 &middot; Emotes &amp; UI (13)</h2>
+<div class="grid" id="emotes"></div>
+
+<h2>4 &middot; Wardrobe overlays (28)</h2>
+<p class="note">Each item alone on a 48&times;48 canvas, four front directions, for the overlay + anchor-table approach. Anchors will need tuning in-engine &mdash; that was always true of AI overlays.</p>
+<div class="grid" id="wardrobe"></div>
+
+<div class="bar static">
+  <label>Save</label>
+  <button id="dlStates" style="font-weight:600">All pose PNGs (96)</button>
+  <button id="dlProps">Props/FX (43)</button>
+  <button id="dlEmotes">Emotes/UI (13)</button>
+  <button id="dlWardrobe">Wardrobe (28)</button>
+  <span id="dlStatus" style="color:var(--muted);font-size:12.5px;margin-left:6px"></span>
+</div>
+
+<footer>
+  Full character ZIP (all 25 states incl. these 12, importer folder layout + metadata.json):
+  <a class="zip" href="https://api.pixellab.ai/mcp/characters/d4a22db9-4cfc-4184-b75e-24999e06de40/download">download bundle</a>.
+  Audio: 10 8-bit WAVs delivered as <code>jumbini-audio.zip</code> alongside this sheet.
+</footer>
+
+</div>
+<script>
+var CROOT="https://backblaze.pixellab.ai/file/pixellab-characters/5749708b-986d-4284-a96a-c4fbc94af3cb/";
+var IROOT="https://api.pixellab.ai/mcp/images/";
+var DIRS=["south","south-east","east","north-east","north","north-west","west","south-west"];
+
+var STATES=[
+ ["alert","d4a22db9-4cfc-4184-b75e-24999e06de40"],
+ ["whine","0d2aced6-bbcf-47d0-a1b7-8c548bfa5185"],
+ ["stalk","7ae68c7e-ec98-4140-9c17-ee97ba559e3d"],
+ ["pounce","0b435539-378a-4cbf-905b-45275b403b94"],
+ ["pin","feb7bf3a-d5a6-4684-a6d1-a1260e20fb5f"],
+ ["fall","202d261b-8023-4831-b0ad-8621ffdf8b68"],
+ ["land","30f7b852-9764-4925-a56b-2140fbcfb2d9"],
+ ["peek","aa3ffd33-763b-44fa-8f2a-48d26cd3c38c"],
+ ["paw","fb592f92-3f33-4054-89f9-e1e7dece4be4"],
+ ["highfive","e1273b52-58dd-4a20-aef9-6a259924e652"],
+ ["playdead","529121dc-c53e-4f32-af26-41be0f87ec12"],
+ ["brace","1d8b9fe4-0c4e-4e45-ae26-8b340db580e1"]
+];
+
+var PROPS=[
+ ["bark_puff_0","aae61485-1e79-4cb6-95ae-d681bdaeac72"],["bark_puff_1","9c39b8c0-d1ab-4b10-99f6-ea29a3580cae"],["bark_puff_2","29cc7323-eacb-4b07-8184-3157e33a3caf"],
+ ["deposit_1","df3c408e-8067-4d62-a09b-414cbf222869"],["deposit_2","043bd666-eea8-42b3-887d-0cfd2854cb2d"],["deposit_3","aed14db9-d6f6-4bf3-968a-f5419218af3d"],
+ ["steam_0","1fd24de2-c3ec-4fb3-beda-7eb30a7c4078"],["steam_1","32404a83-af4a-42c4-b4be-9975c775b734"],["steam_2","1d522946-9e8a-4cb7-87ca-cce0f9bbba0e"],
+ ["fly_0","3c547e09-8e30-4a84-a6d2-63d3f74cebdb"],["fly_1","566b1af0-1256-49ed-9f3d-a73a21057124"],
+ ["deposit_dry","b6185003-6580-479e-a417-67e11625f4f1"],
+ ["shadow_blob","427c3b19-1874-4aaf-8e8e-9d099f341eef"],
+ ["dust_0","9a139730-5ae2-4fa0-baf1-3b4740be298a"],["dust_1","1d5e5580-8443-4fd1-8281-9c8636b3f23a"],["dust_2","b02d694c-7100-4c52-8033-d9c8447204a6"],["dust_3","8f4033b8-e8a1-4411-ba53-1c631cc09b8c"],
+ ["sparkle_0","5510d58e-4e8d-4e17-9203-15b9445fe267"],["sparkle_1","bb5f89d1-d293-4bcb-bb55-d38b4a4e7616"],["sparkle_2","bc13740a-b022-4594-b1e7-bca2a1384476"],["sparkle_3","f8b6e065-934d-4004-97bc-7d18b8950388"],
+ ["confetti_0","b229831a-e3d4-4dfd-88d9-ddc1e25ba2f2"],["confetti_1","01d9dda0-9877-4316-946b-9347a4109ecb"],["confetti_2","5b11673d-1509-42f3-b3da-c765871c8d9c"],
+ ["rain_0","3858bf66-a1c1-4e5f-8397-3bd87c9f98d9"],["rain_1","b8c3638c-9363-4dc5-97c9-3566f012f49e"],["rain_2","ec7c17b0-d859-4c92-9a29-c4f2687a4042"],
+ ["puddle","a79894b2-593c-4d0f-a9a6-90cb69b10171"],
+ ["frisbee_0","c42397d2-5ef7-4578-ae3e-86b6441e33c8"],["frisbee_1","a3eda7f8-4b05-41f4-951f-eb90cd8c141c"],["frisbee_2","714b18cb-1124-40c6-a68a-b947a12c0a9c"],["frisbee_3","fb25be8a-91ed-4734-94b1-62cc0fa6ff0a"],["frisbee_mouth","31403568-1e14-4d17-a5e1-822161fb8bcb"],
+ ["toy_chicken","35c4679b-a0cc-4e93-a20a-48f2703c2062"],["toy_squash_0","78712bff-21fb-442e-a6c3-e24eedad43fb"],["toy_squash_1","e60f4a78-04d8-4948-820f-dc2596da7d40"],["toy_squash_2","c74bc1dd-3b90-4521-85db-f6b64e557f74"],
+ ["rope_left","4748199b-b912-4506-b064-7ad4998eae9b"],["rope_mid","601fac13-80c2-4cb9-8583-7596878665dc"],["rope_right","3b8dfb00-84e1-4b27-8e95-7dcf685818e2"],
+ ["rope_taut_left","75d73e93-6b3b-46f4-ba73-b50530a5f13f"],["rope_taut_mid","7730b04c-0e84-41e4-b67e-dfdfdfe4096b"],["rope_taut_right","331e1e4d-8552-4c65-a186-72efe840f97f"]
+];
+
+var EMOTES=[
+ ["emote_bubble","924ab2bf-3b22-4246-91d7-72e137aae482"],
+ ["icon_alert","b24a9252-147f-48d9-961d-22204d28cd32"],["icon_question","7dd0ccb7-07b7-4514-b3ee-3fe5fd0ba181"],
+ ["icon_sleep","732cf1d5-c8e4-4fc8-87e5-c8fc3a910d71"],["icon_party","2b5b9762-4de2-4c00-89e7-89a634c0a2e2"],
+ ["icon_battery","a34858e8-c563-4b2b-ae1c-666bdd250ec9"],["icon_moon","91d14ff6-1a03-450d-ad66-f6b16c20f03b"],
+ ["icon_flame","fe8cd7b9-f250-416c-9f85-9e0f667b92fd"],["icon_gear","fe4ede95-5854-4771-92b5-51818b77ea3d"],
+ ["badge_trick","c5e4bf09-187b-4ed5-8be5-8f87c46e6df9"],["caption_plate","d560aa71-f194-44c5-9306-91b8a0145504"],
+ ["paw_watermark","68d9bc71-9486-407d-b3ad-53901389570a"],["icon_mute","defe9854-353c-47a5-a4a0-61a3ad13e1ec"]
+];
+
+var WARDROBE=[
+ ["beanie_s","3b44e7d6-ca27-4db2-b06d-a3bd2b53d2db"],["beanie_se","877a413a-ccb7-4ecf-b137-a8655d202adc"],["beanie_e","404fb54c-ef70-4608-a4e2-15a64d24e97a"],["beanie_ne","50d309b1-3ebf-4786-a4f4-c0ea1ad15d20"],
+ ["cowboy_s","8116bc2b-4671-408e-8bc2-ad563a862a59"],["cowboy_se","c6460343-1a5c-4710-a3b0-dbf1c6763de7"],["cowboy_e","f46ac582-5a50-40e1-9ab4-4cb57ca9dac0"],["cowboy_ne","081f9006-f4e3-4eba-8c8f-f66a734bc1b0"],
+ ["party_s","9f29b96f-9d97-4e83-a9c2-cd35673b5c24"],["party_se","bd848a42-7448-4946-829c-2c9b274b6854"],["party_e","0ac348fc-b3df-409d-90cc-8491eca9c7fc"],["party_ne","28109bef-20a8-4208-b7c3-08378f5cf75d"],
+ ["tophat_s","b044657a-e8c7-4c0a-bda8-111ff1db19af"],["tophat_se","4b9b7877-9dfa-48d7-b454-36fbb4cda0e6"],["tophat_e","2ea04c4a-49da-4ddd-92c4-653229b071c6"],["tophat_ne","c24d8f5a-1485-4c36-afd9-c4ca0a7cb2b9"],
+ ["bandana_s","e92b9bd8-964a-478b-817e-715f74b35d76"],["bandana_se","e167a975-3111-4a42-b2d1-54612097f860"],["bandana_e","5d3efafd-dd21-440f-a536-2ee474f03758",1],["bandana_ne","8900f3a9-ca00-4475-b62f-334704a1fea1"],
+ ["shades_s","e7a7da8e-e76c-4c37-8c65-aaa966763ba2"],["shades_se","352cdbfd-1882-4c1c-a888-6f038737ebe9"],["shades_e","0802ee52-c775-4bc2-a92a-6349b575964a"],["shades_ne","bc24ed68-c1d8-45a5-ac7c-c8079355e618"],
+ ["raincoat_s","368616ac-2de1-47a1-be99-b762ff6c8826"],["raincoat_se","9e13a27d-b525-4783-abdf-98e001835961"],["raincoat_e","15a3dece-b145-4d4e-93b0-759bf5a2ef6d"],["raincoat_ne","75bf5cdb-cb66-4ef2-87da-25ba31776ea9"]
+];
+
+function imgUrl(job){return IROOT+job+"/download";}
+function stateUrl(id,d){return CROOT+id+"/rotations/"+d+".png?t=1786765461";}
+
+var statesEl=document.getElementById("states");
+STATES.forEach(function(s){
+  var name=s[0],id=s[1];
+  var head=document.createElement("div");head.className="statehead";
+  head.innerHTML="<h3>"+name+"</h3><span class='id'><code>"+id.slice(0,8)+"</code></span>";
+  statesEl.appendChild(head);
+  var row=document.createElement("div");row.className="row8";
+  row.innerHTML=DIRS.map(function(d){
+    var u=stateUrl(id,d);
+    return "<div class='cell'><a href='"+u+"' target='_blank' rel='noopener'>"+
+      "<div class='shot'><img data-z src='"+u+"' width='96' height='96' alt='"+name+" "+d+"'></div></a>"+
+      "<div class='nm'>"+d+"</div></div>";
+  }).join("");
+  statesEl.appendChild(row);
+});
+
+function fillGrid(elId,list){
+  var el=document.getElementById(elId);
+  list.forEach(function(it){
+    var name=it[0],job=it[1],sus=it[2];
+    var u=imgUrl(job);
+    var c=document.createElement("div");
+    c.className="card"+(sus?" suspect":"");
+    c.innerHTML="<a href='"+u+"' target='_blank' rel='noopener'>"+
+      "<div class='shot'><img data-z src='"+u+"' width='96' height='96' alt='"+name+"'></div></a>"+
+      "<div class='nm'>"+name+(sus?" ⚠":"")+"</div>";
+    el.appendChild(c);
+  });
+}
+fillGrid("props",PROPS);
+fillGrid("emotes",EMOTES);
+fillGrid("wardrobe",WARDROBE);
+
+function group(attr,apply){
+  var btns=Array.prototype.slice.call(document.querySelectorAll("[data-"+attr+"]"));
+  btns.forEach(function(b){b.addEventListener("click",function(){
+    btns.forEach(function(x){x.setAttribute("aria-pressed",x===b?"true":"false");});
+    apply(b.dataset[attr]);});});
+}
+group("zoom",function(v){var px=parseInt(v,10);
+  document.querySelectorAll("[data-z]").forEach(function(im){im.width=px;im.height=px;});
+  document.querySelectorAll(".shot").forEach(function(s){s.style.height=Math.max(96,px+16)+"px";});});
+group("bg",function(v){
+  document.querySelectorAll(".shot").forEach(function(s){
+    s.classList.toggle("dark",v==="dark");});});
+
+var statusEl=document.getElementById("dlStatus"),busy=false;
+function saveBlob(b,n){var u=URL.createObjectURL(b),a=document.createElement("a");
+  a.href=u;a.download=n;document.body.appendChild(a);a.click();a.remove();
+  setTimeout(function(){URL.revokeObjectURL(u);},4000);}
+function grab(u,n){return fetch(u,{mode:"cors"})
+  .then(function(r){if(!r.ok)throw 0;return r.blob();})
+  .then(function(b){saveBlob(b,n);return true;}).catch(function(){return false;});}
+function run(jobs){
+  if(busy)return;busy=true;
+  var done=0,failed=[];
+  statusEl.textContent="Starting "+jobs.length+" downloads...";
+  (function next(){
+    if(!jobs.length){busy=false;
+      statusEl.textContent=failed.length?done+" saved, "+failed.length+" blocked — opening a few in tabs.":"Done — "+done+" PNGs saved.";
+      failed.slice(0,10).forEach(function(u,i){setTimeout(function(){window.open(u,"_blank","noopener");},i*250);});
+      return;}
+    var j=jobs.shift();
+    grab(j.u,j.n).then(function(ok){if(ok)done++;else failed.push(j.u);
+      statusEl.textContent="Saved "+done+"...";setTimeout(next,150);});
+  })();
+}
+document.getElementById("dlStates").addEventListener("click",function(){
+  var jobs=[];STATES.forEach(function(s){DIRS.forEach(function(d){
+    jobs.push({u:stateUrl(s[1],d),n:s[0]+"_"+d+".png"});});});run(jobs);});
+function gridDl(list){return function(){
+  run(list.map(function(it){return {u:imgUrl(it[1]),n:it[0]+".png"};}));};}
+document.getElementById("dlProps").addEventListener("click",gridDl(PROPS));
+document.getElementById("dlEmotes").addEventListener("click",gridDl(EMOTES));
+document.getElementById("dlWardrobe").addEventListener("click",gridDl(WARDROBE));
+</script>
+</body>
+</html>
