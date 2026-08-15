@@ -350,7 +350,7 @@ final class PetScene: SKScene {
         stepFrisbeeCatch()
         stepTug(dt: dt)
         send(.tick)
-        updatePerchShadow()
+        updateContactShadow()
         trackHover(at: currentTime)
         // Every frame (cheap): the anchor depends on the dog's node size,
         // which changes with the pose (sit vs idle), not just the facing.
@@ -1000,8 +1000,17 @@ final class PetScene: SKScene {
     /// Polls the window server and keeps `brain.surfaces` current. nil once
     /// the scene has been torn down.
     private var windowSurfaces: WindowSurfaces?
-    /// The soft ellipse under his feet while he's on a ledge.
-    private var perchShadow: SKShapeNode?
+    /// The soft blob under his feet while he's on a ledge — or on the ground
+    /// he's falling towards. nil until the first time one is needed.
+    private var contactShadow: SKSpriteNode?
+    /// Footprint of the shadow when he's standing right on the surface. The
+    /// art is a round 32x32 blob; the node squashes it a little so it reads as
+    /// ground rather than as a hole (no detail in there to smear).
+    private static let contactShadowSize = CGSize(width: 48, height: 26)
+    /// Matches the ellipse this replaced: the art is opaque dark grey.
+    private static let contactShadowAlpha: CGFloat = 0.34
+    /// A fall from this high renders the shadow at its smallest and faintest.
+    private static let contactShadowFallSpan: CGFloat = 320
 
     private func startWatchingWindows() {
         let watcher = WindowSurfaces(geometry: { [weak self] in
@@ -1044,26 +1053,44 @@ final class PetScene: SKScene {
     }
 
     /// A contact shadow so he reads as standing ON the title bar rather than
-    /// floating over it. Created once, then just moved and hidden.
-    private func updatePerchShadow() {
-        guard case .perched(let id) = brain.state,
-              let surface = brain.surfaces.first(where: { $0.id == id })
-        else {
-            perchShadow?.isHidden = true
+    /// floating over it — and, mid-fall, as being somewhere above the floor.
+    /// Created once, then just moved, scaled and hidden.
+    private func updateContactShadow() {
+        // On a ledge: parked under his feet, full size.
+        if case .perched(let id) = brain.state,
+           let surface = brain.surfaces.first(where: { $0.id == id }),
+           let shadow = contactShadow ?? makeContactShadow() {
+            shadow.isHidden = false
+            shadow.position = CGPoint(x: dog.position.x, y: surface.topY + 2)
+            shadow.setScale(1)
+            shadow.alpha = Self.contactShadowAlpha
             return
         }
-        let shadow = perchShadow ?? makePerchShadow()
-        shadow.isHidden = false
-        shadow.position = CGPoint(x: dog.position.x, y: surface.topY + 2)
+        // Falling: it waits on the ground he's heading for and swells as he
+        // arrives — the oldest trick there is for reading height.
+        if fallVelocity != nil, let shadow = contactShadow ?? makeContactShadow() {
+            let drop = min(1, max(0, dog.position.y - fallFloorY) / Self.contactShadowFallSpan)
+            shadow.isHidden = false
+            // fallFloorY is where his CENTRE comes to rest, so the ground he
+            // lands on is half a sprite below it.
+            shadow.position = CGPoint(x: dog.position.x, y: fallFloorY - dog.size.height / 2 + 2)
+            shadow.setScale(1 - 0.55 * drop)
+            shadow.alpha = Self.contactShadowAlpha * (1 - 0.7 * drop)
+            return
+        }
+        contactShadow?.isHidden = true
     }
 
-    private func makePerchShadow() -> SKShapeNode {
-        let shadow = SKShapeNode(ellipseOf: CGSize(width: 44, height: 12))
-        shadow.fillColor = NSColor.black.withAlphaComponent(0.28)
-        shadow.strokeColor = .clear
+    /// nil if the art isn't in the bundle — a missing shadow is a better
+    /// failure than a black rectangle under the dog.
+    private func makeContactShadow() -> SKSpriteNode? {
+        guard let anim = SpriteLibrary.shared.singleProp(named: "shadow_blob") else { return nil }
+        let shadow = SKSpriteNode(texture: anim.textures[0])
+        shadow.size = Self.contactShadowSize
+        shadow.alpha = Self.contactShadowAlpha
         shadow.zPosition = dog.zPosition - 1
         addChild(shadow)
-        perchShadow = shadow
+        contactShadow = shadow
         return shadow
     }
 
@@ -1477,7 +1504,7 @@ final class PetScene: SKScene {
     ///
     /// Not here, deliberately: transient flourishes (hearts, the cam flash),
     /// anything parented to the dog (his hat, whatever is in his mouth), which
-    /// travels with him for free, the perch shadow, which is repositioned from
+    /// travels with him for free, the contact shadow, which is repositioned from
     /// scratch every frame — and the tug rope, whose own node sits at the
     /// origin while its segments hold scene coordinates, so moving it would
     /// shift the rope twice. The rope is handled through `ropeEnd` below.
