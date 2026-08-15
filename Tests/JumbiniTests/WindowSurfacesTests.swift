@@ -251,6 +251,44 @@ private func parse(
     #expect(parse([windowInfo(y: 1080, height: 480)]).isEmpty)
 }
 
+// MARK: - Building the geometry from a layout
+
+@Test func theGeometryForASingleDisplayOverlayIsTheObviousOne() {
+    let geometry = SurfaceGeometry.forOverlay(
+        layout: ScreenLayout(displays: [CGRect(x: 0, y: 0, width: 1920, height: 1080)])
+    )
+    #expect(geometry.flipHeight == 1080)
+    #expect(geometry.sceneOrigin == .zero)
+    #expect(geometry.sceneSize == CGSize(width: 1920, height: 1080))
+}
+
+@Test func theFlipAxisStaysThePrimaryDisplayHoweverTallTheDeskGets() {
+    // THE multi-monitor trap. CoreGraphics measures window coordinates down
+    // from the top of the PRIMARY display; a taller display stacked above it
+    // does not move that axis, and using the union's height here would put the
+    // dog on the ceiling.
+    let tallSecondary = SurfaceGeometry.forOverlay(layout: ScreenLayout(displays: [
+        CGRect(x: 0, y: 0, width: 1920, height: 1080),
+        CGRect(x: 1920, y: 0, width: 1440, height: 2560),
+    ]))
+    #expect(tallSecondary.flipHeight == 1080, "the primary's height, not the union's")
+    #expect(tallSecondary.sceneSize == CGSize(width: 3360, height: 2560))
+}
+
+@Test func aUnionThatExtendsLeftOfThePrimaryGetsANegativeSceneOrigin() {
+    let geometry = SurfaceGeometry.forOverlay(layout: ScreenLayout(displays: [
+        CGRect(x: 0, y: 0, width: 1920, height: 1080),
+        CGRect(x: -1440, y: -200, width: 1440, height: 900),
+    ]))
+    #expect(geometry.flipHeight == 1080)
+    #expect(geometry.sceneOrigin == CGPoint(x: -1440, y: -200))
+    // A window at the very top-left of the primary: CG (0, 0) 200x60, so its
+    // top edge is the primary's top edge, 1280 up the (taller) scene.
+    let converted = geometry.sceneRect(from: CGRect(x: 0, y: 0, width: 200, height: 60))
+    #expect(converted == CGRect(x: 1440, y: 1220, width: 200, height: 60))
+    #expect(converted.maxY == 1280)
+}
+
 // MARK: - Filtering: dead zones on a multi-display desk
 
 // One overlay spans the bounding box of every display, so the scene can

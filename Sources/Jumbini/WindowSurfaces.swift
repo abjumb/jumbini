@@ -1,4 +1,3 @@
-import AppKit
 import CoreGraphics
 import Foundation
 
@@ -48,7 +47,7 @@ struct SurfaceGeometry: Equatable {
     var screenRects: [CGRect] = []
 
     /// ────────────────────────────────────────────────────────────────────
-    /// THE COORDINATE CONVERSION. **MULTI-MONITOR EXTENSION POINT.**
+    /// THE COORDINATE CONVERSION. The only copy of the flip in the codebase.
     /// ────────────────────────────────────────────────────────────────────
     ///
     /// Turns one CGWindowList rect (global, top-left origin, y-down) into a
@@ -63,21 +62,20 @@ struct SurfaceGeometry: Equatable {
     ///      which becomes its minY once y points up.)
     ///   2. AppKit global  →  scene-local: subtract `sceneOrigin`.
     ///
-    /// A multi-monitor implementation changes **only this function and the
-    /// values fed into `SurfaceGeometry`**:
-    ///   * `flipHeight` stays the PRIMARY display's height — the CG flip axis
-    ///     is global and does not change per screen. Do not switch it to the
+    /// Multi-monitor did not change this function at all, only what is fed to
+    /// it — which was the point of writing it this way. There is ONE overlay,
+    /// spanning the union of every display, so:
+    ///   * `flipHeight` is the PRIMARY display's height. The CG flip axis is
+    ///     global and does not change per screen. Do NOT switch it to the
     ///     height of whichever screen a window happens to be on; that is the
-    ///     bug this comment exists to prevent.
-    ///   * `sceneOrigin` becomes the origin of the screen that this particular
-    ///     scene/overlay covers (`window.frame.origin` for that screen), which
-    ///     is already how it is written — so per-screen overlays work by
-    ///     constructing one `SurfaceGeometry` per overlay.
-    ///   * If instead you go with one giant overlay spanning every display,
-    ///     `sceneOrigin` becomes the union frame's origin (which can be
-    ///     NEGATIVE when a screen sits left of or below the primary) and
-    ///     `sceneSize` the union size. The formula below already handles that
-    ///     — it is a plain translation.
+    ///     bug this comment exists to prevent, and there is a test named
+    ///     `theFlipAxisStaysThePrimaryDisplayHoweverTallTheDeskGets` guarding
+    ///     it.
+    ///   * `sceneOrigin` is the union frame's origin, which is NEGATIVE when a
+    ///     screen sits left of or below the primary. The formula below handles
+    ///     that without noticing — it is a plain translation.
+    ///   * `sceneSize` is the union size, and `screenRects` says which parts of
+    ///     that box are really a display.
     func sceneRect(from cgRect: CGRect) -> CGRect {
         CGRect(
             x: cgRect.minX - sceneOrigin.x,
@@ -87,30 +85,19 @@ struct SurfaceGeometry: Equatable {
         )
     }
 
-    /// The geometry for an overlay covering `sceneFrame` (global AppKit
-    /// coordinates). Main thread only — it reads `NSScreen`.
-    ///
-    /// The flip axis is the primary display: the screen whose AppKit frame
-    /// origin is (0, 0). `NSScreen.screens.first` is that screen on every
-    /// configuration Apple ships, but the search is explicit so a reordered
-    /// screen list can't quietly flip the dog upside down.
-    static func forOverlay(sceneFrame: CGRect) -> SurfaceGeometry {
-        let primary = NSScreen.screens.first { $0.frame.origin == .zero }
-            ?? NSScreen.screens.first
-        return SurfaceGeometry(
-            flipHeight: primary?.frame.maxY ?? sceneFrame.maxY,
-            sceneOrigin: sceneFrame.origin,
-            sceneSize: sceneFrame.size
-        )
-    }
-
-    /// The geometry for the one overlay spanning every display. Pure: the
-    /// layout has already done the `NSScreen` reading.
+    /// The geometry for the one overlay spanning every display. Pure — the
+    /// layout has already done all the `NSScreen` reading, which is why there
+    /// is a single factory here and not one per caller.
     ///
     /// `flipHeight` is the PRIMARY display's height and nothing else — see the
     /// warning on `sceneRect(from:)`. `sceneOrigin` is the union's origin,
     /// which goes negative the moment a display sits left of or below the
     /// primary, and that is fine because the conversion is a translation.
+    ///
+    /// `ScreenLayout` finds the primary by looking for the display at the
+    /// global origin, so a reordered screen list can't quietly flip the dog
+    /// upside down; the fallback to the union frame only fires for a layout
+    /// with no displays at all.
     static func forOverlay(layout: ScreenLayout) -> SurfaceGeometry {
         let primary = layout.displays.indices.contains(layout.primaryIndex)
             ? layout.displays[layout.primaryIndex]
