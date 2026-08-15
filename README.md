@@ -127,7 +127,7 @@ the result.
 Other scripts:
 
 ```bash
-./Scripts/test.sh            # run the test suite (59 tests)
+./Scripts/test.sh            # run the test suite (306 tests)
 ./Scripts/dmg.sh             # → build/Jumbini.dmg, drag-to-Applications layout
 ```
 
@@ -169,7 +169,7 @@ to apply. It never touches a node, a texture, or a clock.
 That buys determinism. The brain's randomness comes from an injected
 `RandomNumberGenerator` (a SplitMix64 seeded per test) and its timing comes from
 timestamps the caller passes in, so a test can wind the clock forward and assert on exact
-state transitions with zero flake and zero sleeping. All 59 tests build a brain with
+state transitions with zero flake and zero sleeping. The brain tests build one with
 `makeBrain(seed:tune:)`, zero out every autonomy probability, enable exactly one, and
 check what happens.
 
@@ -177,7 +177,7 @@ check what happens.
 
 | File | Lines | What lives there |
 |---|---|---|
-| `Sources/Jumbini/DogBrain.swift` | 438 | The state machine. 17 states, 10 events, 16 effects, every tuning knob |
+| `Sources/Jumbini/DogBrain.swift` | 1421 | The state machine. 29 states, 16 events, 28 effects, every tuning knob |
 | `Sources/Jumbini/PetScene.swift` | 629 | Applies effects, owns all mouse input, zoomies bounce physics, cursor-sniff stepping, click-through |
 | `Sources/Jumbini/Dog.swift` | 119 | The dog sprite: plays animations in whichever of 8 directions he faces, walks to targets, reports arrival |
 | `Sources/Jumbini/SpriteLoader.swift` | 184 | `Facing` (8 directions) and `SpriteLibrary` (texture cache, nearest-neighbor, strip-sheet slicing) |
