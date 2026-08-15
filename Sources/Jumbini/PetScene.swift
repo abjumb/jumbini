@@ -112,6 +112,12 @@ final class PetScene: SKScene {
         // whole desk: on a three-monitor setup the union's bottom-right corner
         // is off in someone's peripheral vision, and a fresh install should
         // look the way it always did — bed and jar by the Dock.
+        // Before anything asks for dog art: the coat decides which files that
+        // resolves to, and the first pose is played at the end of this method.
+        if let stored = UserDefaults.standard.string(forKey: Self.coatKey),
+           let coat = Coat(rawValue: stored) {
+            SpriteLibrary.shared.coat = coat
+        }
         let home = layout.primarySceneFrame
         bed = Self.propNode(named: "bed", frameWidth: 52, fallbackColor: .systemBlue,
                             fallbackSize: CGSize(width: 156, height: 96))
@@ -327,6 +333,45 @@ final class PetScene: SKScene {
     @objc private func wardrobeChosen(_ sender: NSMenuItem) {
         guard let file = sender.representedObject as? String else { return }
         applyWardrobeItem(file.isEmpty ? nil : file)
+    }
+
+    // MARK: - Coat
+
+    private static let coatKey = "coat"
+
+    /// Swap which set of dog art SpriteLibrary resolves. The texture cache is
+    /// keyed by filename so there's nothing to evict, but the dog is holding
+    /// textures from the old coat — he has to be told to re-render, and the
+    /// worn item re-seated in case the new pose art is a different size.
+    private func applyCoat(_ coat: Coat) {
+        SpriteLibrary.shared.coat = coat
+        UserDefaults.standard.set(coat.rawValue, forKey: Self.coatKey)
+        dog.refreshAnimation()
+        reseatWornItem()
+    }
+
+    private func coatSelectionMenu() -> NSMenu {
+        let menu = NSMenu()
+        for coat in Coat.allCases {
+            let item = NSMenuItem(title: coat.title, action: #selector(coatChosen(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = coat.rawValue
+            item.state = SpriteLibrary.shared.coat == coat ? .on : .off
+            if let url = Bundle.module.url(
+                forResource: "\(coat.filePrefix)idle_south", withExtension: "png", subdirectory: "jumba"
+            ), let image = NSImage(contentsOf: url) {
+                let height: CGFloat = 30
+                image.size = NSSize(width: image.size.width / image.size.height * height, height: height)
+                item.image = image
+            }
+            menu.addItem(item)
+        }
+        return menu
+    }
+
+    @objc private func coatChosen(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String, let coat = Coat(rawValue: raw) else { return }
+        applyCoat(coat)
     }
 
     // MARK: - Frame loop
@@ -1628,6 +1673,9 @@ final class PetScene: SKScene {
         let wardrobe = NSMenuItem(title: "Wardrobe", action: nil, keyEquivalent: "")
         wardrobe.submenu = wardrobeSelectionMenu()
         menu.addItem(wardrobe)
+        let coat = NSMenuItem(title: "Coat", action: nil, keyEquivalent: "")
+        coat.submenu = coatSelectionMenu()
+        menu.addItem(coat)
         NSMenu.popUpContextMenu(menu, with: event, for: view)
     }
 
