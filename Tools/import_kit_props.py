@@ -162,22 +162,38 @@ IMPORT = [
 # Files whose backdrop needs clearing (see strip_backdrop).
 STRIP_BACKDROP = {"rope_mid"}
 
+# The treat box, which replaces the peanut butter jar. It lives in its own kit
+# folder and its frames are two-digit, so it's renamed on the way in to the
+# `name_<n>` convention SpriteLibrary.propSequence reads. The kit's topdown/,
+# opened/, crushed/ and candidates/ folders are design exploration and are
+# deliberately not imported.
+#   source (relative to jumbini-kit/treat-box) -> Resources/sprites name
+TREAT_BOX = {"treat_box_base.png": "treat_box"}
+TREAT_BOX.update({
+    f"wobble/treat_box_wobble_{i:02d}.png": f"treat_box_wobble_{i}" for i in range(9)
+})
+
 
 def main():
     here = os.path.dirname(os.path.abspath(__file__))
-    src = os.path.join(here, "..", "jumbini-kit", "sprites")
+    kit = os.path.join(here, "..", "jumbini-kit")
+    src = os.path.join(kit, "sprites")
     dst = os.path.join(here, "..", "Sources", "Jumbini", "Resources", "sprites")
-    missing = [n for n in IMPORT if not os.path.exists(os.path.join(src, n + ".png"))]
+
+    jobs = [(os.path.join(src, n + ".png"), n) for n in IMPORT]
+    jobs += [(os.path.join(kit, "treat-box", rel), name) for rel, name in TREAT_BOX.items()]
+
+    missing = [path for path, _ in jobs if not os.path.exists(path)]
     if missing:
-        print(f"error: missing from {src}: {', '.join(missing)}")
+        print(f"error: missing sources: {', '.join(missing)}")
         return 1
-    for name in IMPORT:
-        w, h, rows = read_png(os.path.join(src, name + ".png"))
+    for path, name in jobs:
+        w, h, rows = read_png(path)
         if name in STRIP_BACKDROP:
             cleared = strip_backdrop(w, h, rows)
             print(f"  {name}: cleared {cleared} backdrop pixels")
         write_png(os.path.join(dst, name + ".png"), w, h, rows)
-    print(f"imported {len(IMPORT)} props -> {dst}")
+    print(f"imported {len(jobs)} props -> {dst}")
     return 0
 
 

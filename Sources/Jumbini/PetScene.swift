@@ -41,7 +41,7 @@ final class PetScene: SKScene {
 
     // Furniture.
     private var bed: SKSpriteNode!
-    private var jar: SKSpriteNode!
+    private var treatBox: SKSpriteNode!
 
     // Treats.
     private var treatInHand: SKSpriteNode?
@@ -89,8 +89,9 @@ final class PetScene: SKScene {
     private var mouseDownOnDog = false
     private var isCarryingDog = false
     private var draggedFurniture: SKSpriteNode?
-    /// A plain press started on the jar: click = take a treat, drag = move the jar.
-    private var pressedJar = false
+    /// A plain press started on the treat box: click = take a treat,
+    /// drag = move the box.
+    private var pressedTreatBox = false
     /// Where the current press started (drag threshold is measured from here).
     private var pressLocation: CGPoint = .zero
     /// Keeps the grab point under the cursor while carrying (no center-snap).
@@ -111,7 +112,7 @@ final class PetScene: SKScene {
         // Furniture goes in the bottom-right of the PRIMARY display, not of the
         // whole desk: on a three-monitor setup the union's bottom-right corner
         // is off in someone's peripheral vision, and a fresh install should
-        // look the way it always did — bed and jar by the Dock.
+        // look the way it always did — bed and treat box by the Dock.
         let home = layout.primarySceneFrame
         bed = Self.propNode(named: "bed", frameWidth: 52, fallbackColor: .systemBlue,
                             fallbackSize: CGSize(width: 156, height: 96))
@@ -123,11 +124,10 @@ final class PetScene: SKScene {
             applyBedVariant(stored)
         }
 
-        jar = Self.propNode(named: "jar", frameWidth: 22, fallbackColor: .systemGray,
-                            fallbackSize: CGSize(width: 66, height: 78))
-        jar.position = CGPoint(x: home.maxX - 70, y: home.minY + 145)
-        jar.zPosition = 6
-        addChild(jar)
+        treatBox = Self.treatBoxNode()
+        treatBox.position = CGPoint(x: home.maxX - 70, y: home.minY + 145)
+        treatBox.zPosition = 6
+        addChild(treatBox)
 
         dog.position = CGPoint(x: home.midX, y: home.midY)
         dog.zPosition = 10
@@ -1253,6 +1253,48 @@ final class PetScene: SKScene {
         }
     }
 
+    // MARK: - The treat box
+
+    /// Rendered size of the box. Alex's art is 64x64 with the carton drawn
+    /// inside a transparent margin; at the props' usual x3 that would be a
+    /// 192pt box, twice the dog. This lands its drawn footprint at roughly the
+    /// height of the peanut butter jar it replaces.
+    private static let treatBoxSize = CGSize(width: 84, height: 84)
+
+    private static func treatBoxNode() -> SKSpriteNode {
+        if let anim = SpriteLibrary.shared.singleProp(named: "treat_box") {
+            let node = SKSpriteNode(texture: anim.textures[0])
+            node.size = treatBoxSize
+            return node
+        }
+        return SKSpriteNode(color: .systemBrown, size: treatBoxSize)
+    }
+
+    /// The box's hit region. `frame` is the whole 84pt node, and about 12pt of
+    /// each side of that is the art's transparent margin — inset back to the
+    /// drawn carton (plus a couple of points of slop) or the box grabs clicks
+    /// from empty desktop beside it.
+    private func treatBoxFrame() -> CGRect {
+        treatBox.frame.insetBy(dx: 10, dy: 2)
+    }
+
+    /// The box rocks as he digs a treat out of it: one pass through the wobble
+    /// frames, then back to the resting carton.
+    private func wobbleTreatBox() {
+        guard
+            let wobble = SpriteLibrary.shared.propSequence(
+                named: "treat_box_wobble", frames: 9, fps: 18
+            ),
+            let rest = SpriteLibrary.shared.singleProp(named: "treat_box")
+        else { return }
+        treatBox.removeAction(forKey: "wobble")
+        treatBox.run(.sequence([
+            .animate(with: wobble.textures, timePerFrame: 1 / wobble.fps,
+                     resize: false, restore: false),
+            .setTexture(rest.textures[0]),
+        ]), withKey: "wobble")
+    }
+
     // MARK: - Treats
 
     private func makeTreat(at location: CGPoint) -> SKSpriteNode {
@@ -1267,8 +1309,8 @@ final class PetScene: SKScene {
     private func dropTreat(at location: CGPoint) {
         guard let treat = treatInHand else { return }
         treatInHand = nil
-        // Released back over (or never left) the jar: put the treat away.
-        if jar.frame.insetBy(dx: -6, dy: -6).contains(location) {
+        // Released back over (or never left) the box: put the treat away.
+        if treatBoxFrame().contains(location) {
             treat.removeFromParent()
             return
         }
@@ -1450,7 +1492,7 @@ final class PetScene: SKScene {
         guard let window = overlayWindow else { return }
         // A held press counts too: the dog can walk out from under a stationary
         // cursor, and the window must keep the mouseUp.
-        let dragging = mouseDownOnDog || isCarryingDog || pressedJar
+        let dragging = mouseDownOnDog || isCarryingDog || pressedTreatBox
             || treatInHand != nil || draggedFurniture != nil || draggedPile != nil
             || draggingRope
         let shouldAcceptClicks = armedForThrow || dragging
@@ -1461,7 +1503,7 @@ final class PetScene: SKScene {
     }
 
     private func interactiveFrames() -> [CGRect] {
-        [dogHoverFrame(), jar.frame.insetBy(dx: -6, dy: -6), bed.frame.insetBy(dx: -6, dy: -6)]
+        [dogHoverFrame(), treatBoxFrame(), bed.frame.insetBy(dx: -6, dy: -6)]
             + piles.map { $0.frame.insetBy(dx: -6, dy: -6) }
             // The free end of the rope is a grab target whenever it's loose.
             + (carryingRope ? [] : [rope?.freeEndFrame()].compactMap { $0 })
@@ -1487,7 +1529,7 @@ final class PetScene: SKScene {
     /// left of the primary moves that corner — and every entity would appear
     /// to leap sideways even though nothing about where they are in the world
     /// changed. Translating by the difference first keeps the dog, the bed and
-    /// the jar exactly where the user left them, on the display they left them
+    /// the treat box exactly where the user left them, on the display they left them
     /// on; only then does anything get clamped, and only if it now has nowhere
     /// to be.
     func apply(layout newLayout: ScreenLayout) {
@@ -1509,7 +1551,7 @@ final class PetScene: SKScene {
     /// origin while its segments hold scene coordinates, so moving it would
     /// shift the rope twice. The rope is handled through `ropeEnd` below.
     private func worldNodes() -> [SKNode] {
-        var nodes: [SKNode] = [dog, bed, jar]
+        var nodes: [SKNode] = [dog, bed, treatBox]
         nodes += piles
         for node in [ball, frisbee, squeaky, groundTreat, treatInHand] {
             if let node, node.parent === self { nodes.append(node) }
@@ -1552,16 +1594,16 @@ final class PetScene: SKScene {
     override func mouseDown(with event: NSEvent) {
         let location = event.location(in: self)
         pressLocation = location
-        // Props keep priority over an armed throw so the jar/bed stay usable
+        // Props keep priority over an armed throw so the box/bed stay usable
         // while the dog waits for a throw (dropping a treat cancels the fetch).
         if dogHoverFrame().contains(location) {
             mouseDownOnDog = true
             carryGrabOffset = CGPoint(x: dog.position.x - location.x, y: dog.position.y - location.y)
-        } else if jar.frame.insetBy(dx: -6, dy: -6).contains(location), treatInHand == nil {
+        } else if treatBoxFrame().contains(location), treatInHand == nil {
             if event.modifierFlags.contains(.option) {
-                draggedFurniture = jar  // ⌥-drag repositions the jar immediately
+                draggedFurniture = treatBox  // ⌥-drag repositions the box immediately
             } else {
-                pressedJar = true       // click takes a treat; a drag moves the jar
+                pressedTreatBox = true       // click takes a treat; a drag moves the box
             }
         } else if bed.frame.insetBy(dx: -6, dy: -6).contains(location) {
             draggedFurniture = bed
@@ -1598,13 +1640,13 @@ final class PetScene: SKScene {
             if isCarryingDog {
                 dog.position = CGPoint(x: location.x + carryGrabOffset.x, y: location.y + carryGrabOffset.y)
             }
-        } else if pressedJar {
+        } else if pressedTreatBox {
             // Same slop pattern as the dog: past the threshold the press
-            // becomes a jar drag instead of a treat click.
+            // becomes a box drag instead of a treat click.
             if hypot(location.x - pressLocation.x, location.y - pressLocation.y) > 8 {
-                pressedJar = false
-                draggedFurniture = jar
-                jar.position = location
+                pressedTreatBox = false
+                draggedFurniture = treatBox
+                treatBox.position = location
             }
         } else if let treat = treatInHand {
             treat.position = location
@@ -1630,7 +1672,7 @@ final class PetScene: SKScene {
             isCarryingDog = false
             draggedFurniture = nil
             draggedPile = nil
-            pressedJar = false
+            pressedTreatBox = false
             draggingRope = false
         }
         if wasDraggingRope {
@@ -1647,9 +1689,11 @@ final class PetScene: SKScene {
             } else {
                 send(.petted)
             }
-        } else if pressedJar {
-            // Released under the drag threshold: a plain click takes a treat.
+        } else if pressedTreatBox {
+            // Released under the drag threshold: a plain click takes a treat,
+            // and the box rocks as he digs one out.
             treatInHand = makeTreat(at: location)
+            wobbleTreatBox()
         } else if treatInHand != nil {
             dropTreat(at: location)
         } else if let pile = draggedPile {
@@ -1660,7 +1704,7 @@ final class PetScene: SKScene {
     override func rightMouseDown(with event: NSEvent) {
         // Never open the menu mid-drag: its tracking session would swallow the
         // mouseUp and wedge the drag state (stuck carry, leaked treat).
-        guard !mouseDownOnDog, !pressedJar, treatInHand == nil,
+        guard !mouseDownOnDog, !pressedTreatBox, treatInHand == nil,
               draggedFurniture == nil, draggedPile == nil, !draggingRope else { return }
         let location = event.location(in: self)
         if armedForThrow, !dogHoverFrame().contains(location) {
