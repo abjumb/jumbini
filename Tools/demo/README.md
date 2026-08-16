@@ -33,6 +33,14 @@ happens through either of them), and Screen Recording permission for
 Terminal. The runner checks what it can and refuses to produce black frames
 silently.
 
+`stage-kit.sh` refuses to re-stage over a `$KIT/out` that still has footage
+in it — a routine re-run (say, to pick up a rebuilt app) would otherwise
+silently delete whatever hasn't been copied back yet, and four of these
+shots cannot be re-shot on cue. Copy `out/` back to this repo first. If you
+really do want to discard what's there and re-stage anyway, override with:
+
+    JUMBINI_STAGE_FORCE=1 Tools/demo/stage-kit.sh
+
 ## Regenerating just the hero assets
 
 These need no app, no permissions, and no capture account:

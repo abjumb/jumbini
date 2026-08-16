@@ -10,6 +10,31 @@ APP="$ROOT/build/Jumbini.app"
 
 [ -d "$APP" ] || { echo "stage: no app at $APP — run Scripts/bundle.sh first" >&2; exit 1; }
 
+# A previous kit's out/ can hold footage nobody copied back yet. Four of the
+# nine shots — thermal zoomies, the build party, the battery whine, sleep
+# and wake — cannot be reproduced on cue, so silently wiping them on a
+# routine re-stage (e.g. to pick up an app rebuild) would be expensive.
+# `[ -d ... ]` failing (kit or out/ missing — the common, clean-machine
+# case) must not itself trip `set -e`; nesting these as `if` conditions,
+# rather than chaining them with `&&` into one statement whose overall
+# non-zero status could be read as script failure, keeps that path silent.
+if [ -d "$KIT/out" ]; then
+  if [ -n "$(ls -A "$KIT/out" 2>/dev/null)" ]; then
+    if [ "${JUMBINI_STAGE_FORCE:-}" != "1" ]; then
+      cat >&2 <<EOF
+stage: $KIT/out already has footage in it — copy it back to this repo before
+stage: re-staging, or this run will delete it. Some of these shots (thermal
+stage: zoomies, the build party, the battery whine, sleep and wake) cannot
+stage: be re-shot on cue, so losing them is expensive.
+stage: to re-stage anyway and discard whatever is in out/, re-run with:
+stage:   JUMBINI_STAGE_FORCE=1 Tools/demo/stage-kit.sh
+EOF
+      exit 1
+    fi
+    echo "stage: JUMBINI_STAGE_FORCE=1 set — discarding footage already in $KIT/out" >&2
+  fi
+fi
+
 rm -rf "$KIT"
 mkdir -p "$KIT/Tools/demo" "$KIT/Sources/Jumbini/Resources"
 
