@@ -47,6 +47,11 @@ jobs:
       # those flags are unnecessary and point at a toolchain that isn't the
       # one compiling. Contributors should keep using the script locally.
       - name: Test
+        env:
+          # TEMPORARY, this branch only: makes the panel snapshot test print its
+          # render as base64 so the layout can be pulled out of this log and
+          # looked at from a machine that cannot run AppKit. Remove before merge.
+          JUMBINI_SNAPSHOT: "1"
         run: swift test
 
       # The ship path: a release build, the .app assembled around it, the

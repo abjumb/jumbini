@@ -295,6 +295,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.onSettingsChanged = { [weak self] settings in
             self?.apply(settings: settings)
         }
+        // Settings offers the coat tools but does not own them, so it asks the
+        // delegate to open the same panels the menu opens — one instance each,
+        // however the user got there.
+        panel.onOpenCoatWorkshop = { [weak self] in
+            self?.openCoatWorkshop()
+        }
+        panel.onOpenDogGenerator = { [weak self] in
+            self?.openDogGenerator()
+        }
         panel.present()
         settingsPanel = panel
     }

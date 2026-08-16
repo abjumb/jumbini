@@ -8,7 +8,7 @@ import SpriteKit
 /// A borderless, non-activating NSPanel like the DogGeneratorPanel. It owns
 /// none of the rendering — it sends pose/direction commands to the scene so
 /// the preview happens on the real dog in the overlay.
-final class CoatWorkshopPanel: NSPanel {
+final class CoatWorkshopPanel: JumbiniPanel {
     // MARK: - Closures (wired by the scene)
 
     /// Ask the scene to temporarily wear a staged coat.
@@ -44,34 +44,20 @@ final class CoatWorkshopPanel: NSPanel {
     private let scaleStack = NSStackView()
     private let installButton = NSButton(title: "Install", target: nil, action: nil)
     private let exportButton = NSButton(title: "Export…", target: nil, action: nil)
-    private let closeButton = NSButton(title: "", target: nil, action: nil)
     private var isInstalledCoat: Bool = false
 
     private static let panelWidth: CGFloat = 400
     private static let initialHeight: CGFloat = 520
     private static let contentInset: CGFloat = 16
-    private static let cornerRadius: CGFloat = 22
 
     init(fileManager: FileManager = .default) {
         self.fileManager = fileManager
         super.init(
-            contentRect: NSRect(x: 0, y: 0, width: Self.panelWidth, height: Self.initialHeight),
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false
+            autosaveName: "coatWorkshop",
+            size: NSSize(width: Self.panelWidth, height: Self.initialHeight)
         )
-        isOpaque = false
-        backgroundColor = .clear
-        hasShadow = true
-        isFloatingPanel = true
-        isReleasedWhenClosed = false
-        animationBehavior = .none
-        level = .statusBar
-        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         setUpContent()
     }
-
-    override var canBecomeKey: Bool { true }
 
     // MARK: - Content layout
 
@@ -79,24 +65,9 @@ final class CoatWorkshopPanel: NSPanel {
         let title = NSTextField(labelWithString: "Coat Workshop")
         title.font = .systemFont(ofSize: 15, weight: .semibold)
 
-        closeButton.image = NSImage(
-            systemSymbolName: "xmark",
-            accessibilityDescription: "Close"
-        )?.withSymbolConfiguration(.init(pointSize: 11, weight: .semibold))
-        closeButton.isBordered = false
-        closeButton.contentTintColor = .secondaryLabelColor
-        closeButton.target = self
-        closeButton.action = #selector(dismissPanel)
-        closeButton.keyEquivalent = "\u{1b}"
-        closeButton.setContentHuggingPriority(.required, for: .horizontal)
-        closeButton.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            closeButton.widthAnchor.constraint(equalToConstant: 22),
-            closeButton.heightAnchor.constraint(equalToConstant: 22),
-        ])
         title.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
-        let header = NSStackView(views: [title, closeButton])
+        let header = NSStackView(views: [title])
         header.orientation = .horizontal
         header.distribution = .fill
         header.alignment = .centerY
@@ -186,9 +157,18 @@ final class CoatWorkshopPanel: NSPanel {
         installButton.bezelStyle = .rounded
         installButton.keyEquivalent = "\r"
 
+        // Grouped into the same labelled cards Settings uses, so the three
+        // panels read as one app rather than three separately-built windows.
+        let cardWidth = Self.panelWidth - Self.contentInset * 2
         let stack = NSStackView(views: [
-            header, importRow, statusLabel, findingsScroll,
-            previewRow, directionRow, scaleStack, installButton,
+            header,
+            PanelTheme.sectionHeader("Coat file"),
+            PanelBuilder.card([importRow, statusLabel], width: cardWidth),
+            PanelTheme.sectionHeader("Validation"),
+            PanelBuilder.card([findingsScroll], width: cardWidth),
+            PanelTheme.sectionHeader("Preview"),
+            PanelBuilder.card([previewRow, directionRow, scaleStack], width: cardWidth),
+            installButton,
         ])
         stack.orientation = .vertical
         stack.alignment = .leading
@@ -201,39 +181,10 @@ final class CoatWorkshopPanel: NSPanel {
         stack.layoutSubtreeIfNeeded()
         let fittedHeight = stack.fittingSize.height
 
-        contentView = makeBackdrop(around: stack)
+        installChrome(around: stack)
         setContentSize(NSSize(width: Self.panelWidth, height: fittedHeight))
     }
 
-    private func makeBackdrop(around content: NSView) -> NSView {
-        content.translatesAutoresizingMaskIntoConstraints = false
-
-        let backdrop: NSView
-        if #available(macOS 26.0, *) {
-            let glass = NSGlassEffectView()
-            glass.cornerRadius = Self.cornerRadius
-            glass.contentView = content
-            backdrop = glass
-        } else {
-            let blur = NSVisualEffectView()
-            blur.material = .hudWindow
-            blur.blendingMode = .behindWindow
-            blur.state = .active
-            blur.wantsLayer = true
-            blur.layer?.cornerRadius = Self.cornerRadius
-            blur.layer?.masksToBounds = true
-            blur.addSubview(content)
-            backdrop = blur
-        }
-
-        NSLayoutConstraint.activate([
-            content.topAnchor.constraint(equalTo: backdrop.topAnchor),
-            content.bottomAnchor.constraint(equalTo: backdrop.bottomAnchor),
-            content.leadingAnchor.constraint(equalTo: backdrop.leadingAnchor),
-            content.trailingAnchor.constraint(equalTo: backdrop.trailingAnchor),
-        ])
-        return backdrop
-    }
 
     // MARK: - Import
 
@@ -611,14 +562,14 @@ private func updateDirectionButtons() {
 
     // MARK: - Dismiss
 
-    @objc private func dismissPanel() {
+    /// The live preview drives the real dog in the overlay, so it must not
+    /// outlive the window that started it — however the window went away.
+    override func panelWillClose() {
         if isPreviewing { stopPreview() }
-        orderOut(nil)
     }
 
+    /// Centred the first time, then wherever the user last dragged it.
     func present() {
-        center()
-        orderFrontRegardless()
-        makeKey()
+        presentPanel()
     }
 }

@@ -1,15 +1,26 @@
 import AppKit
 
-/// Jumbini's small, native settings surface.
+/// Jumbini's settings surface: a sidebar of sections on the left, grouped cards
+/// on the right.
+///
+/// This used to be one long column in a panel that could not be moved. The
+/// sections below are the same settings; what changed is that they are sorted
+/// into pages, so a Mac-behavior switch is not sitting three scrolls below an
+/// API key, and the window can be dragged out of the dog's way.
 ///
 /// Behavior switches save immediately. The Pixellab key is deliberately a
 /// separate, explicit action: secrets go to Keychain, never UserDefaults, and
 /// a half-entered key must not replace a working one as the user types.
-final class SettingsPanel: NSPanel {
+final class SettingsPanel: JumbiniPanel {
     var onSettingsChanged: ((JumbiniSettings) -> Void)?
+    /// Settings is where people go looking for the coat tools, so it offers
+    /// them — but it does not own those panels, and says so by asking.
+    var onOpenCoatWorkshop: (() -> Void)?
+    var onOpenDogGenerator: (() -> Void)?
 
     private let defaults: UserDefaults
     private let loginItem: LoginItemController
+
     private let loginCheckbox = NSButton(checkboxWithTitle: "", target: nil, action: nil)
     private let loginStatusLabel = NSTextField(labelWithString: "")
     private let poopCheckbox = NSButton(checkboxWithTitle: "", target: nil, action: nil)
@@ -20,16 +31,74 @@ final class SettingsPanel: NSPanel {
     private let keyFeedbackLabel = NSTextField(labelWithString: "")
     private let saveKeyButton = NSButton(title: "Save Key", target: nil, action: nil)
     private let removeKeyButton = NSButton(title: "Remove Key", target: nil, action: nil)
-    private let closeButton = NSButton(title: "", target: nil, action: nil)
-    private var contentStack: NSStackView?
 
-    private static let panelWidth: CGFloat = 440
-    private static let initialHeight: CGFloat = 520
-    private static let inset: CGFloat = 20
-    private static let cornerRadius: CGFloat = 22
-    private static let indentWidth: CGFloat = 22
-    private static let contentWidth = panelWidth - inset * 2
-    private static let detailWidth = contentWidth - indentWidth
+    private let searchField = NSSearchField()
+    private var sidebarButtons: [PanelSidebarButton] = []
+    private var pages: [String: NSView] = [:]
+    private var pageContainer = NSView()
+    private var selectedIdentifier = Section.general
+
+    private static let panelWidth: CGFloat = 720
+    private static let panelHeight: CGFloat = 480
+    private static var contentWidth: CGFloat {
+        panelWidth - PanelTheme.sidebarWidth - PanelTheme.contentInset * 2
+    }
+
+    private enum Section {
+        static let general = "general"
+        static let behavior = "behavior"
+        static let windows = "windows"
+        static let coats = "coats"
+        static let pixellab = "pixellab"
+        static let support = "support"
+    }
+
+    static let catalog = PanelSectionCatalog(groups: [
+        PanelSectionGroup(
+            title: nil,
+            sections: [
+                PanelSection(
+                    identifier: Section.general, title: "General",
+                    symbol: "gearshape.fill", tint: .systemGray
+                )
+            ]
+        ),
+        PanelSectionGroup(
+            title: "Features",
+            sections: [
+                PanelSection(
+                    identifier: Section.behavior, title: "Behavior",
+                    symbol: "pawprint.fill", tint: .systemBlue
+                ),
+                PanelSection(
+                    identifier: Section.windows, title: "Window Climbing",
+                    symbol: "macwindow", tint: .systemTeal
+                ),
+            ]
+        ),
+        PanelSectionGroup(
+            title: "Customization",
+            sections: [
+                PanelSection(
+                    identifier: Section.coats, title: "Coats",
+                    symbol: "paintbrush.fill", tint: .systemPink
+                )
+            ]
+        ),
+        PanelSectionGroup(
+            title: "System",
+            sections: [
+                PanelSection(
+                    identifier: Section.pixellab, title: "Pixellab API",
+                    symbol: "key.fill", tint: .systemOrange
+                ),
+                PanelSection(
+                    identifier: Section.support, title: "Support",
+                    symbol: "lifepreserver.fill", tint: .systemGreen
+                ),
+            ]
+        ),
+    ])
 
     init(
         defaults: UserDefaults = .standard,
@@ -38,271 +107,346 @@ final class SettingsPanel: NSPanel {
         self.defaults = defaults
         self.loginItem = loginItem
         super.init(
-            contentRect: NSRect(
-                x: 0, y: 0, width: Self.panelWidth, height: Self.initialHeight
-            ),
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false
+            autosaveName: "settings",
+            size: NSSize(width: Self.panelWidth, height: Self.panelHeight)
         )
-        isOpaque = false
-        backgroundColor = .clear
-        hasShadow = true
-        isFloatingPanel = true
-        isReleasedWhenClosed = false
-        animationBehavior = .none
-        level = .statusBar
-        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         setUpContent()
         reload()
     }
 
-    override var canBecomeKey: Bool { true }
+    // MARK: - Layout
 
     private func setUpContent() {
-        let title = NSTextField(labelWithString: "Jumbini Settings")
-        title.font = .systemFont(ofSize: 17, weight: .semibold)
-        title.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let sidebar = makeSidebar()
+        let detail = makeDetail()
 
-        closeButton.image = NSImage(
-            systemSymbolName: "xmark",
-            accessibilityDescription: "Close settings"
-        )?.withSymbolConfiguration(.init(pointSize: 11, weight: .semibold))
-        closeButton.isBordered = false
-        closeButton.contentTintColor = .secondaryLabelColor
-        closeButton.target = self
-        closeButton.action = #selector(dismissPanel)
-        closeButton.toolTip = "Close"
-        closeButton.keyEquivalent = "\u{1b}"
-        closeButton.translatesAutoresizingMaskIntoConstraints = false
+        let divider = NSBox()
+        divider.boxType = .separator
+        divider.translatesAutoresizingMaskIntoConstraints = false
+        divider.widthAnchor.constraint(equalToConstant: 1).isActive = true
+
+        let row = NSStackView(views: [sidebar, divider, detail])
+        row.orientation = .horizontal
+        row.alignment = .top
+        row.distribution = .fill
+        row.spacing = 0
+
+        installChrome(around: row)
+        select(Section.general)
+    }
+
+    private func makeSidebar() -> NSView {
+        searchField.placeholderString = "Search settings…"
+        searchField.font = .systemFont(ofSize: 12)
+        searchField.target = self
+        searchField.action = #selector(searchChanged)
+        searchField.setAccessibilityLabel("Search settings")
+        searchField.translatesAutoresizingMaskIntoConstraints = false
+        searchField.heightAnchor.constraint(equalToConstant: 24).isActive = true
+
+        var views: [NSView] = [searchField]
+        for group in Self.catalog.groups {
+            if let title = group.title {
+                // Title Case here on purpose: in the reference design the
+                // sidebar's group headings read "Features" while the content
+                // headings above each card read "APPLICATION BASICS".
+                let header = PanelTheme.title(title, size: 11, weight: .semibold)
+                header.textColor = .secondaryLabelColor
+                views.append(spacer(height: 6))
+                views.append(header)
+            }
+            for section in group.sections {
+                let button = PanelSidebarButton(
+                    section: section, target: self, action: #selector(sidebarClicked(_:))
+                )
+                sidebarButtons.append(button)
+                views.append(button)
+            }
+        }
+        views.append(NSView())
+
+        let stack = NSStackView(views: views)
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 2
+        stack.edgeInsets = NSEdgeInsets(top: 16, left: 12, bottom: 12, right: 12)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        for view in [searchField] + sidebarButtons {
+            view.widthAnchor.constraint(
+                equalToConstant: PanelTheme.sidebarWidth - 24
+            ).isActive = true
+        }
+
+        let container = NSView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(stack)
         NSLayoutConstraint.activate([
-            closeButton.widthAnchor.constraint(equalToConstant: 24),
-            closeButton.heightAnchor.constraint(equalToConstant: 24),
+            container.widthAnchor.constraint(equalToConstant: PanelTheme.sidebarWidth),
+            container.heightAnchor.constraint(equalToConstant: Self.panelHeight),
+            stack.topAnchor.constraint(equalTo: container.topAnchor),
+            stack.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            stack.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: container.trailingAnchor),
         ])
+        return container
+    }
 
-        let header = NSStackView(views: [title, closeButton])
-        header.orientation = .horizontal
-        header.alignment = .centerY
-        header.distribution = .fill
+    private func makeDetail() -> NSView {
+        pages = [
+            Section.general: generalPage(),
+            Section.behavior: behaviorPage(),
+            Section.windows: windowsPage(),
+            Section.coats: coatsPage(),
+            Section.pixellab: pixellabPage(),
+            Section.support: supportPage(),
+        ]
 
-        let startupTitle = sectionTitle("Startup")
-        loginCheckbox.title = "Open Jumbini at login"
-        loginCheckbox.font = .systemFont(ofSize: 13, weight: .medium)
-        loginCheckbox.setAccessibilityLabel("Open Jumbini at login")
+        pageContainer.translatesAutoresizingMaskIntoConstraints = false
+
+        let container = PanelSurfaceView()
+        container.fill = PanelTheme.contentBackground
+        container.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(pageContainer)
+
+        NSLayoutConstraint.activate([
+            container.widthAnchor.constraint(
+                equalToConstant: Self.panelWidth - PanelTheme.sidebarWidth - 1
+            ),
+            container.heightAnchor.constraint(equalToConstant: Self.panelHeight),
+            pageContainer.topAnchor.constraint(equalTo: container.topAnchor),
+            pageContainer.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            pageContainer.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            pageContainer.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+        ])
+        return container
+    }
+
+    /// Wraps a page's sections in the scrolling pane every page shares.
+    private func page(_ views: [NSView]) -> NSView {
+        let stack = NSStackView(views: views)
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 10
+        stack.edgeInsets = NSEdgeInsets(
+            top: PanelTheme.contentInset,
+            left: PanelTheme.contentInset,
+            bottom: PanelTheme.contentInset,
+            right: PanelTheme.contentInset
+        )
+        return PanelBuilder.scrollPane(around: stack)
+    }
+
+    private func spacer(height: CGFloat) -> NSView {
+        let view = NSView()
+        view.translatesAutoresizingMaskIntoConstraints = false
+        view.heightAnchor.constraint(equalToConstant: height).isActive = true
+        return view
+    }
+
+    // MARK: - Pages
+
+    private func generalPage() -> NSView {
         loginCheckbox.target = self
         loginCheckbox.action = #selector(loginItemChanged)
 
-        // This line says whatever macOS just said, which is one calm sentence
-        // most of the time and a wrapped refusal occasionally. Rather than park
-        // four empty rows under the checkbox forever, the label sizes to its
-        // text and the panel re-fits around it — see resizeToFitContent().
         loginStatusLabel.font = .systemFont(ofSize: 11)
         loginStatusLabel.textColor = .secondaryLabelColor
         loginStatusLabel.maximumNumberOfLines = 4
         loginStatusLabel.lineBreakMode = .byWordWrapping
-        loginStatusLabel.preferredMaxLayoutWidth = Self.detailWidth
+        let statusWidth = Self.contentWidth - PanelTheme.cardInset * 2 - 20
+        loginStatusLabel.preferredMaxLayoutWidth = statusWidth
         loginStatusLabel.translatesAutoresizingMaskIntoConstraints = false
-        loginStatusLabel.widthAnchor.constraint(
-            equalToConstant: Self.detailWidth
-        ).isActive = true
-        let loginRow = NSStackView(views: [loginCheckbox, indented(loginStatusLabel)])
-        loginRow.orientation = .vertical
-        loginRow.alignment = .leading
-        loginRow.spacing = 2
+        loginStatusLabel.widthAnchor.constraint(equalToConstant: statusWidth).isActive = true
 
-        let startupDivider = NSBox()
-        startupDivider.boxType = .separator
+        let indent = NSView()
+        indent.translatesAutoresizingMaskIntoConstraints = false
+        indent.widthAnchor.constraint(equalToConstant: 20).isActive = true
+        let statusRow = NSStackView(views: [indent, loginStatusLabel])
+        statusRow.orientation = .horizontal
+        statusRow.alignment = .top
+        statusRow.spacing = 0
 
-        let featuresTitle = sectionTitle("Jumba's behavior")
-        let featuresIntro = detailLabel(
-            "Turn off the parts of his routine that do not belong on your desktop. Changes take effect immediately."
-        )
+        loginCheckbox.title = "Launch Jumbini at login"
+        loginCheckbox.font = .systemFont(ofSize: 13)
+        loginCheckbox.setAccessibilityLabel("Launch Jumbini at login")
 
-        let poopRow = featureRow(
-            checkbox: poopCheckbox,
-            title: "Bathroom breaks",
-            detail: "Allow hunching and piles, including after treats."
-        )
-        let reactionsRow = featureRow(
-            checkbox: reactionsCheckbox,
-            title: "Mac-aware reactions",
-            detail: "React to builds, heat, battery, Focus, and time away."
-        )
-        let climbingRow = featureRow(
-            checkbox: climbingCheckbox,
-            title: "Window climbing",
-            detail: "Watch nearby windows and patrol their title bars."
-        )
-        for checkbox in [poopCheckbox, reactionsCheckbox, climbingCheckbox] {
+        return page([
+            PanelTheme.sectionHeader("Application basics"),
+            PanelBuilder.card([loginCheckbox, statusRow], width: Self.contentWidth),
+        ])
+    }
+
+    private func behaviorPage() -> NSView {
+        for checkbox in [poopCheckbox, reactionsCheckbox] {
             checkbox.target = self
             checkbox.action = #selector(featureChanged)
         }
+        return page([
+            PanelTheme.sectionHeader("Jumba's routine"),
+            PanelBuilder.card(
+                [
+                    PanelBuilder.checkRow(
+                        poopCheckbox, title: "Bathroom breaks",
+                        detail: "Allow hunching and piles, including after treats.",
+                        width: Self.contentWidth
+                    ),
+                    PanelBuilder.checkRow(
+                        reactionsCheckbox, title: "Mac-aware reactions",
+                        detail: "React to builds, heat, battery, Focus, and time away.",
+                        width: Self.contentWidth
+                    ),
+                ],
+                width: Self.contentWidth
+            ),
+        ])
+    }
 
-        let divider = NSBox()
-        divider.boxType = .separator
+    private func windowsPage() -> NSView {
+        climbingCheckbox.target = self
+        climbingCheckbox.action = #selector(featureChanged)
+        return page([
+            PanelTheme.sectionHeader("Window climbing"),
+            PanelBuilder.card(
+                [
+                    PanelBuilder.checkRow(
+                        climbingCheckbox, title: "Climb onto windows",
+                        detail:
+                            "Watch nearby windows, patrol their title bars, hop between "
+                            + "neighbours, and nap on wide ones.",
+                        width: Self.contentWidth
+                    )
+                ],
+                width: Self.contentWidth
+            ),
+        ])
+    }
 
-        let apiTitle = sectionTitle("Pixellab API")
-        let apiIntro = detailLabel(
-            "Make Your Own Dog uses your Pixellab key. It stays in your login Keychain and is sent only to Pixellab."
-        )
+    private func coatsPage() -> NSView {
+        page([
+            PanelTheme.sectionHeader("Coats"),
+            PanelBuilder.card(
+                [
+                    PanelBuilder.linkRow(
+                        symbol: "square.stack.3d.up.fill", tint: .systemPink,
+                        title: "Coat Workshop",
+                        subtitle: "Import, validate, preview and install custom coats",
+                        width: Self.contentWidth, target: self,
+                        action: #selector(openCoatWorkshop)
+                    ),
+                    PanelBuilder.linkRow(
+                        symbol: "wand.and.stars", tint: .systemPurple,
+                        title: "Make Your Own Dog",
+                        subtitle: "Generate a coat from three photos via Pixellab",
+                        width: Self.contentWidth, target: self,
+                        action: #selector(openDogGenerator)
+                    ),
+                ],
+                width: Self.contentWidth
+            ),
+        ])
+    }
 
+    private func pixellabPage() -> NSView {
         keyStatusLabel.font = .systemFont(ofSize: 12, weight: .medium)
         keyStatusLabel.maximumNumberOfLines = 2
 
+        let fieldWidth = Self.contentWidth - PanelTheme.cardInset * 2
         apiKeyField.placeholderString = "Paste a Pixellab API key"
         apiKeyField.setAccessibilityLabel("Pixellab API key")
         apiKeyField.translatesAutoresizingMaskIntoConstraints = false
-        apiKeyField.widthAnchor.constraint(
-            equalToConstant: Self.panelWidth - Self.inset * 2
-        ).isActive = true
+        apiKeyField.widthAnchor.constraint(equalToConstant: fieldWidth).isActive = true
 
         saveKeyButton.target = self
         saveKeyButton.action = #selector(saveAPIKey)
         saveKeyButton.keyEquivalent = "\r"
         removeKeyButton.target = self
         removeKeyButton.action = #selector(removeAPIKey)
-        let keyActions = NSStackView(views: [saveKeyButton, removeKeyButton])
-        keyActions.orientation = .horizontal
-        keyActions.spacing = 8
+        let actions = NSStackView(views: [saveKeyButton, removeKeyButton])
+        actions.orientation = .horizontal
+        actions.spacing = 8
 
         keyFeedbackLabel.font = .systemFont(ofSize: 11)
         keyFeedbackLabel.textColor = .secondaryLabelColor
         keyFeedbackLabel.maximumNumberOfLines = 3
-        keyFeedbackLabel.preferredMaxLayoutWidth = Self.panelWidth - Self.inset * 2
+        keyFeedbackLabel.preferredMaxLayoutWidth = fieldWidth
         keyFeedbackLabel.translatesAutoresizingMaskIntoConstraints = false
-        keyFeedbackLabel.heightAnchor.constraint(greaterThanOrEqualToConstant: 34).isActive = true
+        keyFeedbackLabel.widthAnchor.constraint(equalToConstant: fieldWidth).isActive = true
 
-        let stack = NSStackView(views: [
-            header,
-            startupTitle,
-            loginRow,
-            startupDivider,
-            featuresTitle,
-            featuresIntro,
-            poopRow,
-            reactionsRow,
-            climbingRow,
-            divider,
-            apiTitle,
-            apiIntro,
-            keyStatusLabel,
-            apiKeyField,
-            keyActions,
-            keyFeedbackLabel,
+        return page([
+            PanelTheme.sectionHeader("Pixellab API"),
+            PanelTheme.subtitle(
+                "Make Your Own Dog uses your Pixellab key. It stays in your login Keychain "
+                    + "and is sent only to Pixellab.",
+                width: Self.contentWidth
+            ),
+            PanelBuilder.card(
+                [keyStatusLabel, apiKeyField, actions, keyFeedbackLabel],
+                width: Self.contentWidth
+            ),
         ])
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 10
-        stack.edgeInsets = NSEdgeInsets(
-            top: Self.inset,
-            left: Self.inset,
-            bottom: Self.inset,
-            right: Self.inset
-        )
+    }
 
-        let contentWidth = Self.contentWidth
-        for view in [
-            header, startupDivider, featuresIntro, divider, apiIntro, keyStatusLabel,
-            keyFeedbackLabel,
-        ] {
-            view.translatesAutoresizingMaskIntoConstraints = false
-            view.widthAnchor.constraint(equalToConstant: contentWidth).isActive = true
+    private func supportPage() -> NSView {
+        page([
+            PanelTheme.sectionHeader("About"),
+            PanelBuilder.card(
+                [PanelTheme.title(AppVersion.menuTitle, size: 13, weight: .medium)],
+                width: Self.contentWidth
+            ),
+            PanelTheme.sectionHeader("Help"),
+            PanelBuilder.card(
+                [
+                    PanelBuilder.linkRow(
+                        symbol: "ladybug.fill", tint: .systemRed, title: "Report a Bug",
+                        subtitle: "Help improve Jumbini by reporting issues",
+                        width: Self.contentWidth, target: self, action: #selector(reportBug)
+                    ),
+                    PanelBuilder.linkRow(
+                        symbol: "chevron.left.forwardslash.chevron.right", tint: .systemPurple,
+                        title: "View Source Code",
+                        subtitle: "Jumbini is open source on GitHub",
+                        width: Self.contentWidth, target: self, action: #selector(viewSource)
+                    ),
+                ],
+                width: Self.contentWidth
+            ),
+        ])
+    }
+
+    // MARK: - Selection
+
+    private func select(_ identifier: String) {
+        selectedIdentifier = identifier
+        for button in sidebarButtons {
+            button.isSelectedRow = button.identifier?.rawValue == identifier
         }
-        for separator in [startupDivider, divider] {
-            separator.heightAnchor.constraint(equalToConstant: 1).isActive = true
-        }
-
-        contentStack = stack
-        contentView = makeBackdrop(around: stack)
-        resizeToFitContent()
-    }
-
-    /// The panel is borderless and has no layout of its own, so it takes its
-    /// height from the stack, and takes it again whenever the login status line
-    /// changes length.
-    private func resizeToFitContent() {
-        guard let contentStack else { return }
-        contentStack.layoutSubtreeIfNeeded()
-        let top = frame.maxY
-        setContentSize(NSSize(width: Self.panelWidth, height: contentStack.fittingSize.height))
-        // While it is on screen, grow downward from a fixed top edge: a refusal
-        // that wraps onto an extra line must not shove the whole panel up out
-        // from under the pointer that just clicked the checkbox. Before it is
-        // shown there is no position worth keeping — present() centers it.
-        guard isVisible else { return }
-        setFrameOrigin(NSPoint(x: frame.origin.x, y: top - frame.height))
-    }
-
-    private func sectionTitle(_ text: String) -> NSTextField {
-        let label = NSTextField(labelWithString: text)
-        label.font = .systemFont(ofSize: 13, weight: .semibold)
-        return label
-    }
-
-    private func detailLabel(_ text: String) -> NSTextField {
-        let label = NSTextField(wrappingLabelWithString: text)
-        label.font = .systemFont(ofSize: 11)
-        label.textColor = .secondaryLabelColor
-        label.preferredMaxLayoutWidth = Self.panelWidth - Self.inset * 2
-        return label
-    }
-
-    private func featureRow(
-        checkbox: NSButton,
-        title: String,
-        detail: String
-    ) -> NSStackView {
-        checkbox.title = title
-        checkbox.font = .systemFont(ofSize: 13, weight: .medium)
-        checkbox.setAccessibilityLabel(title)
-        let row = NSStackView(views: [checkbox, indented(detailLabel(detail))])
-        row.orientation = .vertical
-        row.alignment = .leading
-        row.spacing = 2
-        return row
-    }
-
-    /// Line up secondary text under the checkbox title rather than under its box.
-    private func indented(_ view: NSView) -> NSStackView {
-        let indent = NSView()
-        indent.translatesAutoresizingMaskIntoConstraints = false
-        indent.widthAnchor.constraint(equalToConstant: Self.indentWidth).isActive = true
-        let row = NSStackView(views: [indent, view])
-        row.orientation = .horizontal
-        row.alignment = .top
-        row.spacing = 0
-        return row
-    }
-
-    private func makeBackdrop(around content: NSView) -> NSView {
-        content.translatesAutoresizingMaskIntoConstraints = false
-
-        let backdrop: NSView
-        if #available(macOS 26.0, *) {
-            let glass = NSGlassEffectView()
-            glass.cornerRadius = Self.cornerRadius
-            glass.contentView = content
-            backdrop = glass
-        } else {
-            let blur = NSVisualEffectView()
-            blur.material = .hudWindow
-            blur.blendingMode = .behindWindow
-            blur.state = .active
-            blur.wantsLayer = true
-            blur.layer?.cornerRadius = Self.cornerRadius
-            blur.layer?.masksToBounds = true
-            blur.addSubview(content)
-            backdrop = blur
-        }
-
+        pageContainer.subviews.forEach { $0.removeFromSuperview() }
+        guard let page = pages[identifier] else { return }
+        page.translatesAutoresizingMaskIntoConstraints = false
+        pageContainer.addSubview(page)
         NSLayoutConstraint.activate([
-            content.topAnchor.constraint(equalTo: backdrop.topAnchor),
-            content.bottomAnchor.constraint(equalTo: backdrop.bottomAnchor),
-            content.leadingAnchor.constraint(equalTo: backdrop.leadingAnchor),
-            content.trailingAnchor.constraint(equalTo: backdrop.trailingAnchor),
+            page.topAnchor.constraint(equalTo: pageContainer.topAnchor, constant: 36),
+            page.bottomAnchor.constraint(equalTo: pageContainer.bottomAnchor),
+            page.leadingAnchor.constraint(equalTo: pageContainer.leadingAnchor),
+            page.trailingAnchor.constraint(equalTo: pageContainer.trailingAnchor),
         ])
-        return backdrop
     }
+
+    @objc private func sidebarClicked(_ sender: NSButton) {
+        guard let identifier = sender.identifier?.rawValue else { return }
+        select(identifier)
+    }
+
+    /// Typing jumps to the first section whose name matches. Deliberately not a
+    /// content-wide index: six pages do not need one, and a search that silently
+    /// missed a setting would be worse than no search at all.
+    @objc private func searchChanged() {
+        guard let match = Self.catalog.firstMatch(for: searchField.stringValue) else { return }
+        select(match.identifier)
+    }
+
+    // MARK: - State
 
     private func reload() {
         // Login state is read from macOS on every open, never remembered. If
@@ -349,7 +493,6 @@ final class SettingsPanel: NSPanel {
         loginCheckbox.setAccessibilityHelp(state.message)
         loginStatusLabel.textColor = state.isFailure ? .systemRed : .secondaryLabelColor
         loginStatusLabel.stringValue = state.message
-        resizeToFitContent()
         guard announcing, state.needsAttention else { return }
         announce(state.message)
     }
@@ -367,6 +510,8 @@ final class SettingsPanel: NSPanel {
             ]
         )
     }
+
+    // MARK: - Actions
 
     /// Registration happens now, and the row redraws from whatever macOS
     /// reports afterwards — including a refusal, which is reported inline and
@@ -416,14 +561,29 @@ final class SettingsPanel: NSPanel {
         }
     }
 
-    @objc private func dismissPanel() {
-        orderOut(nil)
+    @objc private func openCoatWorkshop() {
+        onOpenCoatWorkshop?()
+    }
+
+    @objc private func openDogGenerator() {
+        onOpenDogGenerator?()
+    }
+
+    @objc private func reportBug() {
+        open("https://github.com/abjumb/jumbini/issues/new")
+    }
+
+    @objc private func viewSource() {
+        open("https://github.com/abjumb/jumbini")
+    }
+
+    private func open(_ string: String) {
+        guard let url = URL(string: string) else { return }
+        NSWorkspace.shared.open(url)
     }
 
     func present() {
         reload()
-        center()
-        orderFrontRegardless()
-        makeKey()
+        presentPanel()
     }
 }
