@@ -460,6 +460,14 @@ final class PetScene: SKScene {
         applyCoat(coat)
     }
 
+    /// Select a coat by id programmatically — used by "Make Your Own Dog" to
+    /// put the freshly written coat on screen without a relaunch. No-op if the
+    /// id isn't in the catalog (e.g. the write failed).
+    func selectCoat(id: String) {
+        guard let coat = availableCoats().first(where: { $0.id == id }) else { return }
+        applyCoat(coat)
+    }
+
     // MARK: - Frame loop
 
     override func update(_ currentTime: TimeInterval) {

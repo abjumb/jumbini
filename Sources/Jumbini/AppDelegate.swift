@@ -27,6 +27,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // background update checks and the "Check for Updates…" UI.
     private var updaterController: SPUStandardUpdaterController?
 
+    // Make Your Own Dog: the generation panel, kept alive while open.
+    private var dogGeneratorPanel: DogGeneratorPanel?
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         setUpUpdater()
         setUpStatusItem()
@@ -158,6 +161,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         camItem.target = self
         menu.addItem(camItem)
         // Jumbini Cam block end.
+        let makeDogItem = NSMenuItem(title: "Make Your Own Dog", action: #selector(openDogGenerator), keyEquivalent: "")
+        makeDogItem.target = self
+        menu.addItem(makeDogItem)
         let muteItem = NSMenuItem(title: "Mute Sounds", action: #selector(toggleMute(_:)), keyEquivalent: "")
         muteItem.target = self
         muteItem.state = UserDefaults.standard.bool(forKey: "soundMuted") ? .on : .off
@@ -337,5 +343,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             pasteboard.setData(png, forType: .png)
         }
         pasteboard.writeObjects([image])
+    }
+
+    // MARK: - Make Your Own Dog
+
+    /// Open the generation panel. The panel owns the picker and progress UI;
+    /// the closures here run the real pipeline and select the result, so the
+    /// panel itself stays free of any Pixellab or coat-disk knowledge.
+    @objc private func openDogGenerator() {
+        let panel = DogGeneratorPanel()
+        panel.generate = { photos in
+            let sprites = try await DogGenerator.generate(photos: photos, client: PixellabClient())
+            let support = try FileManager.default.url(
+                for: .applicationSupportDirectory, in: .userDomainMask,
+                appropriateFor: nil, create: true
+            )
+            let coatsDirectory = support.appendingPathComponent("Jumbini/coats", isDirectory: true)
+            try DogGenerator.writeCoat(
+                sprites,
+                to: coatsDirectory.appendingPathComponent(DogGenerator.coatID, isDirectory: true)
+            )
+            guard let preview = sprites[.idle]?[.south] else {
+                throw DogGeneratorError.missingFrame(.idle, .south)
+            }
+            return preview
+        }
+        panel.onApply = { [weak self] in
+            self?.scene?.selectCoat(id: DogGenerator.coatID)
+        }
+        panel.present()
+        dogGeneratorPanel = panel
     }
 }

@@ -236,13 +236,18 @@ Paste it into Slack. That is the whole feature.
 
 Worth stating plainly, because a lot of things in this category do:
 
-- **No network.** He never phones home. There is nothing to phone home to.
+- **No network — for Jumba.** The hand-drawn dog never phones home. There is nothing to
+  phone home to. The one exception is the optional **Make Your Own Dog** feature, which
+  calls the Pixellab API (and only Pixellab) to turn three photos into a coat. Skip it and
+  the app makes no network calls at all.
 - **No account, no login, no telemetry, no analytics.**
 - **No permissions.** No Accessibility, no Screen Recording, no Full Disk Access, no
   Input Monitoring. He reads window geometry, idle time, battery and thermal state through
   public APIs that require no prompt, and reads nothing else.
-- **No AI.** No model, no API key, no chat. He is a state machine with 29 states and a
-  dice roll, and he does not have anything to say to you.
+- **No AI — for Jumba.** He is a state machine with 29 states and a dice roll, and he does
+  not have anything to say to you. The optional **Make Your Own Dog** feature is the one
+  place a model touches the app: it generates your dog's sprites from your photos via
+  Pixellab. Nothing else is generated, and nothing you make is shared.
 - **No purchases, no cosmetic packs, no subscription, no ads.**
 
 What he *is*: signed with a Developer ID certificate and notarized by Apple, which is how
@@ -271,9 +276,22 @@ the result.
 Other scripts:
 
 ```bash
-./Scripts/test.sh            # run the test suite (327 tests)
+./Scripts/test.sh            # run the test suite (336 tests)
 ./Scripts/dmg.sh             # → build/Jumbini.dmg, drag-to-Applications layout
 ```
+
+### Make Your Own Dog needs your own Pixellab key
+
+No API key ships in the binary, so **Make Your Own Dog** is inert until you supply one.
+Everything else — Jumba himself, every state, every trick — works with no key and no
+network. Get a key from [Pixellab](https://www.pixellab.ai/) and put it in your keychain:
+
+```bash
+security add-generic-password -s ai.pixellab.api -a Jumbini -w <your-key>
+```
+
+For development, `$PIXELLAB_API_KEY` is checked first and takes precedence. A launched
+`.app` inherits no environment, so the keychain is the one that works for a real build.
 
 While iterating, the relaunch loop is:
 
