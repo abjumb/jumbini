@@ -113,8 +113,17 @@ DELIVER_W="${JUMBINI_DELIVER_W:-1440}"
 #
 # TAIL is what keeps the app's own termination outside the encode window; the
 # clip's last frame is at D - 1/30, and the app quits at D + one driver tick.
+#
+# BOTH halves of LEAD are measured, not assumed. WARMUP as above; the app's
+# launch is timed by polling LaunchServices for its check-in (see
+# wait_for_app), which is also what pays the Gatekeeper cost once before the
+# first take instead of inside it.
 LEAD=3.0
 TAIL=1.5
+
+# Tenths of a second. Every poll below is bounded by this: a poll that can hang
+# forever is a worse failure than the fixed sleep it replaces.
+LAUNCH_CEILING=600
 
 die() { echo "capture: $*" >&2; exit 1; }
 
@@ -132,6 +141,40 @@ sleep_until() {
   if awk -v r="$remaining" 'BEGIN { exit (r > 0) ? 0 : 1 }'; then
     sleep "$remaining"
   fi
+}
+
+# LaunchServices check-in is the cheapest "it is actually up" signal that needs
+# no permission at all — no Accessibility, no window-server query. A GUI app
+# registers here inside NSApplicationMain, which is after dyld and after
+# Gatekeeper has finished assessing the bundle: the part of a launch that can
+# take seconds on a throwaway account's first run.
+app_registered() {
+  [ -n "$(lsappinfo find "bundleID=$BUNDLE_ID" 2>/dev/null)" ]
+}
+
+# 0 = up, 1 = the process died on the way, 2 = ceiling reached.
+wait_for_app() {
+  local pid="$1" ticks=0
+  while [ "$ticks" -lt "$LAUNCH_CEILING" ]; do
+    kill -0 "$pid" 2>/dev/null || return 1
+    if app_registered; then return 0; fi
+    sleep 0.1
+    ticks=$((ticks + 1))
+  done
+  return 2
+}
+
+# LaunchServices deregisters asynchronously, so without this the next take's
+# wait_for_app would return instantly against the previous take's stale
+# registration and measure a launch time of nothing.
+wait_for_app_gone() {
+  local ticks=0
+  while [ "$ticks" -lt "$LAUNCH_CEILING" ]; do
+    app_registered || return 0
+    sleep 0.1
+    ticks=$((ticks + 1))
+  done
+  return 2
 }
 
 # Any die() inside the shot loop used to leave the app running, the staged
@@ -155,6 +198,11 @@ command -v ffmpeg >/dev/null || die "ffmpeg missing. Run: brew install ffmpeg"
 command -v ffprobe >/dev/null || die "ffprobe missing (it ships with ffmpeg). Run: brew install ffmpeg"
 [ -x "$BIN" ] || die "no app at $BIN. Set JUMBINI_APP to the built Jumbini.app — in the capture account it is the one staged next to this script, and there is no repo here to build one from."
 mkdir -p "$RAW"
+
+# Read from the bundle rather than hardcoded, so the readiness poll and the
+# UserDefaults reset below can never drift apart from the app being filmed.
+BUNDLE_ID=$(plutil -extract CFBundleIdentifier raw -o - "$APP/Contents/Info.plist" 2>/dev/null || true)
+[ -n "$BUNDLE_ID" ] || die "no CFBundleIdentifier in $APP/Contents/Info.plist — is that really a built Jumbini.app?"
 
 # ---------------------------------------------------------------------------
 # Automation (Apple Events) consent — the second and third permissions.
@@ -325,6 +373,42 @@ for shot in "${shots[@]}"; do
   [ -f "$SHOTS/$shot.json" ] || die "no shot script at $SHOTS/$shot.json"
 done
 
+# ---------------------------------------------------------------------------
+# Pay the cold-launch cost once, outside every take.
+#
+# LEAD has to cover the app's launch as well as the recorder's warm-up, and the
+# FIRST launch of a freshly staged bundle is the slow one: Gatekeeper assesses
+# it before any of our code runs, and on a throwaway account that can take
+# seconds. Landing that inside take one would mean the dog's t=0 had already
+# passed by the time the scene existed, every opening beat firing in a single
+# tick, and a clip that opens on an empty desktop — across all nine takes, on
+# the run that matters most.
+#
+# So the app is launched once here WITHOUT JUMBINI_DEMO. The driver is not
+# constructed (that is the gate, and it is tested), so it just sits there while
+# we time it and kill it. That warms Gatekeeper AND proves the cold launch fits
+# inside LEAD before a single frame is recorded.
+echo "capture: warming the app — the first launch is the one that pays for Gatekeeper"
+warm_start=$(now)
+"$BIN" &
+app_pid=$!
+ready=0
+wait_for_app "$app_pid" || ready=$?
+case "$ready" in
+  1) die "Jumbini exited immediately on a plain launch — check Console.app for a crash log" ;;
+  2) die "Jumbini did not register with LaunchServices within $((LAUNCH_CEILING / 10))s of launching. Something is wrong with the bundle at $APP." ;;
+esac
+cold_launch=$(calc "$(now) - $warm_start")
+kill "$app_pid" 2>/dev/null || true
+wait "$app_pid" 2>/dev/null || true
+app_pid=""
+wait_for_app_gone \
+  || die "Jumbini is still registered with LaunchServices $((LAUNCH_CEILING / 10))s after being killed — is another copy already running?"
+
+echo "capture: cold launch took ${cold_launch}s (lead is ${LEAD}s)"
+awk -v l="$cold_launch" -v lead="$LEAD" 'BEGIN { exit (l < lead) ? 0 : 1 }' \
+  || die "the app takes ${cold_launch}s to launch but LEAD is ${LEAD}s, so the dog's t=0 would pass before his scene existed and every clip would open on an empty desktop. Raise LEAD at the top of this script to comfortably more than ${cold_launch}s and re-run."
+
 original_dnd_note="Do Not Disturb is left on for the session; turn it off when you are done."
 echo "capture: enabling Do Not Disturb — $original_dnd_note"
 shortcuts run "Turn On Do Not Disturb" 2>/dev/null || {
@@ -347,7 +431,7 @@ for shot in "${shots[@]}"; do
   # A pile left by the previous take would sit in the corner of this one.
   # UserDefaults is the only state the dog persists — coat, bed, wardrobe,
   # sound-muted, and trick-training progress — and this clears all of it.
-  defaults delete com.alex.jumbini 2>/dev/null || true
+  defaults delete "$BUNDLE_ID" 2>/dev/null || true
 
   osascript "$HERE/stage-windows.applescript" open
   sleep 1
@@ -365,11 +449,16 @@ for shot in "${shots[@]}"; do
   driver_start=$(calc "$t_rec + $LEAD")
   JUMBINI_DEMO="$script" JUMBINI_DEMO_START="$driver_start" "$BIN" &
   app_pid=$!
-  # The app has all of LEAD to reach applicationDidFinishLaunching and build
-  # the scene; this only checks it did not die trying.
-  sleep 2
-  kill -0 "$app_pid" 2>/dev/null \
-    || die "Jumbini exited immediately after launch — check Console.app for a crash log"
+  # Wait for the app to actually be up rather than assuming two seconds covers
+  # it. t_ready is the other half of the LEAD budget, checked after the take
+  # alongside the recorder's warm-up.
+  ready=0
+  wait_for_app "$app_pid" || ready=$?
+  case "$ready" in
+    1) die "Jumbini exited immediately after launch — check Console.app for a crash log" ;;
+    2) die "Jumbini did not register with LaunchServices within $((LAUNCH_CEILING / 10))s while shooting $shot" ;;
+  esac
+  t_ready=$(now)
 
   # The flagship needs the window moved underneath him mid-take. These are
   # clip-relative — driver seconds, the same clock the shot's beats are on —
@@ -391,6 +480,8 @@ for shot in "${shots[@]}"; do
   kill "$app_pid" 2>/dev/null || true
   wait "$app_pid" 2>/dev/null || true
   app_pid=""
+  wait_for_app_gone \
+    || echo "capture: WARNING Jumbini is still registered with LaunchServices after $shot — the next take may measure its launch as instant"
   osascript "$HERE/stage-windows.applescript" close
 
   echo "capture: encoding $shot"
@@ -410,7 +501,16 @@ for shot in "${shots[@]}"; do
     echo "capture: WARNING the opening beats are off camera. Raise LEAD in this script and re-shoot $shot."
     trim=0
   fi
-  echo "capture: $shot warm-up ${warmup}s, trimming ${trim}s of pre-roll"
+
+  # The other half of the LEAD budget. The app must be up before its own t=0 at
+  # t_rec + LEAD; if it was not, the driver's clock had already started, every
+  # overdue beat came out in one tick, and the clip opens on an empty desktop.
+  ready_at=$(calc "$t_ready - $t_rec")
+  if awk -v r="$ready_at" -v l="$LEAD" 'BEGIN { exit (r > l) ? 0 : 1 }'; then
+    echo "capture: WARNING $shot's app was not up until ${ready_at}s, past its t=0 at ${LEAD}s."
+    echo "capture: WARNING the opening beats fired late and all at once. Raise LEAD in this script and re-shoot $shot."
+  fi
+  echo "capture: $shot warm-up ${warmup}s, app ready at ${ready_at}s of a ${LEAD}s lead, trimming ${trim}s of pre-roll"
 
   ffmpeg -y -loglevel error -ss "$trim" -i "$RAW/$shot.mov" -t "$duration" \
     -vf "$filter" -r 30 \
