@@ -276,7 +276,7 @@ the result.
 Other scripts:
 
 ```bash
-./Scripts/test.sh            # run the test suite (336 tests)
+./Scripts/test.sh            # run the test suite (378 tests)
 ./Scripts/dmg.sh             # → build/Jumbini.dmg, drag-to-Applications layout
 ```
 
@@ -361,7 +361,7 @@ end up with a dog walking on the ceiling.
 | `Sources/Jumbini/Ball.swift` | 71 | Tennis ball: throw arc, bounce, landing callback |
 | `Sources/Jumbini/EmoteBubble.swift` | 71 | The thought bubble. Deliberately ignorant of why it was asked for |
 | `Sources/Jumbini/OverlayWindow.swift` | 46 | Borderless non-activating `NSPanel` at status-bar level, click-through by default |
-| `Tests/JumbiniTests/` | 3931 | 327 deterministic tests across brain, tricks, system signals, window surfaces, screen layout and coat resolution |
+| `Tests/JumbiniTests/` | 4703 | 378 deterministic tests across brain, tricks, system signals, window surfaces, screen layout and coat resolution |
 
 ### Two details worth knowing
 
@@ -445,7 +445,7 @@ Sources/Jumbini/           app code
   Resources/sprites/       props, emote icons, 12 bed variants, wardrobe
   Resources/audio/         3 barks, growl, whine, yip, squeak, grunt, chime, shutter
   Resources/Icons/         menu bar icon (16 and 32 px)
-Tests/JumbiniTests/        327 deterministic tests
+Tests/JumbiniTests/        378 deterministic tests
 Tools/                     import_jumba.py, import_kit_art.py, import_kit_props.py, make_sprites.py
 Scripts/                   test.sh, bundle.sh, dmg.sh, Info.plist
 icon/                      app icon sources and iconsets
