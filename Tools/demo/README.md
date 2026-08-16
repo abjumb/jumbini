@@ -94,6 +94,14 @@ rate from `animations.json`, so a `steps()` loop on the website runs at the
 rate the app plays the same animation. `idle` and `sit` are single frames in
 the app's table, so they get a static rule and no `@keyframes`.
 
+The sheets render at `JUMBINI_HERO_SCALE` (default 2) output pixels per pixel
+of source art, nearest-neighbour, and the CSS declares one CSS pixel per image
+pixel. That is a 1x asset on purpose: for pixel art what matters is landing on
+an integer multiple of the source grid, not on the device pixel ratio. To
+render bigger, re-run with `JUMBINI_HERO_SCALE=4` — the PNGs and every number
+in `hero.css` scale together. The generated file explains this at the top so
+whoever assembles the page does not have to guess.
+
 To render one sheet by hand:
 
     swift run --package-path Tools/demo/spritefilm spritefilm sheet \
