@@ -1,0 +1,8 @@
+{
+  "name": "build-party",
+  "duration": 7.0,
+  "showCursor": false,
+  "beats": [
+    { "at": 1.5, "kind": "system", "signal": "buildFinished" }
+  ]
+}

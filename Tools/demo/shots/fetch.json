@@ -1,0 +1,10 @@
+{
+  "name": "fetch",
+  "duration": 12.0,
+  "showCursor": true,
+  "beats": [
+    { "at": 1.0, "kind": "command", "command": "fetch" },
+    { "at": 2.0, "kind": "cursor", "x": 1700, "y": 500 },
+    { "at": 11.5, "kind": "wait" }
+  ]
+}

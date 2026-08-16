@@ -1,0 +1,11 @@
+{
+  "name": "tricks",
+  "duration": 10.0,
+  "showCursor": false,
+  "beats": [
+    { "at": 0.8, "kind": "command", "command": "trick:Shake" },
+    { "at": 3.0, "kind": "command", "command": "trick:High Five" },
+    { "at": 5.2, "kind": "command", "command": "trick:Play Dead" },
+    { "at": 7.6, "kind": "command", "command": "trick:Roll Over" }
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "name": "thermal",
+  "duration": 8.0,
+  "showCursor": false,
+  "beats": [
+    { "at": 1.0, "kind": "system", "signal": "fansUp" }
+  ]
+}

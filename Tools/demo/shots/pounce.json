@@ -1,0 +1,12 @@
+{
+  "name": "pounce",
+  "duration": 10.0,
+  "showCursor": true,
+  "beats": [
+    { "at": 0.5, "kind": "cursor", "x": 900, "y": 700 },
+    { "at": 2.5, "kind": "cursor", "x": 1100, "y": 640 },
+    { "at": 4.0, "kind": "cursor", "x": 1180, "y": 700 },
+    { "at": 5.5, "kind": "cursor", "x": 1120, "y": 760 },
+    { "at": 7.0, "kind": "cursor", "x": 1200, "y": 720 }
+  ]
+}

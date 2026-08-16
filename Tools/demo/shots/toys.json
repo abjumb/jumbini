@@ -1,0 +1,11 @@
+{
+  "name": "toys",
+  "duration": 14.0,
+  "showCursor": true,
+  "beats": [
+    { "at": 0.5, "kind": "command", "command": "toy:frisbee" },
+    { "at": 1.5, "kind": "cursor", "x": 1500, "y": 600 },
+    { "at": 6.0, "kind": "command", "command": "toy:squeaky" },
+    { "at": 10.0, "kind": "command", "command": "toy:rope" }
+  ]
+}
