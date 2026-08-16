@@ -53,12 +53,23 @@ final class PixellabClient: PixellabClientProtocol {
     /// "generation is unavailable" rather than failing at launch — which is
     /// what every build from a fresh clone will do.
     static func resolveAPIKey() -> String? {
-        if let fromEnvironment = ProcessInfo.processInfo.environment["PIXELLAB_API_KEY"],
-           case let trimmed = fromEnvironment.trimmingCharacters(in: .whitespacesAndNewlines),
-           !trimmed.isEmpty {
-            return trimmed
-        }
+        if let environmentAPIKey { return environmentAPIKey }
         return keychainAPIKey()
+    }
+
+    /// Settings reports environment overrides separately from the persisted
+    /// Keychain value so the source of the active credential is never vague.
+    static var hasEnvironmentAPIKey: Bool { environmentAPIKey != nil }
+
+    /// Whether Settings has a persisted key it can replace or remove.
+    static var hasStoredAPIKey: Bool { keychainAPIKey() != nil }
+
+    private static var environmentAPIKey: String? {
+        guard let value = ProcessInfo.processInfo.environment["PIXELLAB_API_KEY"] else {
+            return nil
+        }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     /// Read the key out of the login keychain. Any failure — no item, locked
@@ -83,6 +94,63 @@ final class PixellabClient: PixellabClientProtocol {
         return key
     }
 
+    /// Save or replace the login-Keychain credential used by a launched app.
+    static func storeAPIKey(_ rawValue: String) throws {
+        let key = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty else { throw APIKeyStoreError.emptyKey }
+        let data = Data(key.utf8)
+        let identity: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: keychainService,
+            kSecAttrAccount as String: keychainAccount,
+        ]
+        let updateStatus = SecItemUpdate(
+            identity as CFDictionary,
+            [kSecValueData as String: data] as CFDictionary
+        )
+        if updateStatus == errSecSuccess { return }
+        guard updateStatus == errSecItemNotFound else {
+            throw APIKeyStoreError.keychain(updateStatus)
+        }
+
+        var item = identity
+        item[kSecValueData as String] = data
+        let addStatus = SecItemAdd(item as CFDictionary, nil)
+        guard addStatus == errSecSuccess else {
+            throw APIKeyStoreError.keychain(addStatus)
+        }
+    }
+
+    /// Remove only the persisted key. A development environment override is
+    /// process-owned and intentionally cannot be mutated by the app.
+    static func removeStoredAPIKey() throws {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: keychainService,
+            kSecAttrAccount as String: keychainAccount,
+        ]
+        let status = SecItemDelete(query as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else {
+            throw APIKeyStoreError.keychain(status)
+        }
+    }
+
+    enum APIKeyStoreError: Error, LocalizedError {
+        case emptyKey
+        case keychain(OSStatus)
+
+        var errorDescription: String? {
+            switch self {
+            case .emptyKey:
+                return "Paste a Pixellab API key before saving."
+            case .keychain(let status):
+                let detail = SecCopyErrorMessageString(status, nil) as String?
+                return detail.map { "The Keychain could not be updated: \($0)" }
+                    ?? "The Keychain could not be updated (error \(status))."
+            }
+        }
+    }
+
     enum PixellabError: Error, LocalizedError {
         case missingAPIKey
         case invalidResponse
@@ -92,10 +160,7 @@ final class PixellabClient: PixellabClientProtocol {
         var errorDescription: String? {
             switch self {
             case .missingAPIKey:
-                return """
-                    No Pixellab API key is configured. Add one to your keychain:
-                    security add-generic-password -s ai.pixellab.api -a Jumbini -w <key>
-                    """
+                return "No Pixellab API key is configured. Open Jumbini Settings to add one."
             case .invalidResponse:
                 return "Pixellab returned an unexpected response."
             case .httpStatus(let code):

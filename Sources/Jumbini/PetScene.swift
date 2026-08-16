@@ -13,6 +13,8 @@ final class PetScene: SKScene {
     /// Anything that picks a spot for something goes through here.
     /// Kept current by `apply(layout:)` when displays come and go.
     private(set) var layout: ScreenLayout
+    /// The single settings snapshot loaded by AppDelegate for this launch.
+    private let initialSettings: JumbiniSettings
 
     private let dog = Dog()
     private var ball: Ball?
@@ -100,8 +102,9 @@ final class PetScene: SKScene {
     /// Keeps the grab point under the cursor while carrying (no center-snap).
     private var carryGrabOffset: CGPoint = .zero
 
-    init(layout: ScreenLayout) {
+    init(layout: ScreenLayout, settings: JumbiniSettings) {
         self.layout = layout
+        initialSettings = settings
         super.init(size: layout.size)
         backgroundColor = .clear
         scaleMode = .resizeFill
@@ -158,6 +161,9 @@ final class PetScene: SKScene {
 
         brain = DogBrain(bounds: size, position: dog.position)
         brain.bedPosition = bedLieSpot()
+        brain.poopEnabled = initialSettings.poopEnabled
+        brain.windowClimbingEnabled = initialSettings.windowClimbingEnabled
+        windowClimbingEnabled = initialSettings.windowClimbingEnabled
         apply(effects: [.play(.idle)])
         startWatchingWindows()
     }
@@ -1210,6 +1216,9 @@ final class PetScene: SKScene {
     /// Polls the window server and keeps `brain.surfaces` current. nil once
     /// the scene has been torn down.
     private var windowSurfaces: WindowSurfaces?
+    /// Pause and the user's feature setting independently gate polling.
+    private var windowWatchingActive = true
+    private var windowClimbingEnabled = true
     /// The soft blob under his feet while he's on a ledge — or on the ground
     /// he's falling towards. nil until the first time one is needed.
     private var contactShadow: SKSpriteNode?
@@ -1233,8 +1242,8 @@ final class PetScene: SKScene {
             return SurfaceGeometry.forOverlay(layout: self.layout)
         })
         watcher.onUpdate = { [weak self] surfaces in self?.windowsChanged(to: surfaces) }
-        watcher.start()
         windowSurfaces = watcher
+        updateWindowWatching()
     }
 
     /// A fresh reading of the windows on screen. Two things happen here, in
@@ -1307,7 +1316,31 @@ final class PetScene: SKScene {
     /// Paused means the overlay is hidden and the dog is frozen; there is no
     /// reason to keep asking the window server what your windows are doing.
     func setWindowWatching(_ active: Bool) {
-        if active { windowSurfaces?.start() } else { windowSurfaces?.stop() }
+        windowWatchingActive = active
+        updateWindowWatching()
+    }
+
+    /// Apply user-facing feature switches without rebuilding the SpriteKit
+    /// scene. Disabling climbing clears the stale geometry immediately; the
+    /// brain then abandons an approach or falls safely from an active perch.
+    func apply(settings: JumbiniSettings) {
+        guard brain != nil else { return }
+        brain.poopEnabled = settings.poopEnabled
+        brain.windowClimbingEnabled = settings.windowClimbingEnabled
+        if !settings.systemReactionsEnabled {
+            apply(effects: brain.disableSystemReactions(at: lastTime))
+        }
+        windowClimbingEnabled = settings.windowClimbingEnabled
+        if !settings.windowClimbingEnabled { brain.surfaces = [] }
+        updateWindowWatching()
+    }
+
+    private func updateWindowWatching() {
+        if windowWatchingActive && windowClimbingEnabled {
+            windowSurfaces?.start()
+        } else {
+            windowSurfaces?.stop()
+        }
     }
 
     // MARK: - Window walking: the hop and the fall
