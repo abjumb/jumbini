@@ -1325,7 +1325,11 @@ final class PetScene: SKScene {
     /// brain then abandons an approach or falls safely from an active perch.
     func apply(settings: JumbiniSettings) {
         guard brain != nil else { return }
-        brain.poopEnabled = settings.poopEnabled
+        if settings.poopEnabled {
+            brain.poopEnabled = true
+        } else {
+            apply(effects: brain.disableBathroomBreaks(at: lastTime))
+        }
         brain.windowClimbingEnabled = settings.windowClimbingEnabled
         if !settings.systemReactionsEnabled {
             apply(effects: brain.disableSystemReactions(at: lastTime))

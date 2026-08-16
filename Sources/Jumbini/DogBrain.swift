@@ -421,6 +421,24 @@ final class DogBrain {
     func disableSystemReactions(at now: TimeInterval) -> [DogEffect] {
         pendingSignal = nil
         guard restReason != nil else { return [] }
+        restReason = nil
+        switch state {
+        case .sleeping, .lyingDown, .goingToBed:
+            return [.stopMoving] + enterIdle(at: now)
+        default:
+            // A treat, toy, pet, or pickup may already have interrupted the
+            // rest. Preserve that foreground activity; only the reason is
+            // stale, not the state the user deliberately put him in.
+            return []
+        }
+    }
+
+    /// Turn bathroom breaks off immediately. Eating may finish normally, but
+    /// a break already in progress is cancelled instead of leaving the dog in
+    /// the hunch pose until the old deadline.
+    func disableBathroomBreaks(at now: TimeInterval) -> [DogEffect] {
+        poopEnabled = false
+        guard state == .hunching else { return [] }
         return [.stopMoving] + enterIdle(at: now)
     }
 

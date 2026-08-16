@@ -278,7 +278,7 @@ the result.
 Other scripts:
 
 ```bash
-./Scripts/test.sh            # run the test suite (387 tests)
+./Scripts/test.sh            # run the test suite (390 tests)
 ./Scripts/dmg.sh             # → build/Jumbini.dmg, drag-to-Applications layout
 ```
 
