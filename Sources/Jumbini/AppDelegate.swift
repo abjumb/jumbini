@@ -180,6 +180,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pauseItem.target = self
         menu.addItem(pauseItem)
         menu.addItem(.separator())
+        // Which build this is, sitting next to the thing that changes it.
+        // Nothing needs to refresh it: Sparkle relaunches the app to finish an
+        // update, so the number is read fresh by the new process. No action,
+        // which is what greys it out — autoenablesItems infers that much on
+        // its own, and the explicit flag matches the counters above.
+        let versionItem = NSMenuItem(title: AppVersion.menuTitle, action: nil, keyEquivalent: "")
+        versionItem.isEnabled = false
+        menu.addItem(versionItem)
         // Auto-update: target/action point at the Sparkle controller, which
         // also toggles the item's enabled state as canCheckForUpdates changes.
         let updateItem = NSMenuItem(title: "Check for Updates…", action: #selector(SPUStandardUpdaterController.checkForUpdates(_:)), keyEquivalent: "")
@@ -350,7 +358,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Open the generation panel. The panel owns the picker and progress UI;
     /// the closures here run the real pipeline and select the result, so the
     /// panel itself stays free of any Pixellab or coat-disk knowledge.
+    ///
+    /// Built once and kept. Now that the panel can be closed, choosing the menu
+    /// item again has to reopen the existing one rather than stack a second
+    /// panel on top of the first — and it means closing the window by accident
+    /// does not throw away three photos the user just picked.
     @objc private func openDogGenerator() {
+        if let existing = dogGeneratorPanel {
+            existing.present()
+            return
+        }
         let panel = DogGeneratorPanel()
         panel.generate = { photos in
             let sprites = try await DogGenerator.generate(photos: photos, client: PixellabClient())
