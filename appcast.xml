@@ -3,6 +3,18 @@
     <channel>
         <title>Jumbini</title>
         <item>
+            <title>4.8</title>
+            <pubDate>Sun, 16 Aug 2026 19:15:29 +0000</pubDate>
+            <sparkle:version>21</sparkle:version>
+            <sparkle:shortVersionString>4.8</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <enclosure url="https://abjumb.github.io/jumbini/Jumbini-4.8.dmg" length="2135240" type="application/octet-stream" sparkle:edSignature="ejVIbxI2YpnZlUCGAvlBBAPwASk8CYotNrFs3zhL5XG6yXNQ5jBlGFy7yYP+Ee8EFGTywAfqjq/kXspWfZj0AA=="/>
+            <sparkle:deltas>
+                <enclosure url="https://abjumb.github.io/jumbini/Jumbini21-17.delta" sparkle:deltaFrom="17" length="161938" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="Aj4/GORU+d1DapkdtxhsC8XlemETRYS4BuutRQvTiM7xBjw5C4tJZSpMN31B7upPu9KCanvDCW0/wkKjdkBaDg=="/>
+            </sparkle:deltas>
+        </item>
+        <item>
             <title>4.7</title>
             <pubDate>Sun, 16 Aug 2026 08:22:42 +0000</pubDate>
             <sparkle:version>17</sparkle:version>
