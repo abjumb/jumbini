@@ -222,6 +222,24 @@ jobs:
           export APPLE_API_KEY_PATH="$RUNNER_TEMP/apikey.p8"
           ./Scripts/release.sh
 
+      # Keep the DMG regardless of how the run was started, and before anything
+      # downstream can fail. A notarized build costs a round-trip to Apple, and
+      # until now a manual run threw one away while a tagged run that stumbled on
+      # the appcast or the Pages deploy made you do the whole thing again to get
+      # the file back. Uploading here means the expensive artifact survives every
+      # later step.
+      #
+      # On a tag the same DMG also lands on the release, so this copy is a
+      # convenience rather than the record — hence the short retention. On a
+      # manual run it is the only output there is.
+      - name: Upload the DMG as a build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Jumbini-${{ github.ref_name }}-${{ github.run_number }}
+          path: build/Jumbini.dmg
+          if-no-files-found: error
+          retention-days: 14
+
       # Turn the DMG into a Sparkle update. Only meaningful for a tagged release
       # (a manual workflow_dispatch has no tag to version the update with), which
       # mirrors the gating on the version-stamp step above.
@@ -450,7 +468,15 @@ jobs:
           rm -f "$RUNNER_TEMP/apikey.p8" "$RUNNER_TEMP/cert.p12"
           if [ -n "${KEYCHAIN:-}" ]; then security delete-keychain "$KEYCHAIN" || true; fi
 
+      # Tag-gated like every other step that needs a tag to exist. It is the one
+      # that was missed, and the failure was confusing: the action takes its
+      # tag_name from github.ref, which on a workflow_dispatch is refs/heads/main
+      # rather than a tag, so it asked the API to create a release for no tag at
+      # all and got back "Missing tag_name parameter" three times before giving
+      # up. Every earlier step had already succeeded, so a manual run built,
+      # signed and notarized cleanly and then reported failure at the very end.
       - name: Attach DMG to the release
+        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           files: build/Jumbini.dmg
