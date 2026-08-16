@@ -207,6 +207,23 @@ grep -q 'Timestamp=' <<<"$SIG_INFO" \
   || die "no secure timestamp on $APP (could not reach Apple's timestamp server?)"
 
 # ---------------------------------------------------------------------------
+# 2b. Prove the signed app actually starts.
+#
+# Everything above this line inspects the bundle without ever running it, which
+# is how v3.0 through v4.4 all shipped crashing on launch. Deliberately placed
+# before notarization: a build that cannot start should not reach Apple, and
+# must not reach gh-pages, where the release workflow publishes it as the
+# update every existing install will download.
+#
+# The signed app is what gets tested, not the ad-hoc one bundle.sh made --
+# hardened runtime and the Developer ID signature are both in force here, so a
+# crash caused by signing itself has nowhere to hide either.
+# ---------------------------------------------------------------------------
+
+echo "==> Smoke testing the signed app"
+Scripts/smoke.sh "$APP"
+
+# ---------------------------------------------------------------------------
 # 3. Build the DMG and sign it too.
 #
 # The DMG gets its own signature so Gatekeeper can evaluate the container
