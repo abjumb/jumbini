@@ -71,16 +71,192 @@ private func renderSettingsLayout() -> (image: NSBitmapImageRep, size: NSSize)? 
 /// Prints the render as base64 so it can be pulled out of a CI log and looked
 /// at. Off by default — it is a few hundred lines of noise nobody needs on an
 /// ordinary run.
-@Test @MainActor func settingsSnapshotIsPrintedWhenAskedFor() {
-    guard ProcessInfo.processInfo.environment["JUMBINI_SNAPSHOT"] == "1" else { return }
-    guard let (rep, _) = renderSettingsLayout(),
-          let png = rep.representation(using: .png, properties: [:])
+/// The window *including* its title bar.
+///
+/// `contentView` stops below the title bar, so every earlier render of this
+/// panel was missing the one part of the reference design that lives up there:
+/// the traffic light. `contentView.superview` is the frame view that owns both,
+/// which is what has to be captured to check the corner at all.
+@MainActor
+private func renderSettingsWindow() -> (image: NSBitmapImageRep, size: NSSize)? {
+    let panel = SettingsPanel(defaults: UserDefaults(suiteName: "snapshot.window") ?? .standard)
+    panel.orderFrontRegardless()
+    defer { panel.orderOut(nil) }
+    guard let frame = panel.contentView?.superview else { return nil }
+    frame.layoutSubtreeIfNeeded()
+    let bounds = frame.bounds
+    guard bounds.width > 1, bounds.height > 1,
+          let rep = frame.bitmapImageRepForCachingDisplay(in: bounds)
+    else { return nil }
+    panel.effectiveAppearance.performAsCurrentDrawingAppearance {
+        frame.cacheDisplay(in: bounds, to: rep)
+    }
+    return (rep, bounds.size)
+}
+
+@Test @MainActor func theCloseButtonSitsInTheTopLeftCorner() {
+    let panel = SettingsPanel(defaults: UserDefaults(suiteName: "snapshot.corner") ?? .standard)
+    guard let close = panel.standardWindowButton(.closeButton),
+          let frame = panel.contentView?.superview
     else {
-        Issue.record("could not encode the settings layout as PNG")
+        Issue.record("no close button or frame view")
+        return
+    }
+    let spot = close.convert(close.bounds, to: frame)
+    // Top-left, in a frame view whose origin is bottom-left: near x = 0, and
+    // within the title bar's height of the top edge. The design puts it there;
+    // the version this replaced drew its own glyph in the opposite corner.
+    #expect(spot.minX < 40, "close button x = \(spot.minX)")
+    #expect(spot.maxY > frame.bounds.height - 40, "close button y = \(spot.maxY)")
+}
+
+/// Depth-first search for the first view of a given type. The panel's fields are
+/// private, and `@testable` does not reach `private` — but the view hierarchy is
+/// public by construction, so the geometry checks find their subject by walking it.
+@MainActor
+private func firstSubview<T: NSView>(of type: T.Type, under root: NSView) -> T? {
+    if let hit = root as? T { return hit }
+    for child in root.subviews {
+        if let hit = firstSubview(of: type, under: child) { return hit }
+    }
+    return nil
+}
+
+@Test @MainActor func theSearchFieldClearsTheTrafficLights() {
+    let panel = SettingsPanel(defaults: UserDefaults(suiteName: "snapshot.search") ?? .standard)
+    guard let content = panel.contentView,
+          let search = firstSubview(of: NSSearchField.self, under: content)
+    else {
+        Issue.record("no search field")
+        return
+    }
+    // The title bar is transparent with its title hidden, so it is invisible —
+    // and content laid out to the window's top edge runs straight underneath the
+    // traffic lights that are still sitting in it. The first version of this
+    // sidebar put the search field there: three dots on top of a text field.
+    let (clears, detail) = clearsTheTitleBar(search, in: panel)
+    #expect(clears, "search field — \(detail)")
+}
+
+/// The first label carrying exactly this text, anywhere under `root`.
+@MainActor
+private func label(_ text: String, under root: NSView) -> NSTextField? {
+    if let field = root as? NSTextField, field.stringValue == text { return field }
+    for child in root.subviews {
+        if let hit = label(text, under: child) { return hit }
+    }
+    return nil
+}
+
+/// True when everything in `view` sits below the window's close button.
+@MainActor
+private func clearsTheTitleBar(_ view: NSView, in panel: JumbiniPanel) -> (Bool, String) {
+    guard let frame = panel.contentView?.superview,
+          let close = panel.standardWindowButton(.closeButton)
+    else { return (false, "no close button or frame view") }
+    frame.layoutSubtreeIfNeeded()
+    let light = close.convert(close.bounds, to: frame)
+    let subject = view.convert(view.bounds, to: frame)
+    return (subject.maxY <= light.minY, "top \(subject.maxY) vs light bottom \(light.minY)")
+}
+
+@Test @MainActor func theWorkshopHeaderClearsTheTrafficLights() {
+    let panel = CoatWorkshopPanel()
+    guard let content = panel.contentView,
+          let header = label("Coat Workshop", under: content)
+    else {
+        Issue.record("no Coat Workshop header")
+        return
+    }
+    // Same trap as the settings sidebar: these panels used to be borderless, so
+    // a 16pt top inset was the whole margin. With a real title bar it is not
+    // even half of one, and the header lands under the lights.
+    let (clears, detail) = clearsTheTitleBar(header, in: panel)
+    #expect(clears, "Coat Workshop header — \(detail)")
+}
+
+@Test @MainActor func theDogGeneratorHeaderClearsTheTrafficLights() {
+    let panel = DogGeneratorPanel()
+    guard let content = panel.contentView,
+          let header = label("Make Your Own Dog", under: content)
+    else {
+        Issue.record("no Make Your Own Dog header")
+        return
+    }
+    let (clears, detail) = clearsTheTitleBar(header, in: panel)
+    #expect(clears, "Make Your Own Dog header — \(detail)")
+}
+
+@Test @MainActor func theWorkshopHidesValidationUntilThereIsSomethingToSay() {
+    let panel = CoatWorkshopPanel()
+    guard let content = panel.contentView,
+          let header = label("VALIDATION", under: content)
+    else {
+        Issue.record("no Validation header")
+        return
+    }
+    // Hiding only the scroll view inside the card left the card itself behind:
+    // a rounded empty sliver under the word VALIDATION, which reads as a
+    // section that failed to load rather than one that does not apply yet.
+    #expect(header.isHidden, "the Validation header is showing on a fresh panel")
+    guard let stack = header.superview as? NSStackView,
+          let index = stack.arrangedSubviews.firstIndex(of: header),
+          stack.arrangedSubviews.indices.contains(index + 1)
+    else {
+        Issue.record("the Validation header has no card after it")
+        return
+    }
+    #expect(
+        stack.arrangedSubviews[index + 1].isHidden,
+        "the Validation card is showing on a fresh panel"
+    )
+}
+
+@Test @MainActor func theGeneratorsPhotoButtonsFitInsideTheirCard() {
+    let panel = DogGeneratorPanel()
+    guard let content = panel.contentView,
+          let front = firstSubview(of: NSButton.self, under: content),
+          let row = front.superview
+    else {
+        Issue.record("no photo row")
+        return
+    }
+    // The card is the panel width less the content inset on each side, less the
+    // card's own padding on each side. Three buttons wider than that push the
+    // last one through the card's right border — visible in the render as a
+    // button with no gap between it and the rounded edge.
+    let inner = 340 - 16 * 2 - PanelTheme.cardInset * 2
+    #expect(
+        row.fittingSize.width <= inner,
+        "photo row is \(row.fittingSize.width)pt inside a \(inner)pt card"
+    )
+}
+
+/// Any panel's window, title bar included, as a bitmap.
+@MainActor
+private func renderWindow(_ panel: JumbiniPanel) -> NSBitmapImageRep? {
+    panel.orderFrontRegardless()
+    defer { panel.orderOut(nil) }
+    guard let frame = panel.contentView?.superview else { return nil }
+    frame.layoutSubtreeIfNeeded()
+    let bounds = frame.bounds
+    guard bounds.width > 1, bounds.height > 1,
+          let rep = frame.bitmapImageRepForCachingDisplay(in: bounds)
+    else { return nil }
+    panel.effectiveAppearance.performAsCurrentDrawingAppearance {
+        frame.cacheDisplay(in: bounds, to: rep)
+    }
+    return rep
+}
+
+@MainActor
+private func dump(_ rep: NSBitmapImageRep?, named name: String) {
+    guard let png = rep?.representation(using: .png, properties: [:]) else {
+        Issue.record("could not encode \(name) as PNG")
         return
     }
     let encoded = png.base64EncodedString()
-    print("JUMBINI_SNAPSHOT_BEGIN \(png.count)")
+    print("JUMBINI_SNAPSHOT_BEGIN \(name) \(png.count)")
     var index = encoded.startIndex
     while index < encoded.endIndex {
         let end = encoded.index(index, offsetBy: 180, limitedBy: encoded.endIndex)
@@ -88,7 +264,17 @@ private func renderSettingsLayout() -> (image: NSBitmapImageRep, size: NSSize)? 
         print("SNAP:" + encoded[index..<end])
         index = end
     }
-    print("JUMBINI_SNAPSHOT_END")
+    print("JUMBINI_SNAPSHOT_END \(name)")
+}
+
+@Test @MainActor func panelSnapshotsArePrintedWhenAskedFor() {
+    guard ProcessInfo.processInfo.environment["JUMBINI_SNAPSHOT"] == "1" else { return }
+    // All three, because the design is shared: a change to PanelKit lands in
+    // every panel at once, and a render of only the settings window would say
+    // nothing about the two that inherit from it.
+    dump(renderSettingsWindow()?.image, named: "settings")
+    dump(renderWindow(CoatWorkshopPanel()), named: "workshop")
+    dump(renderWindow(DogGeneratorPanel()), named: "generator")
 }
 
 @Test @MainActor func theSettingsLayoutActuallyRendersDark() {

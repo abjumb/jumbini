@@ -20,6 +20,13 @@ enum PanelTheme {
     static let contentInset: CGFloat = 20
     static let cardInset: CGFloat = 12
     static let rowSpacing: CGFloat = 10
+    /// How far content has to start below the top edge to clear the title bar.
+    ///
+    /// The title bar is transparent and its text hidden, so it is invisible —
+    /// but the traffic lights are still sitting in it, and content laid out to
+    /// the window's top edge runs straight underneath them. The sidebar's search
+    /// field did exactly that: three dots on top of a text field.
+    static let titleBarInset: CGFloat = 38
 
     /// Panels are designed dark, matching the rest of the app's chrome, but
     /// these stay dynamic so a light-appearance Mac gets sensible surfaces
@@ -158,7 +165,9 @@ class JumbiniPanel: NSPanel {
         // out of whatever app the user was in.
         super.init(
             contentRect: NSRect(origin: .zero, size: size),
-            styleMask: [.titled, .closable, .fullSizeContentView, .nonactivatingPanel],
+            styleMask: [
+                .titled, .closable, .miniaturizable, .fullSizeContentView, .nonactivatingPanel,
+            ],
             backing: .buffered,
             defer: false
         )
@@ -170,10 +179,12 @@ class JumbiniPanel: NSPanel {
         // window over the dark overlay chrome reads as a different app's window
         // that happened to open.
         appearance = NSAppearance(named: .darkAqua)
-        // Neither means anything for a fixed-size utility panel, and a pair of
-        // permanently dead buttons beside a live one looks like a bug.
-        standardWindowButton(.miniaturizeButton)?.isHidden = true
-        standardWindowButton(.zoomButton)?.isHidden = true
+        // All three traffic lights, because the reference design has all three.
+        // Hiding the two that do less was a judgement call about dead controls
+        // looking like a bug, and it was the wrong one to make here: a single
+        // lonely dot in the corner is visibly not the window in the design.
+        // Zoom has no `.resizable` to act on, so macOS dims it by itself, which
+        // is ordinary macOS and reads as such.
         isOpaque = false
         backgroundColor = .clear
         hasShadow = true

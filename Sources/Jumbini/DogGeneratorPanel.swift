@@ -18,9 +18,9 @@ final class DogGeneratorPanel: JumbiniPanel {
     private var sideData: Data?
     private var backData: Data?
 
-    private let frontButton = NSButton(title: "Front photo…", target: nil, action: nil)
-    private let sideButton = NSButton(title: "Side photo…", target: nil, action: nil)
-    private let backButton = NSButton(title: "Back photo…", target: nil, action: nil)
+    private let frontButton = NSButton(title: "Front…", target: nil, action: nil)
+    private let sideButton = NSButton(title: "Side…", target: nil, action: nil)
+    private let backButton = NSButton(title: "Back…", target: nil, action: nil)
     private let generateButton = NSButton(title: "Generate", target: nil, action: nil)
     private let applyButton = NSButton(title: "Apply", target: nil, action: nil)
     private let spinner = NSProgressIndicator()
@@ -118,8 +118,11 @@ final class DogGeneratorPanel: JumbiniPanel {
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 10
+        // Top inset clears the title bar rather than matching the sides: these
+        // panels have real traffic lights now, and the header would otherwise
+        // be laid out underneath them.
         stack.edgeInsets = NSEdgeInsets(
-            top: Self.contentInset, left: Self.contentInset,
+            top: PanelTheme.titleBarInset, left: Self.contentInset,
             bottom: Self.contentInset, right: Self.contentInset
         )
         // Every other row is sized by its content and left-aligned, which for

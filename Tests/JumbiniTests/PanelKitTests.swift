@@ -79,12 +79,15 @@ import AppKit
     #expect(panel.titleVisibility == .hidden)
 }
 
-@Test @MainActor func deadWindowButtonsAreHidden() {
+@Test @MainActor func allThreeTrafficLightsArePresent() {
     let panel = JumbiniPanel(autosaveName: "test.buttons", size: NSSize(width: 300, height: 200))
-    // Neither does anything on a fixed-size utility panel; showing them greyed
-    // out beside a live close button reads as a bug.
-    #expect(panel.standardWindowButton(.miniaturizeButton)?.isHidden == true)
-    #expect(panel.standardWindowButton(.zoomButton)?.isHidden == true)
+    // The reference design has three. An earlier version of this panel hid two
+    // of them on the theory that dead controls look like a bug, which left one
+    // lonely dot in a corner that is visibly not the design — the render is
+    // what showed it.
+    #expect(panel.standardWindowButton(.closeButton)?.isHidden == false)
+    #expect(panel.standardWindowButton(.miniaturizeButton)?.isHidden == false)
+    #expect(panel.standardWindowButton(.zoomButton)?.isHidden == false)
 }
 
 @Test @MainActor func aPanelCanBeDraggedAndCanTakeKey() {
