@@ -20,6 +20,13 @@ enum PanelTheme {
     static let contentInset: CGFloat = 20
     static let cardInset: CGFloat = 12
     static let rowSpacing: CGFloat = 10
+    /// How far content has to start below the top edge to clear the title bar.
+    ///
+    /// The title bar is transparent and its text hidden, so it is invisible —
+    /// but the traffic lights are still sitting in it, and content laid out to
+    /// the window's top edge runs straight underneath them. The sidebar's search
+    /// field did exactly that: three dots on top of a text field.
+    static let titleBarInset: CGFloat = 38
 
     /// Panels are designed dark, matching the rest of the app's chrome, but
     /// these stay dynamic so a light-appearance Mac gets sensible surfaces

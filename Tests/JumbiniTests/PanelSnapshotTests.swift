@@ -110,6 +110,42 @@ private func renderSettingsWindow() -> (image: NSBitmapImageRep, size: NSSize)? 
     #expect(spot.maxY > frame.bounds.height - 40, "close button y = \(spot.maxY)")
 }
 
+/// Depth-first search for the first view of a given type. The panel's fields are
+/// private, and `@testable` does not reach `private` — but the view hierarchy is
+/// public by construction, so the geometry checks find their subject by walking it.
+@MainActor
+private func firstSubview<T: NSView>(of type: T.Type, under root: NSView) -> T? {
+    if let hit = root as? T { return hit }
+    for child in root.subviews {
+        if let hit = firstSubview(of: type, under: child) { return hit }
+    }
+    return nil
+}
+
+@Test @MainActor func theSearchFieldClearsTheTrafficLights() {
+    let panel = SettingsPanel(defaults: UserDefaults(suiteName: "snapshot.search") ?? .standard)
+    guard let frame = panel.contentView?.superview,
+          let content = panel.contentView,
+          let close = panel.standardWindowButton(.closeButton),
+          let search = firstSubview(of: NSSearchField.self, under: content)
+    else {
+        Issue.record("no search field, close button or frame view")
+        return
+    }
+    frame.layoutSubtreeIfNeeded()
+    let light = close.convert(close.bounds, to: frame)
+    let field = search.convert(search.bounds, to: frame)
+    // The title bar is transparent with its title hidden, so it is invisible —
+    // and content laid out to the window's top edge runs straight underneath the
+    // traffic lights that are still sitting in it. The first version of this
+    // sidebar put the search field there: three dots on top of a text field.
+    // Frame-view coordinates are bottom-left, so "below" is a smaller maxY.
+    #expect(
+        field.maxY <= light.minY,
+        "search field top \(field.maxY) is above the close button's bottom \(light.minY)"
+    )
+}
+
 @Test @MainActor func settingsSnapshotIsPrintedWhenAskedFor() {
     guard ProcessInfo.processInfo.environment["JUMBINI_SNAPSHOT"] == "1" else { return }
     guard let (rep, _) = renderSettingsWindow() ?? renderSettingsLayout(),

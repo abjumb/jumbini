@@ -169,7 +169,9 @@ final class SettingsPanel: JumbiniPanel {
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 2
-        stack.edgeInsets = NSEdgeInsets(top: 16, left: 12, bottom: 12, right: 12)
+        stack.edgeInsets = NSEdgeInsets(
+            top: PanelTheme.titleBarInset, left: 12, bottom: 12, right: 12
+        )
         stack.translatesAutoresizingMaskIntoConstraints = false
 
         for view in [searchField] + sidebarButtons {
@@ -426,7 +428,9 @@ final class SettingsPanel: JumbiniPanel {
         page.translatesAutoresizingMaskIntoConstraints = false
         pageContainer.addSubview(page)
         NSLayoutConstraint.activate([
-            page.topAnchor.constraint(equalTo: pageContainer.topAnchor, constant: 36),
+            page.topAnchor.constraint(
+                equalTo: pageContainer.topAnchor, constant: PanelTheme.titleBarInset
+            ),
             page.bottomAnchor.constraint(equalTo: pageContainer.bottomAnchor),
             page.leadingAnchor.constraint(equalTo: pageContainer.leadingAnchor),
             page.trailingAnchor.constraint(equalTo: pageContainer.trailingAnchor),
