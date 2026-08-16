@@ -194,8 +194,24 @@ cleanup() {
 }
 trap cleanup EXIT
 
-command -v ffmpeg >/dev/null || die "ffmpeg missing. Run: brew install ffmpeg"
-command -v ffprobe >/dev/null || die "ffprobe missing (it ships with ffmpeg). Run: brew install ffmpeg"
+# Homebrew is installed per-machine but put on PATH per-account, by a line in
+# the shell profile. A fresh capture account has no such line, so ffmpeg is
+# sitting right there at /opt/homebrew/bin and still invisible — and the old
+# message told the operator to install software they already have. Look in the
+# usual places before believing it is missing.
+if ! command -v ffmpeg >/dev/null; then
+  for brew_bin in /opt/homebrew/bin /usr/local/bin; do
+    if [ -x "$brew_bin/ffmpeg" ]; then
+      PATH="$brew_bin:$PATH"
+      export PATH
+      echo "capture: found ffmpeg in $brew_bin (not on this account's PATH — using it anyway)"
+      break
+    fi
+  done
+fi
+
+command -v ffmpeg >/dev/null || die "ffmpeg missing, and it is not in /opt/homebrew/bin or /usr/local/bin either. Run: brew install ffmpeg"
+command -v ffprobe >/dev/null || die "ffprobe missing (it ships with ffmpeg, so an ffmpeg without it is a broken install). Run: brew reinstall ffmpeg"
 [ -x "$BIN" ] || die "no app at $BIN. Set JUMBINI_APP to the built Jumbini.app — in the capture account it is the one staged next to this script, and there is no repo here to build one from."
 mkdir -p "$RAW"
 
