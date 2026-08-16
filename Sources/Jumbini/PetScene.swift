@@ -409,6 +409,85 @@ final class PetScene: SKScene {
 
     // MARK: - Wardrobe end
 
+    // MARK: - Coat Workshop
+
+    private var workshopPanel: CoatWorkshopPanel?
+    private var preWorkshopCoatID: String?
+
+    func openCoatWorkshop() {
+        if let existing = workshopPanel {
+            existing.present()
+            return
+        }
+        let panel = CoatWorkshopPanel()
+        panel.setPreviewCoat = { [weak self] coat in
+            guard let self else { return }
+            preWorkshopCoatID = UserDefaults.standard.string(forKey: Self.coatKey)
+            SpriteLibrary.shared.coat = coat
+            self.dog.refreshAnimation()
+        }
+        panel.setPreviewPose = { [weak self] state, direction in
+            guard let self else { return }
+            let pt = CGPoint(
+                x: self.dog.position.x + direction.unitVector.x * 50,
+                y: self.dog.position.y + direction.unitVector.y * 50
+            )
+            self.dog.face(towards: pt)
+            self.dog.play(Self.dogAnimation(forCoatState: state))
+        }
+        panel.restoreCoat = { [weak self] in
+            guard let self else { return }
+            if let savedID = self.preWorkshopCoatID,
+               let coat = self.availableCoats().first(where: { $0.id == savedID }) {
+                SpriteLibrary.shared.coat = coat
+            } else {
+                SpriteLibrary.shared.coat = .classic
+            }
+            self.dog.refreshAnimation()
+            self.preWorkshopCoatID = nil
+        }
+        panel.onInstall = { [weak self] coatID in
+            guard let self else { return }
+            // Rescan and select the newly installed coat.
+            if let coat = self.availableCoats().first(where: { $0.id == coatID }) {
+                SpriteLibrary.shared.coat = coat
+                UserDefaults.standard.set(coat.id, forKey: Self.coatKey)
+                self.dog.refreshAnimation()
+                self.reseatWornItem()
+            }
+            self.preWorkshopCoatID = nil
+        }
+        panel.present()
+        workshopPanel = panel
+    }
+
+    func openWorkshopFor(coat: Coat) {
+        openCoatWorkshop()
+        workshopPanel?.openForInstalledCoat(coat)
+    }
+
+    private static func dogAnimation(forCoatState state: String) -> DogAnimation {
+        switch state {
+        case "idle": return .idle
+        case "run1", "run2": return .walk
+        case "sit": return .sit
+        case "sleep": return .sleep
+        case "bark": return .bark
+        case "sniff": return .sniff
+        case "hunch": return .hunch
+        case "stalk": return .stalk
+        case "pounce": return .pounce
+        case "paw": return .shakePaw
+        case "highfive": return .highFive
+        case "playdead": return .playDead
+        case "brace": return .tug
+        case "fall": return .fall
+        case "land": return .land
+        case "peek": return .peek
+        default: return .idle
+        }
+    }
+
     // MARK: - Coat
 
     private static let coatKey = "coat"
@@ -456,6 +535,12 @@ final class PetScene: SKScene {
             }
             menu.addItem(item)
         }
+        menu.addItem(.separator())
+        let workshopItem = NSMenuItem(
+            title: "Coat Workshop…", action: #selector(coatWorkshopChosen(_:)), keyEquivalent: ""
+        )
+        workshopItem.target = self
+        menu.addItem(workshopItem)
         return menu
     }
 
@@ -472,6 +557,10 @@ final class PetScene: SKScene {
     func selectCoat(id: String) {
         guard let coat = availableCoats().first(where: { $0.id == id }) else { return }
         applyCoat(coat)
+    }
+
+    @objc private func coatWorkshopChosen(_ sender: NSMenuItem?) {
+        openCoatWorkshop()
     }
 
     // MARK: - Frame loop

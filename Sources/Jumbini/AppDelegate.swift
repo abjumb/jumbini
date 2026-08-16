@@ -29,6 +29,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // Make Your Own Dog: the generation panel, kept alive while open.
     private var dogGeneratorPanel: DogGeneratorPanel?
+    // Coat Workshop: import, validate, preview, and install custom coats.
+    private var coatWorkshopPanel: CoatWorkshopPanel?
     // Settings: one persistent panel, reopened from the menu bar or Command-comma.
     private var settingsPanel: SettingsPanel?
     private(set) var settings: JumbiniSettings
@@ -169,6 +171,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let makeDogItem = NSMenuItem(title: "Make Your Own Dog", action: #selector(openDogGenerator), keyEquivalent: "")
         makeDogItem.target = self
         menu.addItem(makeDogItem)
+        let workshopItem = NSMenuItem(title: "Coat Workshop…", action: #selector(openCoatWorkshop), keyEquivalent: "")
+        workshopItem.target = self
+        menu.addItem(workshopItem)
         let settingsItem = NSMenuItem(
             title: "Settings…",
             action: #selector(openSettings),
@@ -430,9 +435,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return preview
         }
         panel.onApply = { [weak self] in
-            self?.scene?.selectCoat(id: DogGenerator.coatID)
+            self?.openCoatWorkshopForMyDog()
         }
         panel.present()
         dogGeneratorPanel = panel
+    }
+
+    // MARK: - Coat Workshop
+
+    @objc private func openCoatWorkshop() {
+        scene?.openCoatWorkshop()
+    }
+
+    private func openCoatWorkshopForMyDog() {
+        scene?.openCoatWorkshop()
+        if let coatsDir = CoatCatalog.defaultCoatsDirectory() {
+            let myDogURL = coatsDir.appendingPathComponent(DogGenerator.coatID, isDirectory: true)
+            let coat = CoatCatalog.coat(at: myDogURL)
+            if let coat {
+                scene?.openWorkshopFor(coat: coat)
+            }
+        }
     }
 }
