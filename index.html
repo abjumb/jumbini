@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<title>Jumbini — a dog who actually lives on your Mac</title>
+<meta name="description" content="Jumba is a hand-drawn pixel dog for macOS. He walks along the tops of your open windows, gets the zoomies when your Mac runs hot, and naps when you step away. Free, open source, no network, no permissions, no AI.">
+
+<link rel="canonical" href="https://abjumb.github.io/jumbini/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Jumbini">
+<meta property="og:title" content="Jumbini — a dog who actually lives on your Mac">
+<meta property="og:description" content="A hand-drawn pixel dog for macOS. He walks on your windows, reacts to your machine, and never asks for a permission, a login, or a dollar.">
+<meta property="og:url" content="https://abjumb.github.io/jumbini/">
+<meta property="og:image" content="https://abjumb.github.io/jumbini/assets/page/app-icon-512.png">
+<meta name="twitter:card" content="summary_large_image">
+
+<meta name="theme-color" content="#FDF9F1" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#17161A" media="(prefers-color-scheme: dark)">
+
+<link rel="icon" href="assets/page/app-icon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="assets/page/app-icon-128.png">
+
+<link rel="preload" href="assets/fonts/lazy-dog.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="stylesheet" href="styles.css">
+</head>
+
+<!-- The release version lives here and nowhere else. Every "v4.2" on the page
+     is written from this attribute by the script at the bottom. -->
+<body data-version="v4.3">
+
+<a class="skip" href="#download">Skip to download</a>
+
+<header class="topbar">
+  <a class="topbar__brand" href="#top">
+    <img src="assets/page/app-icon-128.png" alt="" width="28" height="28">
+    <span>Jumbini</span>
+  </a>
+  <nav class="topbar__nav" aria-label="Sections">
+    <a href="#what-he-does">What he does</a>
+    <a href="#privacy">What he doesn't</a>
+    <a href="#install">Install</a>
+    <a class="topbar__src" href="https://github.com/abjumb/jumbini">Source</a>
+  </nav>
+</header>
+
+<main id="top">
+
+  <!-- ───────────────────────────── HERO ───────────────────────────── -->
+  <section class="hero">
+    <h1 class="hero__title">Jumbini</h1>
+    <p class="hero__tagline">A dog who actually lives on your&nbsp;Mac.</p>
+    <p class="hero__blurb">
+      Jumba walks along the tops of your open windows. He gets the zoomies when your Mac
+      runs hot, and goes to sleep when you walk away from it. He is a real dog — a tricolor
+      spaniel mix — and every frame of him was drawn by hand from photographs.
+    </p>
+
+    <div class="cta" id="download">
+      <a class="btn btn--primary" href="https://github.com/abjumb/jumbini/releases/latest">
+        <span class="btn__row">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5v11m0 0 4.5-4.5M12 14.5 7.5 10M4.5 19.5h15"/></svg>
+          Download for macOS
+        </span>
+        <span class="btn__sub" data-version-label>Jumbini.dmg</span>
+      </a>
+      <a class="btn btn--ghost" href="https://github.com/abjumb/jumbini">View the source</a>
+    </div>
+
+    <ul class="specline">
+      <li>Free &amp; open source</li>
+      <li>macOS 14+ · Apple Silicon</li>
+      <li>Signed &amp; notarized by Apple</li>
+      <li>No account · no network · no AI</li>
+    </ul>
+  </section>
+
+  <!-- ────────────────────────── LIVE STAGE ────────────────────────── -->
+  <section class="stage-wrap" aria-labelledby="stage-h">
+    <h2 id="stage-h" class="sr-only">A live demonstration</h2>
+
+    <div class="stage" id="stage">
+      <div class="stage__menubar" aria-hidden="true">
+        <img src="assets/page/img2.png" alt="" width="16" height="16">
+        <span>Jumbini</span>
+        <span class="stage__spacer"></span>
+        <span class="stage__meter">
+          Hunger
+          <span class="stage__meter-track"><span class="stage__meter-fill" style="width:100%"></span></span>
+          100%
+        </span>
+        <span data-clock>3:42 PM</span>
+      </div>
+
+      <canvas id="jumba-canvas" role="img"
+        aria-label="An animated pixel-art dog wandering a mock desktop, climbing onto the title bars of two windows, and following the mouse pointer."></canvas>
+
+      <p class="stage__hint">
+        <b>That's him, actually running.</b>
+        Move your pointer in here and he'll come sniff it. Click him to pet him.
+      </p>
+
+      <button class="stage__replay" type="button" data-motion-toggle hidden>Start him moving</button>
+    </div>
+
+    <p class="stage__caption">
+      Same sprites, same eight directions, same decision weights as the app — running in a
+      canvas here instead of SpriteKit.
+    </p>
+  </section>
+
+  <!-- ──────────────────────────── CLAIMS ──────────────────────────── -->
+  <section class="section" id="different">
+    <h2 class="section__title">Three things that make him different</h2>
+
+    <div class="claims wrap">
+
+      <article class="claim">
+        <div class="claim__art">
+          <div class="mini-win">
+            <div class="mini-win__bar" aria-hidden="true">
+              <span class="mini-win__dot"></span>
+              <span class="mini-win__dot"></span>
+              <span class="mini-win__dot"></span>
+            </div>
+            <img class="claim__dog" src="assets/jumba/peek_south.png"
+                 alt="Jumba standing on a window's title bar, leaning over the edge to look down"
+                 width="48" height="48" loading="lazy" decoding="async">
+          </div>
+        </div>
+        <div>
+          <h3 class="claim__title">He walks on your windows.</h3>
+          <p class="claim__body">
+            Not the edge of the screen — your actual windows. He picks one, walks over, hops
+            onto the title bar, patrols it, and leans over the edge to look down. Move the
+            window and he rides it. Drag it hard enough and he falls off, which is the joke.
+          </p>
+          <p class="claim__note">Most desktop pets pace along the bottom of the display. The ones that climb are Java, or Windows-only, or both.</p>
+        </div>
+      </article>
+
+      <article class="claim">
+        <div class="claim__art">
+          <div class="claim__signals" aria-hidden="true">
+            <img src="assets/props/icon_flame.png" alt="" width="64" height="64" loading="lazy" decoding="async">
+            <img src="assets/props/icon_battery.png" alt="" width="64" height="64" loading="lazy" decoding="async">
+            <img src="assets/props/icon_party.png" alt="" width="64" height="64" loading="lazy" decoding="async">
+            <img src="assets/props/icon_sleep.png" alt="" width="64" height="64" loading="lazy" decoding="async">
+          </div>
+        </div>
+        <div>
+          <h3 class="claim__title">He knows what your Mac is doing.</h3>
+          <p class="claim__body">
+            The machine gets hot and he gets the zoomies. Battery drops and he whines and lies
+            down. Your build finishes and he celebrates. He never tells you any of this —
+            no dashboard, no notification, no status bar.
+          </p>
+          <p class="claim__note">There is just a dog behaving oddly, and a second later you work out why.</p>
+        </div>
+      </article>
+
+      <article class="claim">
+        <div class="claim__art">
+          <div class="claim__coats">
+            <figure>
+              <img src="assets/jumba/idle_south-east.png" alt="Jumba in his short summer coat" width="96" height="96" loading="lazy" decoding="async">
+              <figcaption>clipped</figcaption>
+            </figure>
+            <figure>
+              <img src="assets/jumba/shaggy_idle_south-east.png" alt="Jumba in his shaggy winter coat" width="96" height="96" loading="lazy" decoding="async">
+              <figcaption>shaggy</figcaption>
+            </figure>
+          </div>
+        </div>
+        <div>
+          <h3 class="claim__title">He is one real dog, and the art is not generated.</h3>
+          <p class="claim__body">
+            334 hand-drawn sprites across two coats — eight rotations for every state, drawn
+            from photographs of an actual dog named Jumba. No catalog of ninety interchangeable
+            pets. No marketplace. No "pick your character" screen.
+          </p>
+          <p class="claim__note">There is one dog. That is the entire point.</p>
+        </div>
+      </article>
+
+    </div>
+  </section>
+
+  <!-- ─────────────────────── HE RUNS HIS OWN LIFE ─────────────────────── -->
+  <section class="section section--alt" id="what-he-does">
+    <div class="wrap">
+      <h2 class="section__title">He runs his own life</h2>
+      <p class="section__lede">
+        Every few seconds of standing around, he rolls the dice and picks something to do.
+        Nothing here is scripted, and nothing is on a timer you can predict.
+      </p>
+
+      <ul class="odds">
+        <li class="odds__head" aria-hidden="true">
+          <span>Odds</span><span class="odds__bar"></span><span>What he does</span>
+        </li>
+        <li><span class="odds__pct">40%</span><span class="odds__bar"><i style="--w:88%"></i></span><span class="odds__what">Wander somewhere new</span></li>
+        <li><span class="odds__pct">15%</span><span class="odds__bar"><i style="--w:33%"></i></span><span class="odds__what">Nap — in his bed, if he has one</span></li>
+        <li><span class="odds__pct">12%</span><span class="odds__bar"><i style="--w:26%"></i></span><span class="odds__what">Sniff your cursor around the screen</span></li>
+        <li><span class="odds__pct">10%</span><span class="odds__bar"><i style="--w:22%"></i></span><span class="odds__what">Spin in place, for no reason</span></li>
+        <li><span class="odds__pct">8%</span><span class="odds__bar"><i style="--w:18%"></i></span><span class="odds__what">Zoomies</span></li>
+        <li><span class="odds__pct">6%</span><span class="odds__bar"><i style="--w:13%"></i></span><span class="odds__what">Hunch over and do his business</span></li>
+        <li><span class="odds__pct">5%</span><span class="odds__bar"><i style="--w:11%"></i></span><span class="odds__what">Climb onto one of your windows</span></li>
+        <li><span class="odds__pct">4%</span><span class="odds__bar"><i style="--w:9%"></i></span><span class="odds__what">Bark at nothing in particular</span></li>
+      </ul>
+
+      <div class="pull">
+        <img src="assets/jumba/sniff_east.png" alt="Jumba with his nose to the ground, sniffing" width="48" height="48" loading="lazy" decoding="async">
+        <p>
+          <strong>The sniffing one is the sleeper hit.</strong> He trots toward wherever your
+          pointer is, and once he's close he drops his nose and keeps tracking it. Six times
+          out of ten a finished sniff escalates — he goes into a stalk, freezes, and pounces
+          on your cursor.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ────────────────────── MACHINE AWARENESS ────────────────────── -->
+  <section class="section" id="machine">
+    <div class="wrap">
+      <h2 class="section__title">Five things he notices about your machine</h2>
+      <p class="section__lede">
+        Every reading is ambient. Nothing he watches needs a permission prompt, and a source
+        that can't be read on your Mac switches itself off permanently rather than nagging you.
+      </p>
+
+      <div class="signals">
+        <div class="signal">
+          <img src="assets/props/icon_party.png" alt="" width="64" height="64" loading="lazy" decoding="async">
+          <span class="signal__what">A build finishes</span>
+          <span class="signal__does">Celebration — a yip, hearts, confetti. A rebuild storm still only gets one party.</span>
+        </div>
+        <div class="signal">
+          <img src="assets/props/icon_flame.png" alt="" width="64" height="64" loading="lazy" decoding="async">
+          <span class="signal__what">The machine runs hot</span>
+          <span class="signal__does">Zoomies. He is not helping.</span>
+        </div>
+        <div class="signal">
+          <img src="assets/props/icon_battery.png" alt="" width="64" height="64" loading="lazy" decoding="async">
+          <span class="signal__what">Battery drops low</span>
+          <span class="signal__does">He whines and lies down about it.</span>
+        </div>
+        <div class="signal">
+          <img src="assets/props/icon_sleep.png" alt="" width="64" height="64" loading="lazy" decoding="async">
+          <span class="signal__what">You step away</span>
+          <span class="signal__does">Two minutes of no input and he curls up. You come back, he wakes up.</span>
+        </div>
+        <div class="signal">
+          <img src="assets/props/icon_moon.png" alt="" width="32" height="32" loading="lazy" decoding="async">
+          <span class="signal__what">Focus turns on</span>
+          <span class="signal__does">Best-effort, and usually off — Focus has no public API, and he will never ask you for Full Disk Access to get one.</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────────────────── THINGS TO DO WITH HIM ─────────────────────── -->
+  <section class="section section--alt" id="play">
+    <div class="wrap">
+      <h2 class="section__title">Things to do with him</h2>
+
+      <div class="play">
+        <article class="play__item">
+          <img src="assets/props/ball.png" alt="" width="48" height="48" loading="lazy" decoding="async">
+          <h3>Fetch</h3>
+          <p>Right-click → Fetch, then click anywhere. The ball arcs over, he sprints after it, carries it back to where he was standing, and does a little flourish about it.</p>
+        </article>
+        <article class="play__item">
+          <img src="assets/props/frisbee_0.png" alt="" width="48" height="48" loading="lazy" decoding="async">
+          <h3>Toys</h3>
+          <p>A frisbee with real hang time, so the mid-air catch is possible. A squeaky toy he shakes to death. A tug rope that re-lays itself every frame — a genuine contest with a coin-flip ending.</p>
+        </article>
+        <article class="play__item">
+          <img src="assets/props/treat.png" alt="" width="48" height="32" loading="lazy" decoding="async">
+          <h3>Tricks and treats</h3>
+          <p>Shake, High Five, Play Dead, Roll Over — and he knows none of them yet. Reward an attempt with a treat within ten seconds and it counts as a rep. Three reps and it's his, permanently.</p>
+        </article>
+        <article class="play__item">
+          <img src="assets/props/emote_bubble.png" alt="" width="40" height="40" loading="lazy" decoding="async">
+          <h3>Jumbini Cam</h3>
+          <p><kbd>⌥</kbd><kbd>⇧</kbd><kbd>J</kbd> copies him — whatever he happens to be doing right then — to your clipboard as a transparent PNG with a caption plate. Paste it into Slack. That's the whole feature.</p>
+        </article>
+      </div>
+
+      <h3 class="poses__title">Twenty states, eight rotations each, two coats</h3>
+      <div class="poses">
+        <figure><img src="assets/jumba/idle_south.png" alt="Jumba standing, facing you" width="48" height="48" loading="lazy" decoding="async"><figcaption>idle</figcaption></figure>
+        <figure><img src="assets/jumba/run1_east.png" alt="Jumba running" width="48" height="48" loading="lazy" decoding="async"><figcaption>run</figcaption></figure>
+        <figure><img src="assets/jumba/sit_south.png" alt="Jumba sitting" width="68" height="76" loading="lazy" decoding="async"><figcaption>sit</figcaption></figure>
+        <figure><img src="assets/jumba/sleep_south.png" alt="Jumba curled up asleep" width="48" height="48" loading="lazy" decoding="async"><figcaption>sleep</figcaption></figure>
+        <figure><img src="assets/jumba/sniff_east.png" alt="Jumba sniffing the ground" width="48" height="48" loading="lazy" decoding="async"><figcaption>sniff</figcaption></figure>
+        <figure><img src="assets/jumba/stalk_east.png" alt="Jumba stalking low to the ground" width="48" height="48" loading="lazy" decoding="async"><figcaption>stalk</figcaption></figure>
+        <figure><img src="assets/jumba/pounce_east.png" alt="Jumba mid-pounce" width="48" height="48" loading="lazy" decoding="async"><figcaption>pounce</figcaption></figure>
+        <figure><img src="assets/jumba/bark_east.png" alt="Jumba barking" width="48" height="48" loading="lazy" decoding="async"><figcaption>bark</figcaption></figure>
+        <figure><img src="assets/jumba/peek_south.png" alt="Jumba peeking over an edge" width="48" height="48" loading="lazy" decoding="async"><figcaption>peek</figcaption></figure>
+        <figure><img src="assets/jumba/paw_south-east.png" alt="Jumba offering a paw" width="48" height="48" loading="lazy" decoding="async"><figcaption>paw</figcaption></figure>
+        <figure><img src="assets/jumba/highfive_south.png" alt="Jumba giving a high five" width="48" height="48" loading="lazy" decoding="async"><figcaption>high five</figcaption></figure>
+        <figure><img src="assets/jumba/playdead_south.png" alt="Jumba playing dead" width="48" height="48" loading="lazy" decoding="async"><figcaption>play dead</figcaption></figure>
+        <figure><img src="assets/jumba/fall_east.png" alt="Jumba falling through the air" width="48" height="48" loading="lazy" decoding="async"><figcaption>fall</figcaption></figure>
+        <figure><img src="assets/jumba/land_south-east.png" alt="Jumba landing in a crouch" width="48" height="48" loading="lazy" decoding="async"><figcaption>land</figcaption></figure>
+        <figure><img src="assets/jumba/whine_south.png" alt="Jumba whining" width="48" height="48" loading="lazy" decoding="async"><figcaption>whine</figcaption></figure>
+        <figure><img src="assets/jumba/shaggy_idle_south-east.png" alt="Jumba in his shaggy winter coat" width="48" height="48" loading="lazy" decoding="async"><figcaption>shaggy</figcaption></figure>
+      </div>
+    </div>
+  </section>
+
+  <!-- ────────────────────── WHAT HE DOESN'T DO ────────────────────── -->
+  <section class="section nope" id="privacy">
+    <div class="wrap">
+      <h2 class="section__title">What he doesn't do</h2>
+      <p class="section__lede">Worth stating plainly, because a lot of things in this category do.</p>
+
+      <ul class="nots">
+        <li>
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+          <span><strong>No network.</strong> He never phones home. There is nothing to phone home to.</span>
+        </li>
+        <li>
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+          <span><strong>No account, no login, no telemetry, no analytics.</strong></span>
+        </li>
+        <li>
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+          <span><strong>No permissions.</strong> No Accessibility, no Screen Recording, no Full Disk Access, no Input Monitoring. He reads window geometry, idle time, battery and thermal state through public APIs that require no prompt, and reads nothing else.</span>
+        </li>
+        <li>
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+          <span><strong>No AI.</strong> No model, no API key, no chat. He is a state machine with 29 states and a dice roll, and he does not have anything to say to you.</span>
+        </li>
+        <li>
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+          <span><strong>No purchases, no cosmetic packs, no subscription, no ads.</strong></span>
+        </li>
+      </ul>
+
+      <div class="pull">
+        <img src="assets/jumba/alert_south-east.png" alt="Jumba standing alert, ears up" width="48" height="48" loading="lazy" decoding="async">
+        <p>
+          What he <em>is</em>: 327 deterministic tests behind a pure state machine, and a build
+          signed with a Developer ID certificate and notarized by Apple — which is how your Mac
+          knows the app you downloaded is the one that left this repository.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ───────────────────────────── INSTALL ───────────────────────────── -->
+  <section class="section" id="install">
+    <div class="wrap">
+      <h2 class="section__title">Install</h2>
+      <p class="req"><strong>Requirements:</strong> macOS 14 (Sonoma) or newer, Apple&nbsp;Silicon.</p>
+
+      <ol class="steps">
+        <li>
+          <h3>Download the DMG</h3>
+          <p>Grab <code>Jumbini.dmg</code> from the latest release.</p>
+          <a class="btn btn--primary btn--sm" href="https://github.com/abjumb/jumbini/releases/latest">
+            <span class="btn__row">
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5v11m0 0 4.5-4.5M12 14.5 7.5 10M4.5 19.5h15"/></svg>
+              Jumbini.dmg
+            </span>
+          </a>
+        </li>
+        <li>
+          <h3>Drag him to Applications</h3>
+          <p>Open the DMG and drag <strong>Jumbini</strong> across.</p>
+        </li>
+        <li>
+          <h3>Open it</h3>
+          <p>
+            That is the whole thing. Jumbini is signed and notarized, so it opens on first
+            launch like any other app — no right-click trick, no trip through Privacy &amp;
+            Security, no "Jumbini is damaged and can't be opened."
+          </p>
+        </li>
+      </ol>
+
+      <p class="afterword">
+        He has no Dock icon and no window. When he's running you get a dog on screen and a
+        small pixel-dog icon in your menu bar — mute, pause, Jumbini Cam and
+        <strong>Leave Jumbini Behind</strong> all live in there.
+      </p>
+
+      <details class="source">
+        <summary>Or build him from source — no Xcode needed</summary>
+<pre><code>git clone https://github.com/abjumb/jumbini.git
+cd jumbini
+./Scripts/bundle.sh          # → build/Jumbini.app
+open build/Jumbini.app</code></pre>
+        <p>Command Line Tools and Swift 6 are enough. <code>./Scripts/test.sh</code> runs the 327 tests; <code>./Scripts/dmg.sh</code> builds the disk image.</p>
+      </details>
+    </div>
+  </section>
+
+  <!-- ───────────────────────────── THE ART ───────────────────────────── -->
+  <section class="section section--alt" id="art">
+    <div class="wrap">
+      <div class="art">
+        <img src="assets/jumba/sit_south.png" alt="Jumba sitting, facing you" width="136" height="152" loading="lazy" decoding="async">
+        <div>
+          <h2>Jumba is a real dog</h2>
+          <p>
+            The pixel art is of him, drawn by hand from photographs — not generated, not
+            licensed, not bought from a sprite pack. Eight rotations for each of twenty states,
+            twice over for his second haircut.
+          </p>
+          <p class="art__note">
+            The code is MIT. The artwork isn't: Jumba stays his. Fork it, build it, reuse the
+            code — and if you ship something derived from it, replace the dog.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ──────────────────────────── CLOSING CTA ──────────────────────────── -->
+  <section class="closer">
+    <img src="assets/page/img3.png" alt="" width="128" height="128" loading="lazy" decoding="async">
+    <h2>Put a dog on it.</h2>
+    <a class="btn btn--primary btn--lg" href="https://github.com/abjumb/jumbini/releases/latest">
+      <span class="btn__row">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5v11m0 0 4.5-4.5M12 14.5 7.5 10M4.5 19.5h15"/></svg>
+        Download for macOS
+      </span>
+      <span class="btn__sub" data-version-label>Jumbini.dmg</span>
+    </a>
+    <p class="closer__meta">Free · macOS 14+ · Apple Silicon · Signed &amp; notarized</p>
+  </section>
+
+</main>
+
+<footer class="footer">
+  <div class="footer__links">
+    <a href="https://github.com/abjumb/jumbini">Source</a>
+    <a href="https://github.com/abjumb/jumbini/releases">All releases</a>
+    <a href="https://github.com/abjumb/jumbini/blob/main/COATS.md">Draw your own dog</a>
+    <a href="https://github.com/abjumb/jumbini/issues">Report a bug</a>
+    <a href="https://github.com/abjumb/jumbini/blob/main/LICENSE">License</a>
+  </div>
+  <p class="footer__fine">Code MIT · artwork rights reserved · no trackers on this page, either.</p>
+</footer>
+
+<script src="jumba.js" defer></script>
+<script>
+(function () {
+  'use strict';
+
+  // Version labels, written from <body data-version> so there is one source.
+  var version = document.body.getAttribute('data-version') || '';
+  if (version) {
+    var labels = document.querySelectorAll('[data-version-label]');
+    for (var i = 0; i < labels.length; i++) {
+      labels[i].textContent = version + ' · Jumbini.dmg';
+    }
+  }
+
+  // The mock menu bar shows the visitor's own clock. A frozen 3:42 PM is the
+  // detail that gives away a screenshot, so it ships as a real one.
+  var clocks = document.querySelectorAll('[data-clock]');
+  function tick() {
+    var now = new Date();
+    var h = now.getHours(), m = now.getMinutes();
+    var suffix = h >= 12 ? 'PM' : 'AM';
+    h = h % 12; if (h === 0) h = 12;
+    var text = h + ':' + (m < 10 ? '0' : '') + m + ' ' + suffix;
+    for (var i = 0; i < clocks.length; i++) clocks[i].textContent = text;
+  }
+  if (clocks.length) { tick(); setInterval(tick, 20000); }
+
+  // Start the dog once the canvas has a real size. jumba.js decides for itself
+  // whether to run or to offer the "Start him moving" button under
+  // prefers-reduced-motion, so this only has to hand it a laid-out canvas.
+  function startDog() {
+    if (typeof window.__initJumba !== 'function') return false;
+    var c = document.getElementById('jumba-canvas');
+    if (!c || !c.offsetWidth) return false;
+    window.__initJumba();
+    return true;
+  }
+  window.addEventListener('load', function () {
+    if (startDog()) return;
+    var tries = 0;
+    var timer = setInterval(function () {
+      if (startDog() || ++tries > 60) clearInterval(timer);
+    }, 80);
+  });
+})();
+</script>
+</body>
+</html>

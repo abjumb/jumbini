@@ -3,13 +3,25 @@
     <channel>
         <title>Jumbini</title>
         <item>
+            <title>4.3</title>
+            <pubDate>Sun, 16 Aug 2026 02:22:17 +0000</pubDate>
+            <sparkle:version>12</sparkle:version>
+            <sparkle:shortVersionString>4.3</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <enclosure url="https://abjumb.github.io/jumbini/Jumbini-4.3.dmg" length="1949956" type="application/octet-stream" sparkle:edSignature="PMdxlEDTqDZJxuFTHE1Z3nhHRTEynpS3gYPsS/aoGeDuiaTNXIh93nJQnH79pr9KvLrhk7++HXHtmsUC43AYDw=="/>
+            <sparkle:deltas>
+                <enclosure url="https://abjumb.github.io/jumbini/Jumbini12-11.delta" sparkle:deltaFrom="11" length="9326" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="980432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="wWFWs8qIgVQDzYVcPvcuovTMcrrtHxonS7dstHIOnRwb1nrMUq8w0AWL2n4wDBwcXt0P32/ABDtpzXDEmei/BQ=="/>
+            </sparkle:deltas>
+        </item>
+        <item>
             <title>4.2</title>
             <pubDate>Sat, 15 Aug 2026 23:51:54 +0000</pubDate>
             <sparkle:version>11</sparkle:version>
             <sparkle:shortVersionString>4.2</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <enclosure url="https://abjumb.github.io/Jumbini-4.2.dmg" length="1949881" type="application/octet-stream" sparkle:edSignature="WyFK7H0LHctGJye0cMELNQc68ZPUJNZVkvaeOLr8aBld1v7r8HEi0ZFTZ3y/7izoABVmlJaokUXAPcPKDtRQAA=="/>
+            <enclosure url="https://abjumb.github.io/jumbini/Jumbini-4.2.dmg" length="1949881" type="application/octet-stream" sparkle:edSignature="WyFK7H0LHctGJye0cMELNQc68ZPUJNZVkvaeOLr8aBld1v7r8HEi0ZFTZ3y/7izoABVmlJaokUXAPcPKDtRQAA=="/>
         </item>
     </channel>
 </rss>
