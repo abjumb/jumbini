@@ -31,18 +31,5 @@
                 <enclosure url="https://abjumb.github.io/jumbini/Jumbini14-11.delta" sparkle:deltaFrom="11" length="146674" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="980432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="e8KpjKM9300LIiKpX5e0xuEiLh1od/zv4ZD+WpgPIBcaHvgqjPzztawQQ+hZLSdcOzTydE3AL814uPKix8SMBg=="/>
             </sparkle:deltas>
         </item>
-        <item>
-            <title>4.4</title>
-            <pubDate>Sun, 16 Aug 2026 05:30:25 +0000</pubDate>
-            <sparkle:version>13</sparkle:version>
-            <sparkle:shortVersionString>4.4</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <enclosure url="https://abjumb.github.io/jumbini/Jumbini-4.4.dmg" length="2051955" type="application/octet-stream" sparkle:edSignature="Kz4WSm1lq3Znn5dImPgGk+YxVyd+BQKI0hk9/K8VXb6OW1F72djGs0wCqY4fnDe+/PREp9YdYD0xYwWgZyB7CA=="/>
-            <sparkle:deltas>
-                <enclosure url="https://abjumb.github.io/jumbini/Jumbini13-12.delta" sparkle:deltaFrom="12" length="145666" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="980432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="fzK7u+cLEO6yfKc2XKskJr85lumDYZeVV8Eq2ynqlB66KYaSkJBstHiqACOcIHEI/ir2K5JJUxSfrJDJPlRWBw=="/>
-                <enclosure url="https://abjumb.github.io/jumbini/Jumbini13-11.delta" sparkle:deltaFrom="11" length="145182" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="980432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="vJHhbTMjeCn3LlFbtJiDZM+DvhwuBsn+WAkFLLoIJz0YbUvIHakNjzqD5X1yb+INqHUzNkMznsdwvq236A7JBw=="/>
-            </sparkle:deltas>
-        </item>
     </channel>
 </rss>
