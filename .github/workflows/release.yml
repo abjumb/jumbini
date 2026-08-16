@@ -242,6 +242,40 @@ jobs:
           cp build/Jumbini.dmg "$PAGES/Jumbini-$V.dmg"
           SPARKLE_ED25519_KEY="$SPARKLE_ED25519_KEY" ./Scripts/appcast.sh "$PAGES"
 
+      # The download page ships in the same payload as the appcast, because it
+      # has to be served from the same place. SUFeedURL is compiled into every
+      # copy of the app that has ever shipped, so the site cannot take over
+      # abjumb.github.io/jumbini from a different branch or folder without
+      # stranding everyone already running Jumbini. Same payload, same origin,
+      # no conflict — and the page is refreshed on every release.
+      - name: Add the download page to the Pages payload
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          set -euo pipefail
+          V="${GITHUB_REF_NAME#v}"
+          PAGES="build/pages"
+
+          [ -d "$PAGES" ] || { echo "::error::$PAGES is missing; the appcast step must run first."; exit 1; }
+          [ -f docs/index.html ] || { echo "::error::docs/index.html is missing."; exit 1; }
+
+          # docs/ wins on collisions, so the committed site is what ships, but
+          # everything already on gh-pages that docs/ does not name — the DMGs,
+          # appcast.xml, the delta files — is left exactly where it was.
+          cp -R docs/. "$PAGES/"
+
+          # The page states which version it hands out. Stamp it from the tag
+          # for the same reason Info.plist is stamped: so it cannot drift from
+          # what actually shipped. (v4.2 went out with the page still saying v4.0.)
+          sed -i '' "s/data-version=\"[^\"]*\"/data-version=\"v$V\"/" "$PAGES/index.html"
+          if ! grep -q "data-version=\"v$V\"" "$PAGES/index.html"; then
+            echo "::error::Could not stamp v$V into docs/index.html — the" \
+                 "data-version attribute on <body> is gone or was renamed."
+            exit 1
+          fi
+
+          echo "Download page stamped v$V. Pages payload:"
+          ls -1 "$PAGES" | sed 's/^/  /'
+
       - name: Deploy appcast to GitHub Pages
         if: startsWith(github.ref, 'refs/tags/v')
         uses: peaceiris/actions-gh-pages@v4
@@ -251,6 +285,82 @@ jobs:
           publish_branch: gh-pages
           force_orphan: false
           commit_message: "Publish appcast for ${{ github.ref_name }}"
+
+      # A broken update feed is invisible from inside the build: the appcast is
+      # generated, signed and published exactly as instructed, and only fails on
+      # a user's machine, where Sparkle announces an update and then cannot
+      # fetch it. v4.2 shipped that way — the download prefix was missing its
+      # trailing slash, so every enclosure URL dropped the /jumbini/ path
+      # segment and 404'd. So fetch what was actually published and prove the
+      # DMG behind it is downloadable before calling the release good.
+      - name: Verify the published feed and download page
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          set -euo pipefail
+
+          FEED_URL="$(/usr/libexec/PlistBuddy -c 'Print :SUFeedURL' Scripts/Info.plist)"
+          V="${GITHUB_REF_NAME#v}"
+          EXPECTED_DMG="${FEED_URL%/*}/Jumbini-$V.dmg"
+
+          echo "Feed:     $FEED_URL"
+          echo "Expected: $EXPECTED_DMG"
+
+          # GitHub Pages rebuilds asynchronously after the branch push, so the
+          # new appcast is not readable the instant the deploy step returns.
+          FEED=""
+          for attempt in $(seq 1 24); do
+            if FEED="$(curl -fsSL --max-time 20 "$FEED_URL" 2>/dev/null)"; then
+              if printf '%s' "$FEED" | grep -qF "Jumbini-$V.dmg"; then
+                echo "Feed is live and lists $V (attempt $attempt)."
+                break
+              fi
+              echo "Feed is live but does not list $V yet (attempt $attempt)..."
+            else
+              echo "Feed not reachable yet (attempt $attempt)..."
+            fi
+            FEED=""
+            sleep 10
+          done
+
+          if [ -z "$FEED" ]; then
+            echo "::error::$FEED_URL did not serve an appcast listing $V within four" \
+                 "minutes. Check that GitHub Pages is still set to deploy from the" \
+                 "gh-pages branch (Settings → Pages). SUFeedURL in Scripts/Info.plist" \
+                 "is baked into every shipped copy of the app, so moving Pages away" \
+                 "from that path breaks auto-update for everyone already running it."
+            exit 1
+          fi
+
+          if ! printf '%s' "$FEED" | grep -qF "url=\"$EXPECTED_DMG\""; then
+            echo "::error::The published appcast does not point at $EXPECTED_DMG." \
+                 "Enclosure URLs found:"
+            printf '%s' "$FEED" | grep -oE 'url="[^"]+"' | sed 's/^/  /'
+            exit 1
+          fi
+
+          CODE="$(curl -o /dev/null -sSL -w '%{http_code}' --max-time 60 "$EXPECTED_DMG" || echo 000)"
+          if [ "$CODE" != "200" ]; then
+            echo "::error::$EXPECTED_DMG returned HTTP $CODE. Sparkle would offer" \
+                 "this update and then fail to download it."
+            exit 1
+          fi
+
+          echo "Update feed verified: $V is announced and its DMG downloads (HTTP 200)."
+
+          # The page went out in the same payload, so if the feed is live and the
+          # page is not, the copy step is what broke.
+          SITE_URL="${FEED_URL%/*}/"
+          PAGE="$(curl -fsSL --max-time 20 "$SITE_URL" || true)"
+          if [ -z "$PAGE" ]; then
+            echo "::error::$SITE_URL served no download page, but the appcast next" \
+                 "to it is live. Check the 'Add the download page' step."
+            exit 1
+          fi
+          if ! printf '%s' "$PAGE" | grep -q "data-version=\"v$V\""; then
+            echo "::error::$SITE_URL is live but does not advertise v$V."
+            exit 1
+          fi
+          echo "Download page verified: $SITE_URL is live and advertises v$V."
 
       # Always runs, including after a failed build, so the key never survives
       # the job even if something above blew up.
