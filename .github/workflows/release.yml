@@ -28,9 +28,17 @@ permissions:
 jobs:
   release:
     # An Apple Silicon runner, because Jumbini is Apple Silicon only.
-    # macos-latest moved to macos-26 in 2026, so this pin will eventually enter
-    # deprecation — revisit it when GitHub announces macos-15 retirement.
-    runs-on: macos-15
+    #
+    # This image must carry an SDK at least as new as the newest API the source
+    # uses, and it must not fall behind ci.yml. It did once: ci.yml tracks
+    # macos-latest, which had moved to Xcode 26 while this was still pinned to
+    # macos-15 and Xcode 16.4. A pull request using NSGlassEffectView (macOS
+    # 26) therefore went green on CI and then failed to compile here, on the
+    # tag, after the merge — CI cannot vouch for a build it never makes.
+    #
+    # Pinned rather than macos-latest so an image roll cannot land first in a
+    # release, but the pin is a floor to raise, not a version to hold.
+    runs-on: macos-26
     # notarytool can wait a long time on a bad day; don't let a stall burn the
     # 360-minute default (billed 10x on macOS runners).
     timeout-minutes: 60
