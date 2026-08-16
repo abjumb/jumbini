@@ -106,6 +106,50 @@ struct DoNotDisturbTracker {
     }
 }
 
+/// Identifies one continuous start/stop lifetime. Asynchronous work keeps the
+/// token it began with, so stopping or restarting the monitor invalidates
+/// every completion and notification already queued for the previous run.
+final class MonitorLifecycle {
+    private let lock = NSLock()
+    private var running = false
+    private var currentToken: UInt = 0
+
+    var isRunning: Bool {
+        withLock { running }
+    }
+
+    var token: UInt {
+        withLock { currentToken }
+    }
+
+    func start() -> UInt {
+        withLock {
+            guard !running else { return currentToken }
+            currentToken &+= 1
+            running = true
+            return currentToken
+        }
+    }
+
+    func stop() {
+        withLock {
+            guard running else { return }
+            running = false
+            currentToken &+= 1
+        }
+    }
+
+    func accepts(_ candidate: UInt) -> Bool {
+        withLock { running && candidate == currentToken }
+    }
+
+    private func withLock<T>(_ operation: () -> T) -> T {
+        lock.lock()
+        defer { lock.unlock() }
+        return operation()
+    }
+}
+
 // MARK: - The monitor
 
 /// Watches the machine and reports the handful of happenings the dog cares
@@ -135,7 +179,7 @@ final class SystemMonitor {
     ]
 
     private var timer: Timer?
-    private var isRunning = false
+    private let lifecycle = MonitorLifecycle()
 
     private var idle = IdleTracker()
     private var battery = BatteryTracker()
@@ -158,8 +202,8 @@ final class SystemMonitor {
     // MARK: Lifecycle
 
     func start() {
-        guard !isRunning else { return }
-        isRunning = true
+        guard !lifecycle.isRunning else { return }
+        _ = lifecycle.start()
 
         // Thermal is notification-driven; no polling needed.
         NotificationCenter.default.addObserver(
@@ -179,8 +223,8 @@ final class SystemMonitor {
     }
 
     func stop() {
-        guard isRunning else { return }
-        isRunning = false
+        guard lifecycle.isRunning else { return }
+        lifecycle.stop()
         timer?.invalidate()
         timer = nil
         NotificationCenter.default.removeObserver(
@@ -199,12 +243,17 @@ final class SystemMonitor {
 
     /// Always delivers on the main thread; the background build probe is the
     /// one caller that needs the hop.
-    private func emit(_ signal: SystemSignal?) {
+    private func emit(_ signal: SystemSignal?, token: UInt? = nil) {
         guard let signal else { return }
+        let deliveryToken = token ?? lifecycle.token
         if Thread.isMainThread {
+            guard lifecycle.accepts(deliveryToken) else { return }
             onSignal?(signal)
         } else {
-            DispatchQueue.main.async { [weak self] in self?.onSignal?(signal) }
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.lifecycle.accepts(deliveryToken) else { return }
+                self.onSignal?(signal)
+            }
         }
     }
 
@@ -280,20 +329,25 @@ final class SystemMonitor {
 
     @objc private func thermalStateChanged() {
         // The notification can arrive on any thread; the tracker lives on main.
+        let token = lifecycle.token
         if Thread.isMainThread {
-            pollThermal()
+            guard lifecycle.accepts(token) else { return }
+            pollThermal(token: token)
         } else {
-            DispatchQueue.main.async { [weak self] in self?.pollThermal() }
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.lifecycle.accepts(token) else { return }
+                self.pollThermal(token: token)
+            }
         }
     }
 
     /// The closest thing to a fan tachometer that a sandboxed app can read.
     /// Real RPM needs private SMC calls, so "the machine is thermally
     /// stressed" stands in for "the fans spun up".
-    private func pollThermal() {
+    private func pollThermal(token: UInt? = nil) {
         let state = ProcessInfo.processInfo.thermalState
         let hot = state == .serious || state == .critical
-        emit(thermal.update(isHot: hot))
+        emit(thermal.update(isHot: hot), token: token)
     }
 
     // MARK: Build finished
@@ -301,17 +355,19 @@ final class SystemMonitor {
     private func pollBuild(at now: TimeInterval) {
         guard buildAvailable, !buildProbeInFlight else { return }
         buildProbeInFlight = true
+        let token = lifecycle.token
         buildQueue.async { [weak self] in
             guard let self else { return }
             let result = Self.probeBuildTools()
             DispatchQueue.main.async {
                 self.buildProbeInFlight = false
+                guard self.lifecycle.accepts(token) else { return }
                 guard let running = result else {
                     // pgrep is missing or unrunnable: give up on this source.
                     self.buildAvailable = false
                     return
                 }
-                self.emit(self.build.update(toolsRunning: running, at: now))
+                self.emit(self.build.update(toolsRunning: running, at: now), token: token)
             }
         }
     }

@@ -914,11 +914,17 @@ func trickCommandPerformsItsAnimation(trick: Trick) {
     #expect(!digested.contains(.leaveDeposit))
 }
 
-@Test func disablingPoopMidHunchPreventsTheDeposit() {
+@Test func disablingPoopMidHunchEndsTheBreakImmediately() {
     let brain = makeBrain { $0.hunchChance = 1 }
     _ = brain.handle(.tick, at: 0)
     _ = brain.handle(.tick, at: 3)
-    brain.poopEnabled = false
+    #expect(brain.state == .hunching)
+
+    let disabled = brain.disableBathroomBreaks(at: 4)
+
+    #expect(brain.state == .idle)
+    #expect(disabled.contains(.stopMoving))
+    #expect(disabled.contains(.play(.idle)))
 
     let completed = brain.handle(.tick, at: 3 + brain.tuning.hunchDuration)
 
@@ -1594,6 +1600,30 @@ private func makeNaturallySleepingBrain() -> DogBrain {
     #expect(brain.state == .idle)
     #expect(effects.contains(.stopMoving))
     #expect(effects.contains(.play(.idle)))
+}
+
+@Test func disablingSystemReactionsPreservesTreatChaseThatInterruptedRest() {
+    let brain = makeBrain()
+    _ = brain.handle(.system(.dndOn), at: 0)
+    _ = brain.handle(.treatDropped(at: CGPoint(x: 640, y: 200)), at: 1)
+    #expect(brain.state == .chasingTreat)
+
+    let effects = brain.disableSystemReactions(at: 2)
+
+    #expect(brain.state == .chasingTreat)
+    #expect(effects == [])
+}
+
+@Test func disablingSystemReactionsPreservesPickupThatInterruptedRest() {
+    let brain = makeBrain()
+    _ = brain.handle(.system(.batteryLow), at: 0)
+    _ = brain.handle(.pickedUp, at: 1)
+    #expect(brain.state == .carried)
+
+    let effects = brain.disableSystemReactions(at: 2)
+
+    #expect(brain.state == .carried)
+    #expect(effects == [])
 }
 
 // MARK: - Toy box: frisbee

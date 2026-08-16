@@ -264,6 +264,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func stopSystemMonitor() {
+        systemMonitor?.onSignal = nil
         systemMonitor?.stop()
         systemMonitor = nil
     }
