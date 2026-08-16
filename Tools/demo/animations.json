@@ -1,0 +1,364 @@
+{
+  "idle" : {
+    "east" : {
+      "fps" : 1,
+      "frames" : [
+        "idle_east"
+      ],
+      "scale" : 2.3999999999999999
+    },
+    "north" : {
+      "fps" : 1,
+      "frames" : [
+        "idle_north"
+      ],
+      "scale" : 2.3999999999999999
+    },
+    "north-east" : {
+      "fps" : 1,
+      "frames" : [
+        "idle_north-east"
+      ],
+      "scale" : 2.3999999999999999
+    },
+    "north-west" : {
+      "fps" : 1,
+      "frames" : [
+        "idle_north-west"
+      ],
+      "scale" : 2.3999999999999999
+    },
+    "south" : {
+      "fps" : 1,
+      "frames" : [
+        "idle_south"
+      ],
+      "scale" : 2.3999999999999999
+    },
+    "south-east" : {
+      "fps" : 1,
+      "frames" : [
+        "idle_south-east"
+      ],
+      "scale" : 2.3999999999999999
+    },
+    "south-west" : {
+      "fps" : 1,
+      "frames" : [
+        "idle_south-west"
+      ],
+      "scale" : 2.3999999999999999
+    },
+    "west" : {
+      "fps" : 1,
+      "frames" : [
+        "idle_west"
+      ],
+      "scale" : 2.3999999999999999
+    }
+  },
+  "run" : {
+    "east" : {
+      "fps" : 13,
+      "frames" : [
+        "run1_east",
+        "run2_east"
+      ],
+      "scale" : 2.3999999999999999
+    },
+    "north" : {
+      "fps" : 13,
+      "frames" : [
+        "run1_north",
+        "run2_north"
+      ],
+      "scale" : 2.3999999999999999
+    },
+    "north-east" : {
+      "fps" : 13,
+      "frames" : [
+        "run1_north-east",
+        "run2_north-east"
+      ],
+      "scale" : 2.3999999999999999
+    },
+    "north-west" : {
+      "fps" : 13,
+      "frames" : [
+        "run1_north-west",
+        "run2_north-west"
+      ],
+      "scale" : 2.3999999999999999
+    },
+    "south" : {
+      "fps" : 13,
+      "frames" : [
+        "run1_south",
+        "run2_south"
+      ],
+      "scale" : 2.3999999999999999
+    },
+    "south-east" : {
+      "fps" : 13,
+      "frames" : [
+        "run1_south-east",
+        "run2_south-east"
+      ],
+      "scale" : 2.3999999999999999
+    },
+    "south-west" : {
+      "fps" : 13,
+      "frames" : [
+        "run1_south-west",
+        "run2_south-west"
+      ],
+      "scale" : 2.3999999999999999
+    },
+    "west" : {
+      "fps" : 13,
+      "frames" : [
+        "run1_west",
+        "run2_west"
+      ],
+      "scale" : 2.3999999999999999
+    }
+  },
+  "sit" : {
+    "east" : {
+      "fps" : 1,
+      "frames" : [
+        "sit_east"
+      ],
+      "scale" : 2.8999999999999999
+    },
+    "north" : {
+      "fps" : 1,
+      "frames" : [
+        "sit_north"
+      ],
+      "scale" : 2.8999999999999999
+    },
+    "north-east" : {
+      "fps" : 1,
+      "frames" : [
+        "sit_north-east"
+      ],
+      "scale" : 2.8999999999999999
+    },
+    "north-west" : {
+      "fps" : 1,
+      "frames" : [
+        "sit_north-west"
+      ],
+      "scale" : 2.8999999999999999
+    },
+    "south" : {
+      "fps" : 1,
+      "frames" : [
+        "sit_south"
+      ],
+      "scale" : 2.8999999999999999
+    },
+    "south-east" : {
+      "fps" : 1,
+      "frames" : [
+        "sit_south-east"
+      ],
+      "scale" : 2.8999999999999999
+    },
+    "south-west" : {
+      "fps" : 1,
+      "frames" : [
+        "sit_south-west"
+      ],
+      "scale" : 2.8999999999999999
+    },
+    "west" : {
+      "fps" : 1,
+      "frames" : [
+        "sit_west"
+      ],
+      "scale" : 2.8999999999999999
+    }
+  },
+  "spin" : {
+    "east" : {
+      "fps" : 24,
+      "frames" : [
+        "idle_south",
+        "idle_south-west",
+        "idle_west",
+        "idle_north-west",
+        "idle_north",
+        "idle_north-east",
+        "idle_east",
+        "idle_south-east"
+      ],
+      "scale" : 2.3999999999999999
+    },
+    "north" : {
+      "fps" : 24,
+      "frames" : [
+        "idle_south",
+        "idle_south-west",
+        "idle_west",
+        "idle_north-west",
+        "idle_north",
+        "idle_north-east",
+        "idle_east",
+        "idle_south-east"
+      ],
+      "scale" : 2.3999999999999999
+    },
+    "north-east" : {
+      "fps" : 24,
+      "frames" : [
+        "idle_south",
+        "idle_south-west",
+        "idle_west",
+        "idle_north-west",
+        "idle_north",
+        "idle_north-east",
+        "idle_east",
+        "idle_south-east"
+      ],
+      "scale" : 2.3999999999999999
+    },
+    "north-west" : {
+      "fps" : 24,
+      "frames" : [
+        "idle_south",
+        "idle_south-west",
+        "idle_west",
+        "idle_north-west",
+        "idle_north",
+        "idle_north-east",
+        "idle_east",
+        "idle_south-east"
+      ],
+      "scale" : 2.3999999999999999
+    },
+    "south" : {
+      "fps" : 24,
+      "frames" : [
+        "idle_south",
+        "idle_south-west",
+        "idle_west",
+        "idle_north-west",
+        "idle_north",
+        "idle_north-east",
+        "idle_east",
+        "idle_south-east"
+      ],
+      "scale" : 2.3999999999999999
+    },
+    "south-east" : {
+      "fps" : 24,
+      "frames" : [
+        "idle_south",
+        "idle_south-west",
+        "idle_west",
+        "idle_north-west",
+        "idle_north",
+        "idle_north-east",
+        "idle_east",
+        "idle_south-east"
+      ],
+      "scale" : 2.3999999999999999
+    },
+    "south-west" : {
+      "fps" : 24,
+      "frames" : [
+        "idle_south",
+        "idle_south-west",
+        "idle_west",
+        "idle_north-west",
+        "idle_north",
+        "idle_north-east",
+        "idle_east",
+        "idle_south-east"
+      ],
+      "scale" : 2.3999999999999999
+    },
+    "west" : {
+      "fps" : 24,
+      "frames" : [
+        "idle_south",
+        "idle_south-west",
+        "idle_west",
+        "idle_north-west",
+        "idle_north",
+        "idle_north-east",
+        "idle_east",
+        "idle_south-east"
+      ],
+      "scale" : 2.3999999999999999
+    }
+  },
+  "walk" : {
+    "east" : {
+      "fps" : 4,
+      "frames" : [
+        "run1_east",
+        "run2_east"
+      ],
+      "scale" : 2.3999999999999999
+    },
+    "north" : {
+      "fps" : 4,
+      "frames" : [
+        "run1_north",
+        "run2_north"
+      ],
+      "scale" : 2.3999999999999999
+    },
+    "north-east" : {
+      "fps" : 4,
+      "frames" : [
+        "run1_north-east",
+        "run2_north-east"
+      ],
+      "scale" : 2.3999999999999999
+    },
+    "north-west" : {
+      "fps" : 4,
+      "frames" : [
+        "run1_north-west",
+        "run2_north-west"
+      ],
+      "scale" : 2.3999999999999999
+    },
+    "south" : {
+      "fps" : 4,
+      "frames" : [
+        "run1_south",
+        "run2_south"
+      ],
+      "scale" : 2.3999999999999999
+    },
+    "south-east" : {
+      "fps" : 4,
+      "frames" : [
+        "run1_south-east",
+        "run2_south-east"
+      ],
+      "scale" : 2.3999999999999999
+    },
+    "south-west" : {
+      "fps" : 4,
+      "frames" : [
+        "run1_south-west",
+        "run2_south-west"
+      ],
+      "scale" : 2.3999999999999999
+    },
+    "west" : {
+      "fps" : 4,
+      "frames" : [
+        "run1_west",
+        "run2_west"
+      ],
+      "scale" : 2.3999999999999999
+    }
+  }
+}
