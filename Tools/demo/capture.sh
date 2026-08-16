@@ -337,7 +337,9 @@ for shot in "${shots[@]}"; do
   script="$SHOTS/$shot.json"
   [ -f "$script" ] || die "no shot script at $script"
 
-  duration=$(plutil -extract duration raw -o - "$script")
+  # plutil prints 15.000000; calc trims it to something readable that ffmpeg
+  # and screencapture are both still happy with.
+  duration=$(calc "$(plutil -extract duration raw -o - "$script")")
   show_cursor=$(plutil -extract showCursor raw -o - "$script" 2>/dev/null || echo false)
 
   echo "capture: $shot (${duration}s)"
