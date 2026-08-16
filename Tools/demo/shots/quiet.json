@@ -1,0 +1,10 @@
+{
+  "name": "quiet",
+  "duration": 12.0,
+  "showCursor": false,
+  "beats": [
+    { "at": 1.0, "kind": "system", "signal": "batteryLow" },
+    { "at": 5.0, "kind": "system", "signal": "idleBegan" },
+    { "at": 10.0, "kind": "system", "signal": "idleEnded" }
+  ]
+}

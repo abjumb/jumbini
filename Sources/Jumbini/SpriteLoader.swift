@@ -52,6 +52,20 @@ enum Facing: CaseIterable {
     }
 }
 
+/// Frame list, rate and scale for a pose, with no textures attached.
+///
+/// Only the poses that resolve to exactly one filename per frame get one of
+/// these. Most of the table falls back — `make(["pounce_\(d)"]) ?? make(["run2_\(d)"])`
+/// — and what a fallback resolves to depends on which PNGs are on disk, which
+/// a static description can't capture. The five that don't fall back are the
+/// five the landing page's hero loops need, and pulling them out is what lets
+/// `Tools/demo/spritefilm` render them at the app's own rate.
+struct AnimationSpec: Equatable {
+    let frames: [String]
+    let fps: Double
+    let scale: CGFloat
+}
+
 /// Loads Jumba's hand-made 8-directional sprites (imported by Tools/import_jumba.py)
 /// plus the generated props (ball, heart). Nearest-neighbor keeps pixels crisp.
 final class SpriteLibrary {
@@ -94,30 +108,45 @@ final class SpriteLibrary {
     static let baseScale: CGFloat = 2.4
     /// The sit set was exported at a smaller pixel density than idle — upscale
     /// it so Jumba doesn't shrink when he sits (idle content 46px vs sit 38px).
-    private static let sitScale: CGFloat = 2.9
+    /// Not private: `heroSpec` and its test need to read it too.
+    static let sitScale: CGFloat = 2.9
 
     private var textureCache: [String: SKTexture] = [:]
+
+    /// The fallback-free poses, described rather than rendered. nil for every
+    /// pose whose art resolves against what's on disk.
+    static func heroSpec(for dogAnimation: DogAnimation, facing: Facing) -> AnimationSpec? {
+        let d = facing.fileSuffix
+        switch dogAnimation {
+        case .idle:
+            return AnimationSpec(frames: ["idle_\(d)"], fps: 1, scale: baseScale)
+        case .walk:
+            return AnimationSpec(frames: ["run1_\(d)", "run2_\(d)"], fps: 4, scale: baseScale)
+        case .run:
+            return AnimationSpec(frames: ["run1_\(d)", "run2_\(d)"], fps: 13, scale: baseScale)
+        case .sit:
+            return AnimationSpec(frames: ["sit_\(d)"], fps: 1, scale: sitScale)
+        case .spin:
+            let cycle = [Facing.south, .southWest, .west, .northWest,
+                         .north, .northEast, .east, .southEast]
+            return AnimationSpec(
+                frames: cycle.map { "idle_\($0.fileSuffix)" }, fps: 24, scale: baseScale
+            )
+        default:
+            return nil
+        }
+    }
 
     func animation(for dogAnimation: DogAnimation, facing: Facing) -> Animation? {
         let d = facing.fileSuffix
         switch dogAnimation {
-        case .idle:
-            return make(["idle_\(d)"], fps: 1, scale: Self.baseScale)
-        case .walk:
-            return make(["run1_\(d)", "run2_\(d)"], fps: 4, scale: Self.baseScale)
-        case .run:
-            return make(["run1_\(d)", "run2_\(d)"], fps: 13, scale: Self.baseScale)
+        case .idle, .walk, .run, .sit, .spin:
+            guard let spec = Self.heroSpec(for: dogAnimation, facing: facing) else { return nil }
+            return make(spec.frames, fps: spec.fps, scale: spec.scale)
         case .carryWalk:
             return make(["run1_\(d)", "run2_\(d)"], fps: 6, scale: Self.baseScale)
-        case .sit:
-            return make(["sit_\(d)"], fps: 1, scale: Self.sitScale)
         case .lie, .sleep:
             return make(["sleep_\(d)"], fps: 1, scale: Self.baseScale)
-        case .spin:
-            // A real spin: cycle through all 8 rotations of the idle pose.
-            let cycle = [Facing.south, .southWest, .west, .northWest,
-                         .north, .northEast, .east, .southEast]
-            return make(cycle.map { "idle_\($0.fileSuffix)" }, fps: 24, scale: Self.baseScale)
         case .happy:
             return yap(facing: facing, fps: 8)
         case .dangle:

@@ -1,0 +1,11 @@
+{
+  "name": "charm",
+  "duration": 14.0,
+  "showCursor": true,
+  "beats": [
+    { "at": 0.5, "kind": "command", "command": "sit" },
+    { "at": 4.0, "kind": "command", "command": "relax" },
+    { "at": 8.0, "kind": "command", "command": "spin" },
+    { "at": 11.0, "kind": "command", "command": "lieDown" }
+  ]
+}
