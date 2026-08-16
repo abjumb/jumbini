@@ -13,6 +13,11 @@ on run argv
 		end tell
 		tell application "Finder"
 			activate
+			-- A freshly logged-in capture account has no Finder window open,
+			-- and `set bounds of Finder window 1` on nothing is an error that
+			-- takes capture.sh down with it before the first take. Same guard
+			-- the TextEdit branch above already has.
+			if (count of Finder windows) is 0 then make new Finder window
 			set bounds of Finder window 1 to {1240, 420, 1900, 860}
 		end tell
 
@@ -33,7 +38,15 @@ on run argv
 		end tell
 
 	else if theAction is "close" then
-		tell application "TextEdit" to close every document saving no
-		tell application "Finder" to close every window
+		-- capture.sh runs this from an exit trap as well as at the end of each
+		-- take, so it has to be a no-op when there is nothing to close. The
+		-- `is running` guards are what stop cleanup from LAUNCHING TextEdit
+		-- just to tell it there are no documents.
+		if application "TextEdit" is running then
+			tell application "TextEdit" to close every document saving no
+		end if
+		if application "Finder" is running then
+			tell application "Finder" to close every window
+		end if
 	end if
 end run

@@ -4,9 +4,20 @@
 #   ./capture.sh            # every shot
 #   ./capture.sh climb      # one shot
 #
-# Needs: a built Jumbini.app, ffmpeg, and Screen Recording permission for
-# whatever terminal is running this. Grant it once, in System Settings >
-# Privacy & Security > Screen Recording, then re-run.
+# Needs a built Jumbini.app, ffmpeg, and THREE one-time grants in System
+# Settings > Privacy & Security, all of them for whatever terminal runs this:
+#
+#   Screen Recording            — without it every frame is black.
+#   Automation > TextEdit       — the staged windows are driven by Apple
+#   Automation > Finder           Events, and macOS asks separately for each
+#                                 target app. Unattended, an ungranted one
+#                                 stalls on a consent dialog nobody is
+#                                 watching, so both are pre-flighted below.
+#
+# Everything else it uses (plutil, perl, osascript, screencapture, shortcuts)
+# ships with macOS. There is deliberately no Swift or python3 dependency: the
+# hero sheets and stills are rendered in the authoring account by stills.sh,
+# not here.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -123,10 +134,69 @@ sleep_until() {
   fi
 }
 
+# Any die() inside the shot loop used to leave the app running, the staged
+# windows open and the next run filming two dogs. Nothing in here may fail:
+# it runs on the error path, where a second failure would bury the real
+# diagnostic. Do Not Disturb is deliberately NOT turned back off — leaving it
+# on for the session is the documented behaviour on success too.
+app_pid=""
+rec_pid=""
+cleanup() {
+  local status=$?
+  trap - EXIT
+  if [ -n "$rec_pid" ]; then kill "$rec_pid" 2>/dev/null || true; fi
+  if [ -n "$app_pid" ]; then kill "$app_pid" 2>/dev/null || true; fi
+  osascript "$HERE/stage-windows.applescript" close >/dev/null 2>&1 || true
+  exit "$status"
+}
+trap cleanup EXIT
+
 command -v ffmpeg >/dev/null || die "ffmpeg missing. Run: brew install ffmpeg"
 command -v ffprobe >/dev/null || die "ffprobe missing (it ships with ffmpeg). Run: brew install ffmpeg"
 [ -x "$BIN" ] || die "no app at $BIN. Set JUMBINI_APP to the built Jumbini.app — in the capture account it is the one staged next to this script, and there is no repo here to build one from."
 mkdir -p "$RAW"
+
+# ---------------------------------------------------------------------------
+# Automation (Apple Events) consent — the second and third permissions.
+#
+# Screen Recording is not the only grant this needs, though the docs used to
+# say so. The first osascript aimed at TextEdit and the first aimed at Finder
+# each raise their own interactive TCC dialog. Unattended, that dialog blocks
+# and then the event fails with -1712 (timed out), fifteen seconds into take
+# one, with the app already launched and the recorder already running.
+#
+# So both are probed here, with a read-only event, before anything is
+# recorded. The probe still has to bound its own wait, because the very dialog
+# we are trying to get ahead of would otherwise hang this script instead.
+automation_probe() {
+  local app="$1" query="$2" log="$RAW/.automation-probe.txt" pid waited=0
+  osascript -e "tell application \"$app\" to $query" >"$log" 2>&1 &
+  pid=$!
+  while kill -0 "$pid" 2>/dev/null && [ "$waited" -lt 25 ]; do
+    sleep 1
+    waited=$((waited + 1))
+  done
+  if kill -0 "$pid" 2>/dev/null; then
+    kill "$pid" 2>/dev/null || true
+    automation_die "$app" "it did not answer within ${waited}s, which is what a consent dialog waiting for a click looks like"
+  fi
+  if ! wait "$pid"; then
+    automation_die "$app" "$(cat "$log" 2>/dev/null)"
+  fi
+  rm -f "$log"
+}
+
+automation_die() {
+  die "cannot send Apple Events to $1: $2
+capture: The staged windows are driven by AppleScript, so this terminal needs
+capture: Automation permission for $1. Grant it in System Settings >
+capture: Privacy & Security > Automation > (this terminal) > $1, then re-run.
+capture: Every target app is a separate switch — TextEdit and Finder both
+capture: have to be on."
+}
+
+automation_probe TextEdit "count documents"
+automation_probe Finder "count windows"
 
 # "1920,1080" for the video stream of a .mov.
 pixel_size() {
@@ -257,8 +327,11 @@ done
 
 original_dnd_note="Do Not Disturb is left on for the session; turn it off when you are done."
 echo "capture: enabling Do Not Disturb — $original_dnd_note"
-shortcuts run "Turn On Do Not Disturb" 2>/dev/null \
-  || echo "capture: could not toggle DND automatically; do it by hand before continuing"
+shortcuts run "Turn On Do Not Disturb" 2>/dev/null || {
+  echo "capture: could not turn Do Not Disturb on automatically. The run"
+  echo "capture: continues without it, so a notification banner can walk into"
+  echo "capture: a take — check every clip, and re-shoot any that caught one."
+}
 
 for shot in "${shots[@]}"; do
   script="$SHOTS/$shot.json"
