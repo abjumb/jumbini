@@ -147,8 +147,11 @@ final class SettingsPanel: JumbiniPanel {
         var views: [NSView] = [searchField]
         for group in Self.catalog.groups {
             if let title = group.title {
-                let header = PanelTheme.sectionHeader(title)
-                header.font = .systemFont(ofSize: 10, weight: .semibold)
+                // Title Case here on purpose: in the reference design the
+                // sidebar's group headings read "Features" while the content
+                // headings above each card read "APPLICATION BASICS".
+                let header = PanelTheme.title(title, size: 11, weight: .semibold)
+                header.textColor = .secondaryLabelColor
                 views.append(spacer(height: 6))
                 views.append(header)
             }
@@ -199,12 +202,6 @@ final class SettingsPanel: JumbiniPanel {
             Section.support: supportPage(),
         ]
 
-        let close = makeCloseButton(action: #selector(dismissPanel))
-        let closeRow = NSStackView(views: [NSView(), close])
-        closeRow.orientation = .horizontal
-        closeRow.alignment = .centerY
-        closeRow.translatesAutoresizingMaskIntoConstraints = false
-
         pageContainer.translatesAutoresizingMaskIntoConstraints = false
 
         let container = NSView()
@@ -212,16 +209,12 @@ final class SettingsPanel: JumbiniPanel {
         container.layer?.backgroundColor = PanelTheme.contentBackground.cgColor
         container.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(pageContainer)
-        container.addSubview(closeRow)
 
         NSLayoutConstraint.activate([
             container.widthAnchor.constraint(
                 equalToConstant: Self.panelWidth - PanelTheme.sidebarWidth - 1
             ),
             container.heightAnchor.constraint(equalToConstant: Self.panelHeight),
-            closeRow.topAnchor.constraint(equalTo: container.topAnchor, constant: 8),
-            closeRow.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -8),
-            closeRow.widthAnchor.constraint(equalToConstant: 40),
             pageContainer.topAnchor.constraint(equalTo: container.topAnchor),
             pageContainer.bottomAnchor.constraint(equalTo: container.bottomAnchor),
             pageContainer.leadingAnchor.constraint(equalTo: container.leadingAnchor),
@@ -588,11 +581,6 @@ final class SettingsPanel: JumbiniPanel {
     private func open(_ string: String) {
         guard let url = URL(string: string) else { return }
         NSWorkspace.shared.open(url)
-    }
-
-    @objc private func dismissPanel() {
-        rememberPosition()
-        orderOut(nil)
     }
 
     func present() {

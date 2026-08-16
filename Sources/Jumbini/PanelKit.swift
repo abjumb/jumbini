@@ -110,12 +110,27 @@ class JumbiniPanel: NSPanel {
 
     init(autosaveName: String, size: NSSize) {
         self.autosaveName = autosaveName
+        // Titled rather than borderless, with the title bar made transparent and
+        // its text hidden. That is what the reference design actually shows: a
+        // real traffic light in the top-left corner, not a drawn-on glyph in the
+        // top-right. It also hands back the two things going borderless had cost
+        // — the system's own window dragging, and its corner rounding — which is
+        // why the panels were stuck where they opened in the first place.
+        //
+        // `.nonactivatingPanel` still holds, so opening one does not pull focus
+        // out of whatever app the user was in.
         super.init(
             contentRect: NSRect(origin: .zero, size: size),
-            styleMask: [.borderless, .nonactivatingPanel],
+            styleMask: [.titled, .closable, .fullSizeContentView, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
+        titlebarAppearsTransparent = true
+        titleVisibility = .hidden
+        // Neither means anything for a fixed-size utility panel, and a pair of
+        // permanently dead buttons beside a live one looks like a bug.
+        standardWindowButton(.miniaturizeButton)?.isHidden = true
+        standardWindowButton(.zoomButton)?.isHidden = true
         isOpaque = false
         backgroundColor = .clear
         hasShadow = true
@@ -180,26 +195,22 @@ class JumbiniPanel: NSPanel {
         contentView = backdrop
     }
 
-    /// A close button that matches the traffic-light position without pretending
-    /// to be one — Jumbini's panels have no title bar to put real ones in.
-    func makeCloseButton(action: Selector) -> NSButton {
-        let button = NSButton(title: "", target: self, action: action)
-        button.image = NSImage(
-            systemSymbolName: "xmark",
-            accessibilityDescription: "Close"
-        )?.withSymbolConfiguration(.init(pointSize: 11, weight: .semibold))
-        button.isBordered = false
-        button.contentTintColor = .secondaryLabelColor
-        button.toolTip = "Close"
-        button.keyEquivalent = "\u{1b}"
-        button.setAccessibilityLabel("Close")
-        button.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            button.widthAnchor.constraint(equalToConstant: 24),
-            button.heightAnchor.constraint(equalToConstant: 24),
-        ])
-        return button
+    /// Closing now goes through the real red button in the title bar, so the
+    /// only thing left to arrange is that Escape does the same and that each
+    /// panel gets to tidy up on the way out.
+    override func performClose(_ sender: Any?) {
+        panelWillClose()
+        rememberPosition()
+        orderOut(sender)
     }
+
+    override func cancelOperation(_ sender: Any?) {
+        performClose(sender)
+    }
+
+    /// Subclasses override to stop anything they started — the Coat Workshop's
+    /// live preview, for instance, must not outlive the window that drives it.
+    func panelWillClose() {}
 
     /// Centers the first time and restores the saved corner every time after.
     ///

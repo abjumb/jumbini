@@ -44,7 +44,6 @@ final class CoatWorkshopPanel: JumbiniPanel {
     private let scaleStack = NSStackView()
     private let installButton = NSButton(title: "Install", target: nil, action: nil)
     private let exportButton = NSButton(title: "Export…", target: nil, action: nil)
-    private lazy var closeButton: NSButton = makeCloseButton(action: #selector(dismissPanel))
     private var isInstalledCoat: Bool = false
 
     private static let panelWidth: CGFloat = 400
@@ -66,11 +65,9 @@ final class CoatWorkshopPanel: JumbiniPanel {
         let title = NSTextField(labelWithString: "Coat Workshop")
         title.font = .systemFont(ofSize: 15, weight: .semibold)
 
-        // Built by JumbiniPanel so all three panels close the same way.
-        closeButton.setContentHuggingPriority(.required, for: .horizontal)
         title.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
-        let header = NSStackView(views: [title, closeButton])
+        let header = NSStackView(views: [title])
         header.orientation = .horizontal
         header.distribution = .fill
         header.alignment = .centerY
@@ -565,10 +562,10 @@ private func updateDirectionButtons() {
 
     // MARK: - Dismiss
 
-    @objc private func dismissPanel() {
+    /// The live preview drives the real dog in the overlay, so it must not
+    /// outlive the window that started it — however the window went away.
+    override func panelWillClose() {
         if isPreviewing { stopPreview() }
-        rememberPosition()
-        orderOut(nil)
     }
 
     /// Centred the first time, then wherever the user last dragged it.

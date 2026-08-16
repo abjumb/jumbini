@@ -23,7 +23,6 @@ final class DogGeneratorPanel: JumbiniPanel {
     private let backButton = NSButton(title: "Back photo…", target: nil, action: nil)
     private let generateButton = NSButton(title: "Generate", target: nil, action: nil)
     private let applyButton = NSButton(title: "Apply", target: nil, action: nil)
-    private lazy var closeButton: NSButton = makeCloseButton(action: #selector(dismissPanel))
     private let spinner = NSProgressIndicator()
     private let statusLabel = NSTextField(labelWithString: "")
     private let previewView = NSImageView()
@@ -99,7 +98,7 @@ final class DogGeneratorPanel: JumbiniPanel {
         // Let the title absorb the slack so the button lands on the far edge.
         title.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
-        let header = NSStackView(views: [title, closeButton])
+        let header = NSStackView(views: [title])
         header.orientation = .horizontal
         header.distribution = .fill
         header.alignment = .centerY
@@ -215,20 +214,17 @@ final class DogGeneratorPanel: JumbiniPanel {
 
     @objc private func applyDog() {
         onApply?()
-        dismissPanel()
+        performClose(nil)
     }
 
-    /// Close button and Escape both land here. `orderOut` rather than `close`
-    /// so the panel survives to be shown again with whatever the user had
-    /// already picked still in it — the app delegate keeps the one instance.
+    /// The red button, Escape and Apply all end up in JumbiniPanel's
+    /// `performClose`, which orders out rather than closing so the panel
+    /// survives to be shown again with whatever the user had already picked
+    /// still in it — the app delegate keeps the one instance.
     ///
     /// A generation in flight is left to finish. It writes the coat to disk on
     /// its own and the panel is still here to receive the preview, so closing
     /// mid-run costs nothing but the wait.
-    @objc private func dismissPanel() {
-        rememberPosition()
-        orderOut(nil)
-    }
 
     private func setBusy(_ busy: Bool) {
         isBusy = busy
