@@ -33,7 +33,7 @@ struct Coat: Identifiable {
     static let builtIn: [Coat] = [.classic, .shaggy]
 
     /// Where `name` would live if this coat carries its own art. Returns nil
-    /// for the bundled coats, whose caller falls back to `Bundle.module`.
+    /// for the bundled coats, whose caller falls back to `Bundle.assets`.
     func fileURL(named name: String) -> URL? {
         root?.appendingPathComponent("\(prefix)\(name).png")
     }

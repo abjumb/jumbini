@@ -240,7 +240,7 @@ final class SpriteLibrary {
     func prop(named name: String, frameWidth: Int, fps: Double) -> Animation? {
         if let cached = propCache[name] { return cached }
         guard
-            let url = Bundle.module.url(forResource: name, withExtension: "png", subdirectory: "sprites"),
+            let url = Bundle.assets.url(forResource: name, withExtension: "png", subdirectory: "sprites"),
             let image = NSImage(contentsOf: url),
             let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
         else { return nil }
@@ -268,7 +268,7 @@ final class SpriteLibrary {
     func singleProp(named name: String) -> Animation? {
         if let cached = propCache[name] { return cached }
         guard
-            let url = Bundle.module.url(forResource: name, withExtension: "png", subdirectory: "sprites"),
+            let url = Bundle.assets.url(forResource: name, withExtension: "png", subdirectory: "sprites"),
             let image = NSImage(contentsOf: url),
             let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
         else { return nil }
@@ -307,7 +307,7 @@ final class SpriteLibrary {
         var frameSize: CGSize = .zero
         for index in 0..<frames {
             guard
-                let url = Bundle.module.url(
+                let url = Bundle.assets.url(
                     forResource: "\(name)_\(index)", withExtension: "png", subdirectory: "sprites"
                 ),
                 let image = NSImage(contentsOf: url),
@@ -353,7 +353,7 @@ final class SpriteLibrary {
         let name = "wardrobe_\(item)_\(direction)"
         if let cached = wardrobeCache[name] { return cached }
         guard
-            let url = Bundle.module.url(forResource: name, withExtension: "png", subdirectory: "sprites"),
+            let url = Bundle.assets.url(forResource: name, withExtension: "png", subdirectory: "sprites"),
             let image = NSImage(contentsOf: url),
             let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
         else { return nil }
@@ -452,7 +452,7 @@ final class SpriteLibrary {
         let key = "\(coat.id)/\(name)"
         if let cached = textureCache[key] { return cached }
         let url = coat.fileURL(named: name)
-            ?? Bundle.module.url(forResource: name, withExtension: "png", subdirectory: "jumba")
+            ?? Bundle.assets.url(forResource: name, withExtension: "png", subdirectory: "jumba")
         guard
             let url,
             let image = NSImage(contentsOf: url),
