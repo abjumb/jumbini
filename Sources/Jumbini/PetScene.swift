@@ -232,7 +232,7 @@ final class PetScene: SKScene {
             item.target = self
             item.representedObject = index
             item.state = currentBedVariant == index ? .on : .off
-            if let url = Bundle.module.url(forResource: variant.file, withExtension: "png", subdirectory: "sprites"),
+            if let url = Bundle.assets.url(forResource: variant.file, withExtension: "png", subdirectory: "sprites"),
                let image = NSImage(contentsOf: url) {
                 let height: CGFloat = 30
                 image.size = NSSize(width: image.size.width / image.size.height * height, height: height)
@@ -385,7 +385,7 @@ final class PetScene: SKScene {
             // The real front-view art, at a common size: every piece is drawn
             // on the same 48x48 canvas, so they line up in the menu the way
             // they line up on the dog.
-            if let url = Bundle.module.url(
+            if let url = Bundle.assets.url(
                 forResource: "wardrobe_\(spec.item)_s", withExtension: "png", subdirectory: "sprites"
             ), let image = NSImage(contentsOf: url) {
                 image.size = NSSize(width: 26, height: 26)
@@ -440,7 +440,7 @@ final class PetScene: SKScene {
             // Every coat is required to have an `idle_south`, so each row gets
             // a thumbnail of the dog it actually installs.
             let url = coat.fileURL(named: "idle_south")
-                ?? Bundle.module.url(
+                ?? Bundle.assets.url(
                     forResource: "\(coat.prefix)idle_south", withExtension: "png", subdirectory: "jumba"
                 )
             if let url, let image = NSImage(contentsOf: url) {
@@ -695,7 +695,7 @@ final class PetScene: SKScene {
             sound = cached
         } else {
             guard
-                let url = Bundle.module.url(forResource: name, withExtension: "wav", subdirectory: "audio"),
+                let url = Bundle.assets.url(forResource: name, withExtension: "wav", subdirectory: "audio"),
                 let loaded = NSSound(contentsOf: url, byReference: true)
             else { return }
             soundCache[name] = loaded
@@ -2384,7 +2384,7 @@ final class PetScene: SKScene {
     /// A sprite from Resources/sprites as a CGImage. The cam composes
     /// offscreen in Core Graphics, where an SKTexture is no use.
     private static func camSprite(named name: String) -> CGImage? {
-        guard let url = Bundle.module.url(forResource: name, withExtension: "png", subdirectory: "sprites"),
+        guard let url = Bundle.assets.url(forResource: name, withExtension: "png", subdirectory: "sprites"),
               let image = NSImage(contentsOf: url)
         else { return nil }
         var rect = CGRect(origin: .zero, size: image.size)

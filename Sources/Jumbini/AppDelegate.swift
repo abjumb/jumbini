@@ -131,9 +131,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         
         // Pixel-dog icon for the menu bar, full color (16pt with a @2x rep).
         // Loaded from the SwiftPM resource bundle — NSImage(named:) can't see it.
-        if let url = Bundle.module.url(forResource: "MenuBarIcon16", withExtension: "png", subdirectory: "Icons"),
+        if let url = Bundle.assets.url(forResource: "MenuBarIcon16", withExtension: "png", subdirectory: "Icons"),
            let image = NSImage(contentsOf: url) {
-            if let retinaURL = Bundle.module.url(forResource: "MenuBarIcon32", withExtension: "png", subdirectory: "Icons"),
+            if let retinaURL = Bundle.assets.url(forResource: "MenuBarIcon32", withExtension: "png", subdirectory: "Icons"),
                let retina = NSImageRep(contentsOf: retinaURL) {
                 image.addRepresentation(retina)
             }
@@ -170,7 +170,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Alex's icon, colored — deliberately NOT a template image, same call
         // as the menu bar dog above: this app's art is pixel art, and macOS
         // would flatten it to a monochrome silhouette.
-        if let url = Bundle.module.url(forResource: "icon_mute", withExtension: "png", subdirectory: "sprites"),
+        if let url = Bundle.assets.url(forResource: "icon_mute", withExtension: "png", subdirectory: "sprites"),
            let image = NSImage(contentsOf: url) {
             image.size = NSSize(width: 16, height: 16)
             muteItem.image = image
