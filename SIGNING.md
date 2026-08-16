@@ -368,6 +368,15 @@ is nothing to do beyond `git tag v4.1 && git push origin v4.1`.
 2. Enable GitHub Pages: Settings → Pages → Source → **Deploy from a branch**,
    branch `gh-pages`.
 
+   Leave it there. `SUFeedURL` is compiled into every copy of the app that has
+   ever shipped, so pointing Pages at a different branch or folder takes the
+   feed offline for everyone already running Jumbini — they cannot be updated
+   to a build that knows the new address. Anything else that wants to live at
+   `abjumb.github.io/jumbini` (the download page in `docs/`, for instance)
+   belongs *in* the `gh-pages` branch alongside `appcast.xml`, not in place of
+   it. The release workflow rebuilds that branch from its own contents each
+   time, so files published there survive.
+
 To publish by hand instead (e.g. to a different host):
 
 ```bash
@@ -378,7 +387,21 @@ To publish by hand instead (e.g. to a different host):
 `.sparkle-ed25519-key`, then the keychain) and writes the appcast plus delta
 files for faster incremental updates. Upload `appcast.xml`, the `*.delta`
 files, and the DMG to whatever host `SUFeedURL` points at. Change `SUFeedURL`
-in `Info.plist` if you host it elsewhere.
+in `Info.plist` if you host it elsewhere — the URL the DMGs are advertised at
+is derived from it (its directory), so the two cannot drift apart. To publish
+somewhere else just once without touching `Info.plist`, set
+`SPARKLE_DOWNLOAD_URL_PREFIX`.
+
+> **The trailing slash on that prefix is load-bearing.** `generate_appcast`
+> resolves each archive name *relative to* the prefix, so
+> `https://abjumb.github.io/jumbini` + `Jumbini-4.2.dmg` becomes
+> `https://abjumb.github.io/Jumbini-4.2.dmg` — the last path segment is
+> replaced rather than appended to, and every download 404s. This is how v4.2
+> shipped. `appcast.sh` now appends the slash itself, repairs enclosure URLs
+> left over from a broken run, and refuses to finish if any archive present on
+> disk is advertised at the wrong URL. The release workflow then fetches the
+> published feed and downloads the DMG behind it before the release is
+> considered good, so the failure can no longer be silent.
 
 The feed URL must be HTTPS (Apple's App Transport Security) and the archive
 must be the same signed-and-notarized DMG you distribute, so Sparkle's
