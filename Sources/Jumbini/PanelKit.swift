@@ -127,6 +127,12 @@ class JumbiniPanel: NSPanel {
         )
         titlebarAppearsTransparent = true
         titleVisibility = .hidden
+        // Dark regardless of the system setting. Jumbini's panels float over
+        // whatever the user is doing rather than sitting inside a document
+        // window, and the design they are built to is dark — a light settings
+        // window over the dark overlay chrome reads as a different app's window
+        // that happened to open.
+        appearance = NSAppearance(named: .darkAqua)
         // Neither means anything for a fixed-size utility panel, and a pair of
         // permanently dead buttons beside a live one looks like a bug.
         standardWindowButton(.miniaturizeButton)?.isHidden = true
@@ -315,16 +321,25 @@ final class PanelSidebarButton: NSButton {
         self.target = target
         self.action = action
         identifier = NSUserInterfaceItemIdentifier(section.identifier)
-        title = "  " + section.title
         image = NSImage(
             systemSymbolName: section.symbol,
             accessibilityDescription: section.title
         )?.withSymbolConfiguration(.init(pointSize: 12, weight: .medium))
+        // `contentTintColor` tints the image *and* the title, which came out as
+        // a sidebar of differently-coloured words — the design colours only the
+        // icons and leaves every label the ordinary label colour. An attributed
+        // title with an explicit foreground wins back the text.
         contentTintColor = section.tint
+        attributedTitle = NSAttributedString(
+            string: "  " + section.title,
+            attributes: [
+                .foregroundColor: NSColor.labelColor,
+                .font: NSFont.systemFont(ofSize: 13),
+            ]
+        )
         imagePosition = .imageLeading
         alignment = .left
         isBordered = false
-        font = .systemFont(ofSize: 13)
         wantsLayer = true
         layer?.cornerRadius = 6
         translatesAutoresizingMaskIntoConstraints = false

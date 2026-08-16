@@ -24,7 +24,13 @@ private func renderSettingsLayout() -> (image: NSBitmapImageRep, size: NSSize)? 
     guard bounds.width > 1, bounds.height > 1,
           let rep = content.bitmapImageRepForCachingDisplay(in: bounds)
     else { return nil }
-    content.cacheDisplay(in: bounds, to: rep)
+    // Dynamic colours resolve against whatever appearance is current while
+    // drawing, not against the window's. Without this the render came out light
+    // while the panel it is a picture of is dark — a snapshot that lies about
+    // the one thing it exists to show.
+    panel.effectiveAppearance.performAsCurrentDrawingAppearance {
+        content.cacheDisplay(in: bounds, to: rep)
+    }
     return (rep, bounds.size)
 }
 
