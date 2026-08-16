@@ -118,8 +118,11 @@ final class DogGeneratorPanel: JumbiniPanel {
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 10
+        // Top inset clears the title bar rather than matching the sides: these
+        // panels have real traffic lights now, and the header would otherwise
+        // be laid out underneath them.
         stack.edgeInsets = NSEdgeInsets(
-            top: Self.contentInset, left: Self.contentInset,
+            top: PanelTheme.titleBarInset, left: Self.contentInset,
             bottom: Self.contentInset, right: Self.contentInset
         )
         // Every other row is sized by its content and left-aligned, which for

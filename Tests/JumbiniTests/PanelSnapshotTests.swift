@@ -124,26 +124,67 @@ private func firstSubview<T: NSView>(of type: T.Type, under root: NSView) -> T? 
 
 @Test @MainActor func theSearchFieldClearsTheTrafficLights() {
     let panel = SettingsPanel(defaults: UserDefaults(suiteName: "snapshot.search") ?? .standard)
-    guard let frame = panel.contentView?.superview,
-          let content = panel.contentView,
-          let close = panel.standardWindowButton(.closeButton),
+    guard let content = panel.contentView,
           let search = firstSubview(of: NSSearchField.self, under: content)
     else {
-        Issue.record("no search field, close button or frame view")
+        Issue.record("no search field")
         return
     }
-    frame.layoutSubtreeIfNeeded()
-    let light = close.convert(close.bounds, to: frame)
-    let field = search.convert(search.bounds, to: frame)
     // The title bar is transparent with its title hidden, so it is invisible —
     // and content laid out to the window's top edge runs straight underneath the
     // traffic lights that are still sitting in it. The first version of this
     // sidebar put the search field there: three dots on top of a text field.
-    // Frame-view coordinates are bottom-left, so "below" is a smaller maxY.
-    #expect(
-        field.maxY <= light.minY,
-        "search field top \(field.maxY) is above the close button's bottom \(light.minY)"
-    )
+    let (clears, detail) = clearsTheTitleBar(search, in: panel)
+    #expect(clears, "search field — \(detail)")
+}
+
+/// The first label carrying exactly this text, anywhere under `root`.
+@MainActor
+private func label(_ text: String, under root: NSView) -> NSTextField? {
+    if let field = root as? NSTextField, field.stringValue == text { return field }
+    for child in root.subviews {
+        if let hit = label(text, under: child) { return hit }
+    }
+    return nil
+}
+
+/// True when everything in `view` sits below the window's close button.
+@MainActor
+private func clearsTheTitleBar(_ view: NSView, in panel: JumbiniPanel) -> (Bool, String) {
+    guard let frame = panel.contentView?.superview,
+          let close = panel.standardWindowButton(.closeButton)
+    else { return (false, "no close button or frame view") }
+    frame.layoutSubtreeIfNeeded()
+    let light = close.convert(close.bounds, to: frame)
+    let subject = view.convert(view.bounds, to: frame)
+    return (subject.maxY <= light.minY, "top \(subject.maxY) vs light bottom \(light.minY)")
+}
+
+@Test @MainActor func theWorkshopHeaderClearsTheTrafficLights() {
+    let panel = CoatWorkshopPanel()
+    guard let content = panel.contentView,
+          let header = label("Coat Workshop", under: content)
+    else {
+        Issue.record("no Coat Workshop header")
+        return
+    }
+    // Same trap as the settings sidebar: these panels used to be borderless, so
+    // a 16pt top inset was the whole margin. With a real title bar it is not
+    // even half of one, and the header lands under the lights.
+    let (clears, detail) = clearsTheTitleBar(header, in: panel)
+    #expect(clears, "Coat Workshop header — \(detail)")
+}
+
+@Test @MainActor func theDogGeneratorHeaderClearsTheTrafficLights() {
+    let panel = DogGeneratorPanel()
+    guard let content = panel.contentView,
+          let header = label("Make Your Own Dog", under: content)
+    else {
+        Issue.record("no Make Your Own Dog header")
+        return
+    }
+    let (clears, detail) = clearsTheTitleBar(header, in: panel)
+    #expect(clears, "Make Your Own Dog header — \(detail)")
 }
 
 @Test @MainActor func settingsSnapshotIsPrintedWhenAskedFor() {
