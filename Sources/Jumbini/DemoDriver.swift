@@ -228,11 +228,18 @@ final class DemoDriver {
         return DemoDriver(script: script, startInstant: startInstant(from: environment))
     }
 
-    /// Seconds since the Unix epoch. Absent or unparseable means "start now":
-    /// a malformed capture-time variable should cost the take's timing, not
-    /// the take.
+    /// Seconds since the Unix epoch. Absent, unparseable or non-finite all mean
+    /// "start now": a malformed capture-time variable should cost the take's
+    /// timing, not the take.
+    ///
+    /// `Double("nan")` and `Double("inf")` both parse, and a Date built from
+    /// either makes every later comparison false — the driver would sit there
+    /// firing nothing and never finishing, which is a worse outcome than
+    /// ignoring the variable. So non-finite values are rejected here.
     private static func startInstant(from environment: [String: String]) -> Date? {
-        guard let raw = environment["JUMBINI_DEMO_START"], let epoch = Double(raw) else {
+        guard let raw = environment["JUMBINI_DEMO_START"],
+              let epoch = Double(raw),
+              epoch.isFinite else {
             return nil
         }
         return Date(timeIntervalSince1970: epoch)

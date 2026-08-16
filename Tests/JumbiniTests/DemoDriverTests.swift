@@ -69,6 +69,21 @@ private func script(_ beats: [DemoBeat]) -> DemoScript {
     #expect(timeline.due(at: 0.0).map(\.action) == [.command(.sit)])
 }
 
+// The belt to fire()'s braces. fire() guards on `elapsed >= 0`, which is false
+// for NaN, but the timeline has to hold on its own too — every comparison
+// against NaN is false, so nothing is ever due and nothing is ever skipped.
+@Test func timelineHoldsEveryBeatAtNaN() {
+    var timeline = DemoTimeline(script: script([
+        DemoBeat(at: 0.0, action: .command(.sit)),
+        DemoBeat(at: 1.0, action: .command(.spin)),
+    ]))
+    #expect(timeline.due(at: .nan).isEmpty)
+    #expect(!timeline.isFinished)
+    // And a NaN tick must not have consumed anything: a real elapsed time
+    // afterwards still gets both beats.
+    #expect(timeline.due(at: 2.0).count == 2)
+}
+
 @Test func timelineIsFinishedOnlyAfterTheLastBeatIsOut() {
     var timeline = DemoTimeline(script: script([
         DemoBeat(at: 1.0, action: .command(.sit)),
@@ -254,4 +269,57 @@ private func scriptOnDisk() throws -> URL {
 // constructs nothing at all.
 @Test func noDriverFromAStartInstantAlone() {
     #expect(DemoDriver.fromEnvironment(["JUMBINI_DEMO_START": "1786849924.054"]) == nil)
+}
+
+// An empty variable is what an unset shell expansion looks like — the failure
+// mode of `JUMBINI_DEMO_START="$driver_start"` when driver_start never got
+// computed. It has to mean "start now", not "start at the epoch".
+@Test func anEmptyStartInstantFallsBackToStartingNow() throws {
+    let url = try scriptOnDisk()
+    defer { try? FileManager.default.removeItem(at: url) }
+
+    let driver = DemoDriver.fromEnvironment([
+        "JUMBINI_DEMO": url.path,
+        "JUMBINI_DEMO_START": "",
+    ])
+    #expect(driver != nil)
+    #expect(driver?.startInstant == nil)
+}
+
+// Double("nan") and Double("inf") both parse. A Date built from either makes
+// every comparison in fire() false, so the driver would sit there firing
+// nothing and never finishing — the app would never quit and the take would
+// run to the recorder's tail on an empty desktop. Reject them instead.
+@Test func nonFiniteStartInstantsAreRejected() throws {
+    let url = try scriptOnDisk()
+    defer { try? FileManager.default.removeItem(at: url) }
+
+    for raw in ["nan", "NaN", "inf", "-inf", "infinity"] {
+        let driver = DemoDriver.fromEnvironment([
+            "JUMBINI_DEMO": url.path,
+            "JUMBINI_DEMO_START": raw,
+        ])
+        #expect(driver != nil, "\(raw) must still produce a driver")
+        #expect(driver?.startInstant == nil, "\(raw) must not become a start instant")
+    }
+}
+
+// A stale timestamp is taken at face value: everything is overdue, so the
+// timeline hands out every beat on the first tick and the driver finishes
+// immediately. Degraded but bounded, and it is operator error to pass one.
+@Test func aStartInstantInTheFarPastIsTakenAtFaceValue() throws {
+    let url = try scriptOnDisk()
+    defer { try? FileManager.default.removeItem(at: url) }
+
+    let driver = DemoDriver.fromEnvironment([
+        "JUMBINI_DEMO": url.path,
+        "JUMBINI_DEMO_START": "0",
+    ])
+    #expect(driver?.startInstant == Date(timeIntervalSince1970: 0))
+
+    var timeline = DemoTimeline(script: driver!.script)
+    let elapsed = Date().timeIntervalSince(Date(timeIntervalSince1970: 0))
+    #expect(timeline.due(at: elapsed).count == 1)
+    #expect(timeline.isFinished)
+    #expect(elapsed >= driver!.script.duration, "and the driver finishes on that same tick")
 }
