@@ -298,6 +298,10 @@ final class DogBrain {
     /// `bounds` and `position`). Empty means "no windows" — every window
     /// behavior below degrades to nothing at all, and he stays on the desktop.
     var surfaces: [Surface] = []
+    /// User-facing settings. These live on the brain rather than being baked
+    /// into tuning so a panel change takes effect without rebuilding the scene.
+    var poopEnabled = true
+    var windowClimbingEnabled = true
     /// How far the dog's CENTRE sits above his feet — half his sprite height,
     /// which changes with the pose, so the scene keeps it current. Standing on
     /// a window means `position.y == surface.topY + footOffset`.
@@ -410,6 +414,16 @@ final class DogBrain {
         }
     }
 
+    /// Stop any machine-triggered rest and forget parked machine news when
+    /// the user disables Mac-aware reactions. Without this, turning the
+    /// monitor off during a Focus sleep could leave him waiting for an
+    /// `dndOff` edge that will never be delivered.
+    func disableSystemReactions(at now: TimeInterval) -> [DogEffect] {
+        pendingSignal = nil
+        guard restReason != nil else { return [] }
+        return [.stopMoving] + enterIdle(at: now)
+    }
+
     // MARK: - Event handling
 
     private func handleTick(at now: TimeInterval) -> [DogEffect] {
@@ -443,9 +457,10 @@ final class DogBrain {
             // Hunch complete: the pile is the only thing the hunger meter
             // ever produces. Both roads lead here — the autonomous roll and
             // the eating → hunching digestion pipeline.
-            return [.leaveDeposit] + enterIdle(at: now)
+            return (poopEnabled ? [.leaveDeposit] : []) + enterIdle(at: now)
         case .eating:
             // Treats go straight through him; the hunger meter never budges.
+            guard poopEnabled else { return enterIdle(at: now) }
             state = .hunching
             self.deadline = now + tuning.hunchDuration
             return [.play(.hunch)]
@@ -926,6 +941,8 @@ final class DogBrain {
     /// Idle timer fired: mostly wander, sometimes nap, rarely a spin flourish.
     private func leaveIdleForAutonomy(at now: TimeInterval) -> [DogEffect] {
         let roll = Double.random(in: 0..<1, using: &rng)
+        let activeHunchChance = poopEnabled ? tuning.hunchChance : 0
+        let activePerchChance = windowClimbingEnabled ? tuning.perchChance : 0
         if roll < tuning.sleepChance {
             if let bed = bedPosition {
                 // Naps happen in the bed when he has one.
@@ -953,13 +970,13 @@ final class DogBrain {
             return [.play(.walk), .startSniffing]
         }
         if roll < tuning.sleepChance + tuning.flourishChance + tuning.zoomiesChance
-            + tuning.sniffChance + tuning.hunchChance {
+            + tuning.sniffChance + activeHunchChance {
             state = .hunching
             deadline = now + tuning.hunchDuration
             return [.play(.hunch)]
         }
         if roll < tuning.sleepChance + tuning.flourishChance + tuning.zoomiesChance
-            + tuning.sniffChance + tuning.hunchChance + tuning.barkAtNothingChance {
+            + tuning.sniffChance + activeHunchChance + tuning.barkAtNothingChance {
             // Something at the screen edge (the Dock? his reflection?) needs
             // telling off. A small step toward the edge turns him to face it;
             // .arrived from that hop is ignored while barking.
@@ -976,8 +993,8 @@ final class DogBrain {
             // Still cooling down: fall through to a wander instead.
         }
         if roll < tuning.sleepChance + tuning.flourishChance + tuning.zoomiesChance
-            + tuning.sniffChance + tuning.hunchChance + tuning.barkAtNothingChance
-            + tuning.perchChance {
+            + tuning.sniffChance + activeHunchChance + tuning.barkAtNothingChance
+            + activePerchChance {
             // The rarest idle break: climb onto one of your windows and trot
             // along the title bar. Needs a window to climb — with none in
             // reach the roll quietly becomes an ordinary wander rather than
@@ -1107,6 +1124,16 @@ final class DogBrain {
     /// when it has nothing to say and the normal deadline machinery should
     /// run; returns effects when it has taken the tick over.
     private func superviseWindowWalking(at now: TimeInterval) -> [DogEffect]? {
+        if !windowClimbingEnabled {
+            switch state {
+            case .headingToSurface:
+                return [.stopMoving] + enterIdle(at: now)
+            case .hoppingUp, .perched:
+                return beginFalling(at: now)
+            default:
+                break
+            }
+        }
         switch state {
         case .headingToSurface(let id):
             // The window closed mid-walk: abandon the trip, stay on the floor.

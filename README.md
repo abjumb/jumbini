@@ -227,6 +227,8 @@ Paste it into Slack. That is the whole feature.
   will. It is the joke.
 - **Treats eaten: N (no effect)** — counts up forever, does nothing, see above.
 - **Jumbini Cam** (⌥⇧J) — see above.
+- **Settings…** (⌘,) — securely save a Pixellab key and turn bathroom breaks,
+  Mac-aware reactions, or window climbing on and off.
 - **Mute Sounds** — he barks (three different takes), growls, whines, yips, squeaks and
   grunts. Sometimes you are in a meeting.
 - **Pause** — hides the overlay and freezes the scene. Click **Resume** to bring him back.
@@ -276,7 +278,7 @@ the result.
 Other scripts:
 
 ```bash
-./Scripts/test.sh            # run the test suite (378 tests)
+./Scripts/test.sh            # run the test suite (387 tests)
 ./Scripts/dmg.sh             # → build/Jumbini.dmg, drag-to-Applications layout
 ```
 
@@ -284,7 +286,11 @@ Other scripts:
 
 No API key ships in the binary, so **Make Your Own Dog** is inert until you supply one.
 Everything else — Jumba himself, every state, every trick — works with no key and no
-network. Get a key from [Pixellab](https://www.pixellab.ai/) and put it in your keychain:
+network. Get a key from [Pixellab](https://www.pixellab.ai/), then open
+**Jumbini → Settings…** and save it. Jumbini stores it in your login Keychain, never in
+plain preferences.
+
+The equivalent command-line setup is:
 
 ```bash
 security add-generic-password -s ai.pixellab.api -a Jumbini -w <your-key>

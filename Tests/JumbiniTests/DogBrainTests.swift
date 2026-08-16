@@ -889,6 +889,43 @@ func trickCommandPerformsItsAnimation(trick: Trick) {
     #expect(end.contains(.leaveDeposit), "a finished hunch leaves a pile behind")
 }
 
+@Test func poopSettingDisablesAutonomousHunching() {
+    let brain = makeBrain { $0.hunchChance = 1 }
+    brain.poopEnabled = false
+    _ = brain.handle(.tick, at: 0)
+
+    let effects = brain.handle(.tick, at: 3)
+
+    #expect(brain.state == .wandering)
+    #expect(!effects.contains(.play(.hunch)))
+    #expect(!effects.contains(.leaveDeposit))
+}
+
+@Test func poopSettingSkipsThePostTreatHunch() {
+    let brain = makeBrain { $0.eatDuration = 1 }
+    brain.poopEnabled = false
+    _ = brain.handle(.treatDropped(at: CGPoint(x: 640, y: 200)), at: 0)
+    _ = brain.handle(.arrived, at: 1)
+
+    let digested = brain.handle(.tick, at: 2)
+
+    #expect(brain.state == .idle)
+    #expect(!digested.contains(.play(.hunch)))
+    #expect(!digested.contains(.leaveDeposit))
+}
+
+@Test func disablingPoopMidHunchPreventsTheDeposit() {
+    let brain = makeBrain { $0.hunchChance = 1 }
+    _ = brain.handle(.tick, at: 0)
+    _ = brain.handle(.tick, at: 3)
+    brain.poopEnabled = false
+
+    let completed = brain.handle(.tick, at: 3 + brain.tuning.hunchDuration)
+
+    #expect(brain.state == .idle)
+    #expect(!completed.contains(.leaveDeposit))
+}
+
 @Test func commandInterruptsHunch() {
     let brain = makeBrain { $0.hunchChance = 1 }
     _ = brain.handle(.tick, at: 0)
@@ -1547,6 +1584,18 @@ private func makeNaturallySleepingBrain() -> DogBrain {
     }
 }
 
+@Test func disablingSystemReactionsReleasesASystemCausedRest() {
+    let brain = makeBrain()
+    _ = brain.handle(.system(.dndOn), at: 0)
+    #expect(brain.state == .sleeping)
+
+    let effects = brain.disableSystemReactions(at: 1)
+
+    #expect(brain.state == .idle)
+    #expect(effects.contains(.stopMoving))
+    #expect(effects.contains(.play(.idle)))
+}
+
 // MARK: - Toy box: frisbee
 
 /// A brain with the frisbee armed and thrown, mid-chase.
@@ -2048,6 +2097,28 @@ private func makePercher(
     }
     brain.surfaces = surfaces
     return brain
+}
+
+@Test func windowClimbingSettingSkipsThePerchBranch() {
+    let brain = makePercher()
+    brain.windowClimbingEnabled = false
+    _ = brain.handle(.tick, at: 0)
+
+    let effects = brain.handle(.tick, at: 3)
+
+    #expect(brain.state == .wandering)
+    #expect(moveTarget(in: effects) != nil)
+}
+
+@Test func disablingWindowClimbingDropsAnActivePerchSafely() {
+    let brain = makePerched()
+    brain.windowClimbingEnabled = false
+    brain.surfaces = []
+
+    let effects = brain.handle(.tick, at: 5.1)
+
+    #expect(brain.state == .falling)
+    #expect(effects.contains { if case .startFalling = $0 { return true }; return false })
 }
 
 /// Idle → heading to the edge → hop → perched, on the fixed clock the other

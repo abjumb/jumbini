@@ -29,11 +29,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // Make Your Own Dog: the generation panel, kept alive while open.
     private var dogGeneratorPanel: DogGeneratorPanel?
+    // Settings: one persistent panel, reopened from the menu bar or Command-comma.
+    private var settingsPanel: SettingsPanel?
+    private(set) var settings: JumbiniSettings
+
+    init(defaults: UserDefaults = .standard) {
+        settings = JumbiniSettings(defaults: defaults)
+        super.init()
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         setUpUpdater()
         setUpStatusItem()
         setUpOverlay()
+        apply(settings: settings)
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(screenParametersChanged),
@@ -46,10 +55,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             name: Notification.Name("JumbiniAteTreat"),
             object: nil
         )
-        // System reactions block: must follow setUpOverlay(), which creates
-        // the scene the signals are delivered to.
-        startSystemMonitor()
-        // System reactions block end.
         // Demo capture block: no-op unless JUMBINI_DEMO names a script.
         startDemoDriver()
         // Demo capture block end.
@@ -84,7 +89,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         skView.allowsTransparency = true
         skView.preferredFramesPerSecond = 60
 
-        let scene = PetScene(layout: layout)
+        let scene = PetScene(layout: layout, settings: settings)
         scene.overlayWindow = window
         window.contentView = skView
         skView.presentScene(scene)
@@ -164,6 +169,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let makeDogItem = NSMenuItem(title: "Make Your Own Dog", action: #selector(openDogGenerator), keyEquivalent: "")
         makeDogItem.target = self
         menu.addItem(makeDogItem)
+        let settingsItem = NSMenuItem(
+            title: "Settings…",
+            action: #selector(openSettings),
+            keyEquivalent: ","
+        )
+        settingsItem.target = self
+        menu.addItem(settingsItem)
         let muteItem = NSMenuItem(title: "Mute Sounds", action: #selector(toggleMute(_:)), keyEquivalent: "")
         muteItem.target = self
         muteItem.state = UserDefaults.standard.bool(forKey: "soundMuted") ? .on : .off
@@ -238,6 +250,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The monitor is entirely self-contained: any source that can't work on
     /// this Mac degrades to silence, so there is nothing to check here.
     private func startSystemMonitor() {
+        guard systemMonitor == nil else { return }
         let monitor = SystemMonitor()
         monitor.onSignal = { [weak self] signal in
             // SystemMonitor guarantees main-thread delivery, which is what
@@ -248,6 +261,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         monitor.start()
         systemMonitor = monitor
+    }
+
+    private func stopSystemMonitor() {
+        systemMonitor?.stop()
+        systemMonitor = nil
+    }
+
+    private func apply(settings: JumbiniSettings) {
+        self.settings = settings
+        scene?.apply(settings: settings)
+        if settings.systemReactionsEnabled {
+            startSystemMonitor()
+        } else {
+            stopSystemMonitor()
+        }
+    }
+
+    // MARK: - Settings
+
+    @objc private func openSettings() {
+        if let settingsPanel {
+            settingsPanel.present()
+            return
+        }
+        let panel = SettingsPanel()
+        panel.onSettingsChanged = { [weak self] settings in
+            self?.apply(settings: settings)
+        }
+        panel.present()
+        settingsPanel = panel
     }
 
     /// Landing-page capture only. Returns immediately on a normal launch

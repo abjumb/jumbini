@@ -8,3 +8,4 @@ __pycache__/
 .sparkle-ed25519-key
 .env.release
 demo-assets/
+.impeccable/review/
