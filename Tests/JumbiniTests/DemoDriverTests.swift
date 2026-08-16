@@ -56,6 +56,19 @@ private func script(_ beats: [DemoBeat]) -> DemoScript {
     #expect(timeline.due(at: 5.0).map(\.action) == [.command(.sit), .command(.zoomies)])
 }
 
+// capture.sh starts the recorder first and hands the app a t=0 that is still
+// in the future, so the driver spends the pre-roll at a negative elapsed time.
+// Nothing may come out of the timeline while that lasts.
+@Test func timelineHoldsEveryBeatWhileElapsedIsStillNegative() {
+    var timeline = DemoTimeline(script: script([
+        DemoBeat(at: 0.0, action: .command(.sit)),
+        DemoBeat(at: 1.0, action: .command(.spin)),
+    ]))
+    #expect(timeline.due(at: -3.0).isEmpty)
+    #expect(timeline.due(at: -0.001).isEmpty)
+    #expect(timeline.due(at: 0.0).map(\.action) == [.command(.sit)])
+}
+
 @Test func timelineIsFinishedOnlyAfterTheLastBeatIsOut() {
     var timeline = DemoTimeline(script: script([
         DemoBeat(at: 1.0, action: .command(.sit)),
@@ -191,4 +204,54 @@ private func script(_ beats: [DemoBeat]) -> DemoScript {
     #expect(driver?.script.name == "probe")
     #expect(driver?.script.duration == 4.0)
     #expect(driver?.script.showCursor == true)
+    #expect(driver?.startInstant == nil, "no JUMBINI_DEMO_START means start when start() is called")
+}
+
+// MARK: - The capture clock
+//
+// capture.sh starts screencapture, then launches the app, then trims the
+// pre-roll. For the trim to be a number rather than a guess, the driver's t=0
+// has to be an instant the shell picked — JUMBINI_DEMO_START.
+
+private func scriptOnDisk() throws -> URL {
+    let url = FileManager.default.temporaryDirectory
+        .appendingPathComponent("start-\(UUID().uuidString).json")
+    let json = """
+    {"name":"probe","duration":4.0,"showCursor":false,
+     "beats":[{"at":1,"kind":"command","command":"sit"}]}
+    """
+    try Data(json.utf8).write(to: url)
+    return url
+}
+
+@Test func theStartInstantComesFromTheEnvironmentAsAUnixTimestamp() throws {
+    let url = try scriptOnDisk()
+    defer { try? FileManager.default.removeItem(at: url) }
+
+    let driver = DemoDriver.fromEnvironment([
+        "JUMBINI_DEMO": url.path,
+        "JUMBINI_DEMO_START": "1786849924.054",
+    ])
+    #expect(driver?.startInstant == Date(timeIntervalSince1970: 1786849924.054))
+}
+
+// A capture-time variable that got mangled should cost the take's timing, not
+// the take: the driver still runs, starting from now.
+@Test func anUnparseableStartInstantFallsBackToStartingNow() throws {
+    let url = try scriptOnDisk()
+    defer { try? FileManager.default.removeItem(at: url) }
+
+    let driver = DemoDriver.fromEnvironment([
+        "JUMBINI_DEMO": url.path,
+        "JUMBINI_DEMO_START": "in a bit",
+    ])
+    #expect(driver != nil)
+    #expect(driver?.startInstant == nil)
+}
+
+// The inertness property, restated against the new variable: JUMBINI_DEMO is
+// still the only gate, so a stray JUMBINI_DEMO_START on a normal launch
+// constructs nothing at all.
+@Test func noDriverFromAStartInstantAlone() {
+    #expect(DemoDriver.fromEnvironment(["JUMBINI_DEMO_START": "1786849924.054"]) == nil)
 }

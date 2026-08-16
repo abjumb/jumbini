@@ -67,7 +67,61 @@ CROP_W="${JUMBINI_CROP_W:-0}"   # 0 means "out to the right edge"
 CROP_H="${JUMBINI_CROP_H:-0}"   # 0 means "down to the bottom edge"
 DELIVER_W="${JUMBINI_DELIVER_W:-1440}"
 
+# ---------------------------------------------------------------------------
+# The recording window vs. the dog's clock
+#
+# DemoDriver's t=0 used to be applicationDidFinishLaunching, and this script
+# launched the app, slept two seconds, and only then started screencapture. Two
+# consequences, both real:
+#
+#   * every beat before t=2 was never recorded. That is the ONLY beat in
+#     thermal.json (fansUp at 1.0) and build-party.json (buildFinished at 1.5),
+#     and the opening beat of the other seven shots.
+#   * driver.onFinish calls NSApp.terminate at t=duration, roughly two seconds
+#     before `screencapture -V "$duration"` stopped, so every clip ended on a
+#     dogless desktop.
+#
+# Now the recorder starts first and the driver is handed an absolute instant
+# for its t=0 (JUMBINI_DEMO_START), so the two clocks share an origin instead
+# of racing. Per take, in wall time:
+#
+#   t_rec                        screencapture launched
+#   t_rec + WARMUP               its frame 0. Unknown up front, measured after.
+#   t_rec + LEAD                 the dog's t=0. LEAD covers BOTH screencapture's
+#                                warm-up and the app's launch + scene build,
+#                                which run concurrently inside it.
+#   t_rec + LEAD + D             the driver finishes and terminates the app
+#   t_rec + LEAD + D + TAIL      screencapture stops
+#
+# So the file holds LEAD + D + TAIL seconds, and the encode takes exactly D of
+# them starting (LEAD - WARMUP) in. WARMUP is measured, not assumed: since
+# `screencapture -V N` writes N seconds of content, everything the process
+# spent beyond N is warm-up plus finalisation, and attributing the lot to
+# warm-up biases the trim early — a few frames of static desktop at the head
+# rather than a lost opening beat.
+#
+# TAIL is what keeps the app's own termination outside the encode window; the
+# clip's last frame is at D - 1/30, and the app quits at D + one driver tick.
+LEAD=3.0
+TAIL=1.5
+
 die() { echo "capture: $*" >&2; exit 1; }
+
+# Wall clock with sub-second resolution. macOS `date` is whole seconds only;
+# perl and Time::HiRes are both part of the base OS, unlike python3, which is
+# a Command Line Tools shim and would prompt to install Xcode mid-run.
+now() { /usr/bin/perl -MTime::HiRes -e 'printf "%.3f\n", Time::HiRes::time()'; }
+
+# bash has no floats and every number in the timing above is one.
+calc() { awk "BEGIN { printf \"%.3f\n\", $* }"; }
+
+sleep_until() {
+  local remaining
+  remaining=$(calc "$1 - $(now)")
+  if awk -v r="$remaining" 'BEGIN { exit (r > 0) ? 0 : 1 }'; then
+    sleep "$remaining"
+  fi
+}
 
 command -v ffmpeg >/dev/null || die "ffmpeg missing. Run: brew install ffmpeg"
 command -v ffprobe >/dev/null || die "ffprobe missing (it ships with ffmpeg). Run: brew install ffmpeg"
@@ -210,8 +264,8 @@ for shot in "${shots[@]}"; do
   script="$SHOTS/$shot.json"
   [ -f "$script" ] || die "no shot script at $script"
 
-  duration=$(/usr/bin/python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['duration'])" "$script")
-  show_cursor=$(/usr/bin/python3 -c "import json,sys;print(json.load(open(sys.argv[1])).get('showCursor',False))" "$script")
+  duration=$(plutil -extract duration raw -o - "$script")
+  show_cursor=$(plutil -extract showCursor raw -o - "$script" 2>/dev/null || echo false)
 
   echo "capture: $shot (${duration}s)"
 
@@ -223,33 +277,45 @@ for shot in "${shots[@]}"; do
   osascript "$HERE/stage-windows.applescript" open
   sleep 1
 
-  JUMBINI_DEMO="$script" "$BIN" &
+  cursor_flag=""
+  if [ "$show_cursor" = "true" ]; then cursor_flag="-C"; fi
+
+  # Recorder first, app second — see the timing note at the top of the file.
+  rec_len=$(calc "$LEAD + $duration + $TAIL")
+  t_rec=$(now)
+  # shellcheck disable=SC2086
+  screencapture -v $cursor_flag -V "$rec_len" "$RAW/$shot.mov" &
+  rec_pid=$!
+
+  driver_start=$(calc "$t_rec + $LEAD")
+  JUMBINI_DEMO="$script" JUMBINI_DEMO_START="$driver_start" "$BIN" &
   app_pid=$!
-  # The scene needs to exist before the first beat lands.
+  # The app has all of LEAD to reach applicationDidFinishLaunching and build
+  # the scene; this only checks it did not die trying.
   sleep 2
   kill -0 "$app_pid" 2>/dev/null \
     || die "Jumbini exited immediately after launch — check Console.app for a crash log"
 
-  cursor_flag=""
-  [ "$show_cursor" = "True" ] && cursor_flag="-C"
-
-  # shellcheck disable=SC2086
-  screencapture -v $cursor_flag -V "$duration" "$RAW/$shot.mov" &
-  rec_pid=$!
-
-  # The flagship needs the window moved underneath him mid-take.
+  # The flagship needs the window moved underneath him mid-take. These are
+  # clip-relative — driver seconds, the same clock the shot's beats are on —
+  # so the ride starts 6s into a 15s take and the yank lands around 8.4s.
   if [ "$shot" = "climb" ]; then
-    sleep 6
+    sleep_until "$(calc "$driver_start + 6")"
     osascript "$HERE/stage-windows.applescript" move
     sleep 1
     osascript "$HERE/stage-windows.applescript" yank
   fi
 
-  wait $rec_pid
+  wait "$rec_pid" || die "screencapture for $shot failed — check Console.app and re-run this shot"
+  t_stop=$(now)
+  rec_pid=""
   [ -s "$RAW/$shot.mov" ] \
     || die "screencapture for $shot produced no output — check Console.app and re-run this shot"
+
+  # The driver terminated the app TAIL seconds ago; this is belt and braces.
   kill "$app_pid" 2>/dev/null || true
   wait "$app_pid" 2>/dev/null || true
+  app_pid=""
   osascript "$HERE/stage-windows.applescript" close
 
   echo "capture: encoding $shot"
@@ -257,16 +323,30 @@ for shot in "${shots[@]}"; do
   [ "$dims" = "$probe_dims" ] \
     || die "$shot recorded at $dims but the crop was resolved against $probe_dims — the display changed mid-run. Re-run this shot."
 
-  ffmpeg -y -loglevel error -i "$RAW/$shot.mov" \
+  # Where the dog's t=0 sits in this file. screencapture -V N writes N seconds
+  # of content, so anything the process spent beyond that is warm-up plus
+  # finalisation; attributing all of it to warm-up over-estimates it, which
+  # trims a few frames EARLY rather than into the opening beat.
+  content=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$RAW/$shot.mov")
+  warmup=$(calc "($t_stop - $t_rec) - $content")
+  trim=$(calc "$LEAD - $warmup")
+  if awk -v t="$trim" 'BEGIN { exit (t < 0) ? 0 : 1 }'; then
+    echo "capture: WARNING screencapture took ${warmup}s to start recording $shot, longer than the ${LEAD}s lead."
+    echo "capture: WARNING the opening beats are off camera. Raise LEAD in this script and re-shoot $shot."
+    trim=0
+  fi
+  echo "capture: $shot warm-up ${warmup}s, trimming ${trim}s of pre-roll"
+
+  ffmpeg -y -loglevel error -ss "$trim" -i "$RAW/$shot.mov" -t "$duration" \
     -vf "$filter" -r 30 \
     -c:v libx264 -profile:v high -pix_fmt yuv420p -crf 23 \
     -movflags +faststart -an "$OUT/$shot.mp4"
 
-  ffmpeg -y -loglevel error -i "$RAW/$shot.mov" \
+  ffmpeg -y -loglevel error -ss "$trim" -i "$RAW/$shot.mov" -t "$duration" \
     -vf "$filter" -r 30 \
     -c:v libvpx-vp9 -crf 34 -b:v 0 -row-mt 1 -an "$OUT/$shot.webm"
 
-  ffmpeg -y -loglevel error -ss 1 -i "$RAW/$shot.mov" \
+  ffmpeg -y -loglevel error -ss "$(calc "$trim + 1")" -i "$RAW/$shot.mov" \
     -vf "$filter" -frames:v 1 -q:v 3 "$OUT/$shot.jpg"
 
   size=$(stat -f%z "$OUT/$shot.mp4")

@@ -184,6 +184,18 @@ struct DemoTimeline {
 /// not a special demo mode of the dog.
 final class DemoDriver {
     let script: DemoScript
+    /// Wall-clock instant the timeline's t=0 lands on, or nil for "whenever
+    /// `start()` happens to be called".
+    ///
+    /// capture.sh sets this, through JUMBINI_DEMO_START, because it starts the
+    /// screen recorder BEFORE the app and then has to know where in the
+    /// resulting file the dog's clock begins. It cannot observe
+    /// `applicationDidFinishLaunching` from a shell — nothing in the process
+    /// table, LaunchServices or the filesystem moves at that instant with
+    /// sub-second resolution — so the app is told when to start instead of the
+    /// shell guessing. Beats due before this instant are simply not due yet,
+    /// which is what makes the pre-roll a plain static desktop.
+    let startInstant: Date?
     /// Delivered on the main thread, like SystemMonitor.onSignal.
     var onBeat: ((DemoBeat) -> Void)?
     /// Called once when the script's duration is up.
@@ -197,25 +209,38 @@ final class DemoDriver {
     /// within a frame or two of its mark at 60fps capture.
     private static let tick: TimeInterval = 1.0 / 30.0
 
-    init(script: DemoScript) {
+    init(script: DemoScript, startInstant: Date? = nil) {
         self.script = script
+        self.startInstant = startInstant
         self.timeline = DemoTimeline(script: script)
     }
 
     /// The gate. A missing variable, an unreadable file, or a script that
     /// doesn't parse all mean the same thing: no driver, app behaves normally.
+    /// JUMBINI_DEMO is checked first and alone, so JUMBINI_DEMO_START on its
+    /// own constructs nothing.
     static func fromEnvironment(
         _ environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> DemoDriver? {
         guard let path = environment["JUMBINI_DEMO"] else { return nil }
         guard let data = FileManager.default.contents(atPath: path) else { return nil }
         guard let script = try? DemoScript(json: data) else { return nil }
-        return DemoDriver(script: script)
+        return DemoDriver(script: script, startInstant: startInstant(from: environment))
+    }
+
+    /// Seconds since the Unix epoch. Absent or unparseable means "start now":
+    /// a malformed capture-time variable should cost the take's timing, not
+    /// the take.
+    private static func startInstant(from environment: [String: String]) -> Date? {
+        guard let raw = environment["JUMBINI_DEMO_START"], let epoch = Double(raw) else {
+            return nil
+        }
+        return Date(timeIntervalSince1970: epoch)
     }
 
     func start() {
         guard timer == nil else { return }
-        startedAt = Date()
+        startedAt = startInstant ?? Date()
         let timer = Timer(timeInterval: Self.tick, repeats: true) { [weak self] _ in
             self?.fire()
         }
@@ -232,6 +257,11 @@ final class DemoDriver {
     private func fire() {
         guard let startedAt else { return }
         let elapsed = Date().timeIntervalSince(startedAt)
+        // The pre-roll, when startInstant is in the future. DemoTimeline would
+        // hold everything anyway (no beat is due at a negative time), but
+        // saying so here keeps the finish check below from being read as
+        // depending on that.
+        guard elapsed >= 0 else { return }
         for beat in timeline.due(at: elapsed) {
             onBeat?(beat)
         }
