@@ -150,11 +150,17 @@ STATES = {
     "run2": "sprinting_really_fas_2",
 }
 
-# Later single-state exports dropped into the repo root, keyed the same way:
-# app state name -> folder relative to the repo root.
+# Later single-state exports, keyed the same way: app state name -> folder
+# relative to the repo root. These landed loose in the repo root before the kit
+# existed and now live beside it, in jumbini-kit/legacy-exports.
+#
+# Both poses are also in KIT_STATES below, which imports after this and writes
+# the same sniff_*/hunch_* names — so the kit's art is what ships, and has been
+# since it landed. These rows survive only to keep the older exports importable
+# for anyone who has them; nothing in Resources/jumba came from them.
 EXTRA_STATES = {
-    "sniff": "sniffing-state/sniffing_the_ground",
-    "hunch": "hunched-over-state/hunched_over_defecat",
+    "sniff": "jumbini-kit/legacy-exports/sniffing_the_ground",
+    "hunch": "jumbini-kit/legacy-exports/hunched_over_defecat",
 }
 
 # ---------------------------------------------------------------- jumbini-kit

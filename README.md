@@ -449,6 +449,9 @@ Tests/JumbiniTests/        327 deterministic tests
 Tools/                     import_jumba.py, import_kit_art.py, import_kit_props.py, make_sprites.py
 Scripts/                   test.sh, bundle.sh, dmg.sh, Info.plist
 icon/                      app icon sources and iconsets
+jumbini-kit/               the delivered asset kit — source art the importers read
+jumbini-beds/              bed art exports, one folder per shipped bedvar_N
+design-notes/              plans and specs; not part of the published site
 ```
 
 ## Contributing

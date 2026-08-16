@@ -10,7 +10,8 @@ Code-only specs are called out as such so nobody draws for them.
 - 8 directions: `south, south-east, east, north-east, north, north-west, west, south-west`.
 - Delivered as an export folder `<state-name>/rotations/<direction>.png` (+ `metadata.json`,
   export v3.1, template `dog`, 8 directions, 48×48) and registered in `EXTRA_STATES` in
-  `Tools/import_jumba.py`. Same character prompt as `sniffing-state/metadata.json`.
+  `Tools/import_jumba.py`. Same character prompt as
+  `jumbini-kit/legacy-exports/sniffing_the_ground/metadata.json`.
 - White backgrounds are stripped by the importer's edge flood fill — leave the outline closed.
 - ⚠️ `sit_*` and `bark_*` were exported at 68×76 with less pixel density, which is why
   `SpriteLibrary` carries a `sitScale` hack. **Author every new pose at 48×48** so no new
