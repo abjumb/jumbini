@@ -37,9 +37,15 @@ probe="$RAW/.permission-probe.mov"
 screencapture -v -V 1 "$probe" >/dev/null 2>&1 || true
 [ -s "$probe" ] || die "screencapture produced nothing — grant Screen Recording permission and re-run"
 
+# The `|| true` matters: under `pipefail`, a corrupt/undecodable probe makes
+# ffmpeg and/or grep exit non-zero even though cut (the rightmost command)
+# exits 0, which would otherwise fail this assignment and let `set -e` kill
+# the script here — before the case statement below ever runs. `|| true`
+# defers the failure to the explicit, honest check that follows instead of
+# leaving the operator with a bare, unexplained exit.
 probe_luma=$(ffmpeg -v error -i "$probe" \
   -vf "signalstats,metadata=print:key=lavfi.signalstats.YAVG:file=-" \
-  -frames:v 1 -f null - 2>/dev/null | grep -m1 -o 'YAVG=[0-9.]\+' | cut -d= -f2)
+  -frames:v 1 -f null - 2>/dev/null | grep -m1 -o 'YAVG=[0-9.]\+' | cut -d= -f2) || true
 
 case "$probe_luma" in
   ''|*[!0-9.]*)
@@ -51,9 +57,11 @@ esac
 # 16. Real desktop content — even a dark wallpaper, once menu bar/dock/cursor
 # chrome is counted — reads far higher (~45 measured on the authoring
 # machine). 20 sits with margin above the black ceiling and well below real
-# content.
+# content. Erring toward a false positive here is intentional: a false
+# positive fails visibly and costs a re-run, a false negative would ship
+# nine black clips silently.
 awk -v y="$probe_luma" 'BEGIN { exit (y > 20) ? 0 : 1 }' \
-  || die "probe recording is near-black (avg luma $probe_luma) — Screen Recording permission was not granted; grant it and re-run"
+  || die "probe recording reads near-black (avg luma $probe_luma, threshold 20). Most likely: Screen Recording permission was not granted for this terminal — check System Settings > Privacy & Security > Screen Recording, enable it, and re-run. Less likely: the desktop background is unusually dark — if permission is already granted, switch to a lighter wallpaper and re-run to rule that out."
 
 rm -f "$probe"
 
