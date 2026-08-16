@@ -71,9 +71,48 @@ private func renderSettingsLayout() -> (image: NSBitmapImageRep, size: NSSize)? 
 /// Prints the render as base64 so it can be pulled out of a CI log and looked
 /// at. Off by default — it is a few hundred lines of noise nobody needs on an
 /// ordinary run.
+/// The window *including* its title bar.
+///
+/// `contentView` stops below the title bar, so every earlier render of this
+/// panel was missing the one part of the reference design that lives up there:
+/// the traffic light. `contentView.superview` is the frame view that owns both,
+/// which is what has to be captured to check the corner at all.
+@MainActor
+private func renderSettingsWindow() -> (image: NSBitmapImageRep, size: NSSize)? {
+    let panel = SettingsPanel(defaults: UserDefaults(suiteName: "snapshot.window") ?? .standard)
+    panel.orderFrontRegardless()
+    defer { panel.orderOut(nil) }
+    guard let frame = panel.contentView?.superview else { return nil }
+    frame.layoutSubtreeIfNeeded()
+    let bounds = frame.bounds
+    guard bounds.width > 1, bounds.height > 1,
+          let rep = frame.bitmapImageRepForCachingDisplay(in: bounds)
+    else { return nil }
+    panel.effectiveAppearance.performAsCurrentDrawingAppearance {
+        frame.cacheDisplay(in: bounds, to: rep)
+    }
+    return (rep, bounds.size)
+}
+
+@Test @MainActor func theCloseButtonSitsInTheTopLeftCorner() {
+    let panel = SettingsPanel(defaults: UserDefaults(suiteName: "snapshot.corner") ?? .standard)
+    guard let close = panel.standardWindowButton(.closeButton),
+          let frame = panel.contentView?.superview
+    else {
+        Issue.record("no close button or frame view")
+        return
+    }
+    let spot = close.convert(close.bounds, to: frame)
+    // Top-left, in a frame view whose origin is bottom-left: near x = 0, and
+    // within the title bar's height of the top edge. The design puts it there;
+    // the version this replaced drew its own glyph in the opposite corner.
+    #expect(spot.minX < 40, "close button x = \(spot.minX)")
+    #expect(spot.maxY > frame.bounds.height - 40, "close button y = \(spot.maxY)")
+}
+
 @Test @MainActor func settingsSnapshotIsPrintedWhenAskedFor() {
     guard ProcessInfo.processInfo.environment["JUMBINI_SNAPSHOT"] == "1" else { return }
-    guard let (rep, _) = renderSettingsLayout(),
+    guard let (rep, _) = renderSettingsWindow() ?? renderSettingsLayout(),
           let png = rep.representation(using: .png, properties: [:])
     else {
         Issue.record("could not encode the settings layout as PNG")

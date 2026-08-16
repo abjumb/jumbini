@@ -47,6 +47,12 @@ jobs:
       # those flags are unnecessary and point at a toolchain that isn't the
       # one compiling. Contributors should keep using the script locally.
       - name: Test
+        env:
+          # Temporary again, on this branch only: the earlier renders captured
+          # contentView, which stops below the title bar, so the traffic light
+          # was never in the picture. Removed in the same PR once the corner has
+          # been checked.
+          JUMBINI_SNAPSHOT: "1"
         run: swift test
 
       # The ship path: a release build, the .app assembled around it, the
