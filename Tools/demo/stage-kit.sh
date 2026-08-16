@@ -36,19 +36,19 @@ EOF
 fi
 
 rm -rf "$KIT"
-mkdir -p "$KIT/Tools/demo" "$KIT/Sources/Jumbini/Resources"
+mkdir -p "$KIT/Tools/demo"
 
+# Only what RECORDING needs. The offline half — stills.sh, spritefilm,
+# animations.json and the raw jumba art they read — is deliberately not staged.
+# It never could have worked here: the kit is chmod a+rX and owned by whoever
+# staged it, so `swift run --package-path` cannot create .build inside it, and
+# stills.sh would have written its output into the same read-only tree. It also
+# needs no app, no permissions and no capture account, so staging it only ever
+# added a Swift-toolchain requirement to an account that does not want one.
+# Hero sheets and stills are rendered in the authoring account, from the repo.
 cp -R "$APP" "$KIT/Jumbini.app"
 cp -R "$HERE/shots" "$KIT/Tools/demo/"
-# spritefilm via rsync, not cp -R: Tools/demo/spritefilm/.build is a 254MB
-# local build cache with absolute paths baked into it. .gitignore hides it
-# from git, but a plain `cp -R` does not know about .gitignore — only
-# rsync's --exclude does, so this is how we keep it out of a world-readable
-# directory.
-rsync -a --exclude='.build' "$HERE/spritefilm/" "$KIT/Tools/demo/spritefilm/"
-cp "$HERE/capture.sh" "$HERE/stills.sh" "$HERE/stage-windows.applescript" \
-   "$HERE/animations.json" "$KIT/Tools/demo/"
-cp -R "$ROOT/Sources/Jumbini/Resources/jumba" "$KIT/Sources/Jumbini/Resources/"
+cp "$HERE/capture.sh" "$HERE/stage-windows.applescript" "$KIT/Tools/demo/"
 cp "$HERE/README.md" "$KIT/README.md"
 
 # Everyone can read and run it; only the staging user can change it.
@@ -69,6 +69,10 @@ stage: kit ready at $KIT
 Now, in the capture account:
   1. Log in (single display, nothing else running).
   2. Terminal: cd $KIT && JUMBINI_APP=$KIT/Jumbini.app JUMBINI_DEMO_OUT=$KIT/out/clips Tools/demo/capture.sh
-  3. Grant Screen Recording when asked, then run it again.
+  3. Grant the three permissions it asks for — Screen Recording, and
+     Automation for TextEdit and for Finder — then run it again.
   4. Output lands in $KIT/out — copy it back and review every clip.
+
+The hero sheets and stills are NOT part of this kit: they need no app and no
+permissions, so Tools/demo/stills.sh runs in the authoring account instead.
 EOF
