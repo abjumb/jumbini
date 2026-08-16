@@ -25,6 +25,14 @@ on:
 permissions:
   contents: write        # needed to create the release and upload the DMG
 
+env:
+  # How many DMGs gh-pages keeps. The branch is what Sparkle downloads from,
+  # not an archive — every release attaches its own DMG to the GitHub Release,
+  # which is where an old build should be fetched from. Raising this only buys
+  # cheaper updates for users further behind (generate_appcast can diff against
+  # more old builds); it does not make any release more reachable.
+  KEEP_RELEASES: 2
+
 jobs:
   release:
     # An Apple Silicon runner, because Jumbini is Apple Silicon only.
@@ -248,7 +256,71 @@ jobs:
           fi
 
           cp build/Jumbini.dmg "$PAGES/Jumbini-$V.dmg"
+
+          # gh-pages is append-only unless something prunes it: every release
+          # adds ~2 MB of DMG and a handful of deltas, and nothing ever removed
+          # the old ones. Keep the newest $KEEP_RELEASES DMGs and let
+          # generate_appcast rebuild the feed around whatever survives, so the
+          # appcast can never advertise a DMG that is no longer here.
+          #
+          # Deleting an old DMG does not strand anyone. Sparkle offers the
+          # newest item, and the deltas that let an old build patch up to it are
+          # keyed off the *installed* app, not off a hosted copy of it. The one
+          # real cost is that generate_appcast can only diff against the DMGs
+          # still present, so a user more than $KEEP_RELEASES releases behind
+          # downloads the full ~2 MB instead of a ~150 KB delta.
+          #
+          # Nothing is lost either way: every release attaches its DMG to the
+          # GitHub Release (see "Attach DMG to the release" below), which is
+          # where an old build should be fetched from anyway.
+          ls "$PAGES"/Jumbini-*.dmg 2>/dev/null \
+            | sed 's|.*/Jumbini-\(.*\)\.dmg|\1|' \
+            | sort -V \
+            | head -n -"$KEEP_RELEASES" \
+            | while read -r old; do
+                echo "  pruning Jumbini-$old.dmg (keeping the newest $KEEP_RELEASES)"
+                rm -f "$PAGES/Jumbini-$old.dmg"
+              done
+
           SPARKLE_ED25519_KEY="$SPARKLE_ED25519_KEY" ./Scripts/appcast.sh "$PAGES"
+
+          # generate_appcast has just rewritten appcast.xml from the DMGs that
+          # remain, so anything it does not name is dead weight — the deltas
+          # belonging to a pruned version, and any archive orphaned by an
+          # earlier run. Two such DMGs and an old_updates/ delta had been
+          # sitting unreferenced on gh-pages for exactly that reason.
+          #
+          # Driven off the regenerated appcast rather than off a list of what
+          # was deleted, so it also sweeps up orphans this step never made.
+          python3 - "$PAGES" <<'PRUNE'
+          import os, re, sys
+
+          pages = sys.argv[1]
+          with open(os.path.join(pages, "appcast.xml"), encoding="utf-8") as fh:
+              referenced = {u.rsplit("/", 1)[-1]
+                            for u in re.findall(r'url="([^"]+)"', fh.read())}
+
+          for root, _, names in os.walk(pages):
+              for name in names:
+                  if not name.endswith((".dmg", ".delta")) or name in referenced:
+                      continue
+                  path = os.path.join(root, name)
+                  print("  removing unreferenced %s (%.2f MB)"
+                        % (os.path.relpath(path, pages),
+                           os.path.getsize(path) / 1048576))
+                  os.remove(path)
+
+          # An empty old_updates/ left behind by the sweep is just noise.
+          for root, dirs, _ in os.walk(pages, topdown=False):
+              for d in dirs:
+                  try:
+                      os.rmdir(os.path.join(root, d))
+                  except OSError:
+                      pass
+          PRUNE
+
+          echo "Pages payload after retention:"
+          du -ch "$PAGES"/*.dmg "$PAGES"/*.delta 2>/dev/null | tail -1
 
       # The download page ships in the same payload as the appcast, because it
       # has to be served from the same place. SUFeedURL is compiled into every
