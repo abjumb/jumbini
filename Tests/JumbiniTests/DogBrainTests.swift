@@ -19,6 +19,8 @@ private func makeBrain(
     tuning.pounceChance = 0
     tuning.tugWinChance = 0
     tuning.perchChance = 0
+    tuning.parkourChance = 0
+    tuning.perchNapChance = 0
     tune(&tuning)
     return DogBrain(
         bounds: CGSize(width: 800, height: 600),
@@ -2575,6 +2577,264 @@ private func hopTarget(in effects: [DogEffect]) -> CGPoint? {
     #expect(brain.handle(.tick, at: 28.0) == [], "the ordinary idle timer, ticking again")
     _ = brain.handle(.tick, at: 28.8)
     #expect(brain.state == .headingToSurface(surfaceID: 1), "and off he goes again")
+}
+
+// MARK: - Window parkour (hop between windows / perch nap)
+//
+// The signature leap on top of climbing: once he's on a title bar he can hop
+// straight onto a NEIGHBOURING window without coming down, and occasionally
+// settle into a nap on a wide ledge. `perchable` is the ledge he climbs onto;
+// every neighbour below is defined relative to it.
+
+/// A neighbour to the right of `perchable`: top edge at 500 (an 80pt rise),
+/// horizontally 48pt of gap away — comfortably inside the default limits.
+private let parkourNeighbour = testSurface(2, x: 700, y: 200, width: 400, height: 300)
+
+/// A dog perched on `perchable` who has walked to the far end and finished a
+/// peek — the exact moment the next move (parkour / nap / turn around) is
+/// decided by the tick that follows.
+private func makeDecisionPoint(
+    surfaces: [Surface] = [perchable],
+    tune: @escaping (inout BrainTuning) -> Void = { _ in }
+) -> DogBrain {
+    let brain = makePerched(surfaces: surfaces, tune: tune)
+    brain.position = CGPoint(x: 676, y: 420) // far end of `perchable`
+    _ = brain.handle(.arrived, at: 6)         // → peek, deadline at t=7
+    return brain
+}
+
+// MARK: The hop
+
+@Test func aPerchedDogHopsToANeighbouringWindow() {
+    let brain = makeDecisionPoint(
+        surfaces: [perchable, parkourNeighbour], tune: { $0.parkourChance = 1 }
+    )
+    let effects = brain.handle(.tick, at: 7.1)
+
+    #expect(brain.state == .hoppingAcross(toID: 2))
+    #expect(effects.contains(.play(.pounce)))
+    // Lands on the neighbour's near edge, directly across from where he took off.
+    #expect(hopTarget(in: effects) == CGPoint(x: 724, y: 500))
+}
+
+@Test func withoutANeighbourHeTurnsAroundAsBefore() {
+    // Parkour is wanted, but there's nowhere to hop: the ordinary patrol wins.
+    let brain = makeDecisionPoint(surfaces: [perchable], tune: { $0.parkourChance = 1 })
+    let effects = brain.handle(.tick, at: 7.1)
+
+    #expect(brain.state == .perched(surfaceID: 1))
+    #expect(moveTarget(in: effects)?.point == CGPoint(x: 324, y: 420))
+}
+
+@Test func anOutOfReachNeighbourDoesNotTriggerAHop() {
+    // 448pt of gap is beyond the 240pt limit, so he stays put even though
+    // parkour is set to always fire.
+    let farNeighbour = testSurface(2, x: 1100, y: 200, width: 400, height: 300)
+    let brain = makeDecisionPoint(
+        surfaces: [perchable, farNeighbour], tune: { $0.parkourChance = 1 }
+    )
+    let effects = brain.handle(.tick, at: 7.1)
+
+    #expect(brain.state == .perched(surfaceID: 1))
+    #expect(moveTarget(in: effects)?.point == CGPoint(x: 324, y: 420))
+}
+
+@Test func dogScaleNarrowsTheParkourReach() {
+    // A 140pt climb is fine at full size but too much for a dog drawn 50%.
+    let tallNeighbour = testSurface(2, x: 700, y: 260, width: 400, height: 300) // rise 140
+    let full = makeDecisionPoint(
+        surfaces: [perchable, tallNeighbour], tune: { $0.parkourChance = 1 }
+    )
+    #expect(full.handle(.tick, at: 7.1).contains(.hopTo(CGPoint(x: 724, y: 560))))
+    #expect(full.state == .hoppingAcross(toID: 2))
+
+    let small = makeDecisionPoint(
+        surfaces: [perchable, tallNeighbour], tune: { $0.parkourChance = 1 }
+    )
+    small.dogScale = 0.5
+    let effects = small.handle(.tick, at: 7.1)
+    #expect(small.state == .perched(surfaceID: 1))
+    #expect(moveTarget(in: effects)?.point == CGPoint(x: 324, y: 420))
+}
+
+// MARK: The landing
+
+@Test func landingAParkourHopPerchesOnTheNeighbour() {
+    let brain = makeDecisionPoint(
+        surfaces: [perchable, parkourNeighbour], tune: { $0.parkourChance = 1 }
+    )
+    _ = brain.handle(.tick, at: 7.1)
+    #expect(brain.state == .hoppingAcross(toID: 2))
+
+    brain.position = CGPoint(x: 724, y: 500)
+    let effects = brain.handle(.arrived, at: 8)
+
+    #expect(brain.state == .perched(surfaceID: 2))
+    #expect(effects.contains(.play(.walk)))
+    #expect(moveTarget(in: effects)?.point == CGPoint(x: 1076, y: 500),
+            "he patrols the new ledge like any other")
+}
+
+@Test func heKeepsParkouringBetweenWindowsWithoutTouchingTheFloor() {
+    // Two sequential hops — 1 → 2 and back — never leaving a title bar, which
+    // is the ticket's "traverse without returning to the desktop" in miniature.
+    let brain = makeDecisionPoint(
+        surfaces: [perchable, parkourNeighbour],
+        tune: { $0.parkourChance = 1; $0.perchDuration = 100...100 }
+    )
+    _ = brain.handle(.tick, at: 7.1)
+    #expect(brain.state == .hoppingAcross(toID: 2))
+
+    brain.position = CGPoint(x: 724, y: 500)
+    _ = brain.handle(.arrived, at: 8)
+    #expect(brain.state == .perched(surfaceID: 2))
+
+    // Patrol to the far end of window 2, peek, then hop back.
+    brain.position = CGPoint(x: 1076, y: 500)
+    _ = brain.handle(.arrived, at: 9)
+    let back = brain.handle(.tick, at: 10.1)
+    #expect(brain.state == .hoppingAcross(toID: 1))
+    #expect(hopTarget(in: back) == CGPoint(x: 676, y: 420))
+
+    brain.position = CGPoint(x: 676, y: 420)
+    _ = brain.handle(.arrived, at: 11)
+    #expect(brain.state == .perched(surfaceID: 1))
+}
+
+// MARK: Aborting
+
+@Test func theNeighbourVanishingMidHopDropsHim() {
+    let brain = makeDecisionPoint(
+        surfaces: [perchable, parkourNeighbour], tune: { $0.parkourChance = 1 }
+    )
+    _ = brain.handle(.tick, at: 7.1)
+    #expect(brain.state == .hoppingAcross(toID: 2))
+
+    brain.surfaces = [perchable] // the target closed mid-air
+    let effects = brain.handle(.tick, at: 7.5)
+
+    #expect(brain.state == .falling)
+    #expect(effects.contains(.stopMoving))
+    #expect(fallTarget(in: effects) == 300, "back down to the floor he climbed from")
+}
+
+// MARK: The perch nap
+
+@Test func aWideLedgeSendsHimToSleep() {
+    let brain = makeDecisionPoint(
+        surfaces: [perchable], tune: { $0.perchNapChance = 1; $0.perchNapDuration = 5...5 }
+    )
+    let effects = brain.handle(.tick, at: 7.1)
+
+    #expect(brain.state == .perchSleeping(surfaceID: 1))
+    #expect(effects.contains(.play(.sleep)))
+}
+
+@Test func aNarrowLedgeIsNoPlaceToNap() {
+    // `perchable` is 400pt wide; a 500pt nap floor turns it into a no-nap ledge.
+    let brain = makeDecisionPoint(
+        surfaces: [perchable], tune: { $0.perchNapChance = 1; $0.perchNapMinWidth = 500 }
+    )
+    let effects = brain.handle(.tick, at: 7.1)
+
+    #expect(brain.state == .perched(surfaceID: 1))
+    #expect(moveTarget(in: effects)?.point == CGPoint(x: 324, y: 420))
+}
+
+@Test func wakingFromANapResumesPatrolling() {
+    let brain = makeDecisionPoint(
+        surfaces: [perchable], tune: { $0.perchNapChance = 1; $0.perchNapDuration = 5...5 }
+    )
+    _ = brain.handle(.tick, at: 7.1)
+    #expect(brain.state == .perchSleeping(surfaceID: 1))
+    #expect(brain.handle(.tick, at: 9) == [], "still asleep before the nap ends")
+
+    let effects = brain.handle(.tick, at: 12.2)
+    #expect(brain.state == .perched(surfaceID: 1))
+    #expect(effects.contains(.play(.walk)))
+}
+
+@Test func theWindowClosingUnderANapDropsHim() {
+    let brain = makeDecisionPoint(
+        surfaces: [perchable], tune: { $0.perchNapChance = 1; $0.perchNapDuration = 5...5 }
+    )
+    _ = brain.handle(.tick, at: 7.1)
+    #expect(brain.state == .perchSleeping(surfaceID: 1))
+
+    brain.surfaces = []
+    let effects = brain.handle(.tick, at: 8)
+
+    #expect(brain.state == .falling)
+    #expect(effects.contains(.play(.fall)))
+}
+
+// MARK: Interruptions
+
+@Test func aCommandInterruptsAParkourHop() {
+    let brain = makeDecisionPoint(
+        surfaces: [perchable, parkourNeighbour], tune: { $0.parkourChance = 1 }
+    )
+    _ = brain.handle(.tick, at: 7.1)
+    #expect(brain.state == .hoppingAcross(toID: 2))
+
+    _ = brain.handle(.command(.sit), at: 7.5)
+    #expect(brain.state == .sitting)
+
+    brain.surfaces = []
+    #expect(brain.handle(.tick, at: 8) == [], "no ghost fall from a hop a command cancelled")
+}
+
+@Test func aCommandInterruptsAPerchNap() {
+    let brain = makeDecisionPoint(surfaces: [perchable], tune: { $0.perchNapChance = 1 })
+    _ = brain.handle(.tick, at: 7.1)
+    #expect(brain.state == .perchSleeping(surfaceID: 1))
+
+    _ = brain.handle(.command(.sit), at: 8)
+    #expect(brain.state == .sitting)
+
+    brain.surfaces = []
+    #expect(brain.handle(.tick, at: 9) == [], "no ghost fall from a nap he already left")
+}
+
+@Test func pickingHimUpOffANapEndsItCleanly() {
+    let brain = makeDecisionPoint(surfaces: [perchable], tune: { $0.perchNapChance = 1 })
+    _ = brain.handle(.tick, at: 7.1)
+    #expect(brain.state == .perchSleeping(surfaceID: 1))
+
+    _ = brain.handle(.pickedUp, at: 8)
+    #expect(brain.state == .carried)
+
+    brain.surfaces = []
+    #expect(brain.handle(.tick, at: 9) == [])
+}
+
+// MARK: Disabling window climbing
+
+@Test func disablingWindowClimbingDropsAPerchNapSafely() {
+    let brain = makeDecisionPoint(surfaces: [perchable], tune: { $0.perchNapChance = 1 })
+    _ = brain.handle(.tick, at: 7.1)
+    #expect(brain.state == .perchSleeping(surfaceID: 1))
+
+    brain.windowClimbingEnabled = false
+    brain.surfaces = []
+    let effects = brain.handle(.tick, at: 8)
+
+    #expect(brain.state == .falling)
+    #expect(effects.contains { if case .startFalling = $0 { return true }; return false })
+}
+
+@Test func disablingWindowClimbingDropsAParkourHop() {
+    let brain = makeDecisionPoint(
+        surfaces: [perchable, parkourNeighbour], tune: { $0.parkourChance = 1 }
+    )
+    _ = brain.handle(.tick, at: 7.1)
+    #expect(brain.state == .hoppingAcross(toID: 2))
+
+    brain.windowClimbingEnabled = false
+    let effects = brain.handle(.tick, at: 7.5)
+
+    #expect(brain.state == .falling)
+    #expect(effects.contains { if case .startFalling = $0 { return true }; return false })
 }
 
 // MARK: - A world with holes in it (multi-monitor dead zones)

@@ -1254,6 +1254,16 @@ final class PetScene: SKScene {
         brain.surfaces = surfaces
     }
 
+    /// The window the dog is currently standing on — either patrolling or
+    /// napping there — or nil when he's anywhere else (floor, mid-hop, falling).
+    /// Both perch states share the same ride-along and contact-shadow rules.
+    private var perchedSurfaceID: CGWindowID? {
+        switch brain.state {
+        case .perched(let id), .perchSleeping(let id): return id
+        default: return nil
+        }
+    }
+
     /// If the window he's standing on has been dragged, slide him by the same
     /// delta so he stays on the title bar — the scene's job, because it owns
     /// the pixels. The brain sees the same delta on its next tick and decides
@@ -1261,7 +1271,7 @@ final class PetScene: SKScene {
     /// keeps the two answers consistent, so he is never slid somewhere the
     /// brain has already decided he fell from.
     private func rideMovingWindow(to surfaces: [Surface]) {
-        guard case .perched(let id) = brain.state,
+        guard let id = perchedSurfaceID,
               let before = brain.surfaces.first(where: { $0.id == id }),
               let after = surfaces.first(where: { $0.id == id })
         else { return }
@@ -1276,7 +1286,7 @@ final class PetScene: SKScene {
     /// Created once, then just moved, scaled and hidden.
     private func updateContactShadow() {
         // On a ledge: parked under his feet, full size.
-        if case .perched(let id) = brain.state,
+        if let id = perchedSurfaceID,
            let surface = brain.surfaces.first(where: { $0.id == id }),
            let shadow = contactShadow ?? makeContactShadow() {
             shadow.isHidden = false

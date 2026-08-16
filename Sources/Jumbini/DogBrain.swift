@@ -110,6 +110,12 @@ enum DogState: Equatable {
     case perched(surfaceID: CGWindowID)
     /// On the way down, under gravity the scene integrates.
     case falling
+    /// Mid-air between two windows — the parkour hop. Like `.hoppingUp`, the
+    /// scene renders the arc; unlike it, the dog took off from a window rather
+    /// than the floor, so the whole adventure shares one boredom clock.
+    case hoppingAcross(toID: CGWindowID)
+    /// Napping on a sufficiently wide, stable title bar.
+    case perchSleeping(surfaceID: CGWindowID)
 }
 
 enum DogEvent: Equatable {
@@ -248,6 +254,23 @@ struct BrainTuning {
     /// Terminal velocity, so a fall from the top of a big display still reads
     /// as a dog and not a meteor.
     var fallMaxSpeed: CGFloat = 1_400
+
+    // MARK: Window parkour
+
+    /// While perched, the odds he hops onto a NEIGHBOURING window instead of
+    /// turning around at the end of a patrol leg. Rare on purpose: parkour is
+    /// a joke you catch him at, not a commute.
+    var parkourChance: Double = 0.25
+    /// Base reach limits for a window-to-window hop, pre-scale. The brain
+    /// multiplies by `dogScale` before building the graph.
+    var parkourRise: CGFloat = 160
+    var parkourDrop: CGFloat = 420
+    var parkourGap: CGFloat = 240
+    /// Odds a wide-enough ledge sends him to sleep instead of another lap.
+    var perchNapChance: Double = 0.2
+    var perchNapDuration: ClosedRange<TimeInterval> = 8...16
+    /// A title bar narrower than this (pre-scale) is too skinny to nap on.
+    var perchNapMinWidth: CGFloat = 320
 }
 
 /// Deterministic RNG for tests (SplitMix64).
@@ -306,6 +329,11 @@ final class DogBrain {
     /// which changes with the pose, so the scene keeps it current. Standing on
     /// a window means `position.y == surface.topY + footOffset`.
     var footOffset: CGFloat = 0
+    /// The dog's current size as a scale factor (1.0 = baseline). Applied to
+    /// parkour reach limits and the nap-width floor so the graph is built
+    /// against the size he is now. Size controls (ticket 05) will keep this
+    /// current; today it stays 1.0.
+    var dogScale: CGFloat = 1.0
 
     let tuning: BrainTuning
     private var rng: any RandomNumberGenerator
@@ -466,8 +494,15 @@ final class DogBrain {
         case .idle:
             return leaveIdleForAutonomy(at: now)
         case .perched(let id):
-            // The peek at the end of a patrol leg is over: turn around.
+            // The peek at the end of a patrol leg is over: turn around — or,
+            // rarely, hop to a neighbour or settle down for a nap.
             guard let surface = surface(id) else { return beginFalling(at: now) }
+            return decideNextMoveOn(surface, at: now)
+        case .perchSleeping(let id):
+            // Nap over: wake and resume patrolling. The perch expiry check on
+            // the next tick still ends the adventure if he over-slept.
+            guard let surface = surface(id) else { return beginFalling(at: now) }
+            state = .perched(surfaceID: id)
             return startPatrolLeg(on: surface)
         case .sitting, .lyingDown, .spinning, .sleeping, .performingTrick:
             return enterIdle(at: now)
@@ -570,6 +605,14 @@ final class DogBrain {
             deadline = nil
             perchAnchor = surface.rect
             perchExpiry = now + random(in: tuning.perchDuration)
+            return startPatrolLeg(on: surface)
+        case .hoppingAcross(let id):
+            guard let surface = surface(id) else { return beginFalling(at: now) }
+            state = .perched(surfaceID: id)
+            deadline = nil
+            perchAnchor = surface.rect
+            // Do NOT reset perchExpiry: the whole adventure shares one boredom
+            // clock, so a parkour chain is naturally short.
             return startPatrolLeg(on: surface)
         case .perched:
             // End of a patrol leg: a beat spent looking over the edge before
@@ -1101,7 +1144,7 @@ final class DogBrain {
         case .barking:
             barkReturn = nil // the interrupter decides what happens next
             return []
-        case .headingToSurface, .hoppingUp, .perched:
+        case .headingToSurface, .hoppingUp, .hoppingAcross, .perched, .perchSleeping:
             // Whatever interrupted him outranks a window. He simply leaves
             // it — the interrupter's own `.moveTo` carries him off the ledge,
             // and clearing the bookkeeping here is what stops a later tick
@@ -1146,7 +1189,7 @@ final class DogBrain {
             switch state {
             case .headingToSurface:
                 return [.stopMoving] + enterIdle(at: now)
-            case .hoppingUp, .perched:
+            case .hoppingUp, .hoppingAcross, .perched, .perchSleeping:
                 return beginFalling(at: now)
             default:
                 break
@@ -1161,8 +1204,14 @@ final class DogBrain {
             // The window closed mid-air. Gravity does the rest.
             guard surface(id) == nil else { return nil }
             return beginFalling(at: now)
+        case .hoppingAcross(let id):
+            // The target window closed mid-hop. Gravity does the rest.
+            guard surface(id) == nil else { return nil }
+            return beginFalling(at: now)
         case .perched(let id):
             return supervisePerch(surfaceID: id, at: now)
+        case .perchSleeping(let id):
+            return supervisePerchSleep(surfaceID: id, at: now)
         case .falling:
             // The scene has been moving him down; has he arrived?
             guard position.y <= fallTargetY + Self.perchEpsilon else { return [] }
@@ -1211,6 +1260,30 @@ final class DogBrain {
         if let expiry = perchExpiry, now >= expiry { return beginFalling(at: now) }
 
         return effects.isEmpty ? nil : effects
+    }
+
+    /// The ledge under a napping dog. A window that vanishes or is yanked away
+    /// wakes him the hard way; a gentle ride he sleeps through — same rules as
+    /// a patrol, because the physics underneath him doesn't care whether his
+    /// eyes are open.
+    private func supervisePerchSleep(surfaceID id: CGWindowID, at now: TimeInterval) -> [DogEffect]? {
+        guard let surface = surface(id) else { return beginFalling(at: now) }
+
+        if let anchor = perchAnchor {
+            let dx = surface.rect.minX - anchor.minX
+            let dy = surface.rect.maxY - anchor.maxY
+            let travelled = hypot(dx, dy)
+            if travelled > tuning.perchRideLimit { return beginFalling(at: now) }
+            if travelled > Self.perchEpsilon { perchAnchor = surface.rect }
+        } else {
+            perchAnchor = surface.rect
+        }
+
+        // A window that shrank or slid out from under him leaves him in the air.
+        if position.x < surface.rect.minX || position.x > surface.rect.maxX {
+            return beginFalling(at: now)
+        }
+        return nil
     }
 
     /// Off the edge. Works from anywhere: a perch, a hop, or the user's hand.
@@ -1352,6 +1425,83 @@ final class DogBrain {
         perchAnchor = nil
         perchTarget = nil
         perchExpiry = nil
+    }
+
+    // MARK: - Window parkour
+    //
+    // The signature leap: while already on a title bar, occasionally hop
+    // straight onto a NEIGHBOURING window instead of coming back down, and
+    // sometimes settle into a nap on a wide, stable ledge. The decisions live
+    // here (pure, testable); the reachability geometry lives in `ParkourGraph`.
+
+    /// The reach limits for a window-to-window hop, scaled to the dog's
+    /// current size.
+    private var parkourLimits: ParkourLimits {
+        ParkourLimits(
+            rise: tuning.parkourRise * dogScale,
+            drop: tuning.parkourDrop * dogScale,
+            gap: tuning.parkourGap * dogScale,
+            landingInset: tuning.perchEdgeInset * dogScale
+        )
+    }
+
+    /// A title bar has to be at least this wide for a nap.
+    private var napMinWidth: CGFloat { tuning.perchNapMinWidth * dogScale }
+
+    /// The end of a patrol leg: turn around — or, rarely, hop to a neighbour
+    /// or settle down for a nap. Parkour and nap are both rolled here, so the
+    /// ordinary patrolling rhythm is what they interrupt, not the other way
+    /// round.
+    private func decideNextMoveOn(_ surface: Surface, at now: TimeInterval) -> [DogEffect] {
+        if Double.random(in: 0..<1, using: &rng) < tuning.parkourChance,
+           let neighbour = parkourTarget(from: surface) {
+            return startParkourHop(from: surface, to: neighbour)
+        }
+        if surface.rect.width >= napMinWidth,
+           Double.random(in: 0..<1, using: &rng) < tuning.perchNapChance {
+            return startPerchNap(on: surface, at: now)
+        }
+        return startPatrolLeg(on: surface)
+    }
+
+    /// A neighbouring window reachable by one hop, if any. Front-most-first
+    /// order from the graph is preserved, and the pick is uniform over the
+    /// reachable set through the injected RNG.
+    private func parkourTarget(from surface: Surface) -> Surface? {
+        let graph = ParkourGraph.build(
+            surfaces: surfaces, limits: parkourLimits, roamableRects: roamableRects
+        )
+        let neighbours = graph.reachable(from: surface.id).compactMap { self.surface($0) }
+        guard !neighbours.isEmpty else { return nil }
+        return neighbours[Int.random(in: 0..<neighbours.count, using: &rng)]
+    }
+
+    /// Leap off this ledge onto a neighbour's. Shares the takeoff pose and the
+    /// arc with the floor climb; the only difference is that the adventure's
+    /// boredom clock keeps running.
+    private func startParkourHop(from source: Surface, to target: Surface) -> [DogEffect] {
+        state = .hoppingAcross(toID: target.id)
+        deadline = nil
+        perchAnchor = nil // re-established on landing
+        return [.play(.pounce), .hopTo(parkourLanding(from: source, on: target))]
+    }
+
+    /// Where a parkour hop lands: directly across from where he took off,
+    /// clamped inside the target's landing inset.
+    private func parkourLanding(from source: Surface, on target: Surface) -> CGPoint {
+        let inset = tuning.perchEdgeInset * dogScale
+        let lower = target.rect.minX + inset
+        let upper = target.rect.maxX - inset
+        let x = lower > upper ? target.rect.midX : min(max(position.x, lower), upper)
+        return CGPoint(x: x, y: target.topY + footOffset)
+    }
+
+    /// Settle down for a nap on a wide, stable title bar.
+    private func startPerchNap(on surface: Surface, at now: TimeInterval) -> [DogEffect] {
+        state = .perchSleeping(surfaceID: surface.id)
+        deadline = now + random(in: tuning.perchNapDuration)
+        perchTarget = nil
+        return [.play(.sleep)]
     }
 
     // MARK: - Solid ground
