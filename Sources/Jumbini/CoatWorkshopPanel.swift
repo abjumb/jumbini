@@ -38,6 +38,17 @@ final class CoatWorkshopPanel: JumbiniPanel {
     private let statusLabel = NSTextField(labelWithString: "")
     private let findingsScroll = NSScrollView()
     private let findingsTextView = NSTextView()
+    /// The Validation header and its card, kept so the whole section can come
+    /// and go together. Hiding only the scroll view inside left a labelled but
+    /// empty box on screen — a rounded sliver under the word VALIDATION, which
+    /// reads as something that failed to load rather than something not
+    /// applicable yet.
+    private let validationHeader = PanelTheme.sectionHeader("Validation")
+    private var validationCard: NSView?
+    /// The content stack, so the window can be re-measured when a section is
+    /// shown or hidden. Nothing else resizes it, so a shown section would
+    /// otherwise be clipped by a window still sized for the layout without it.
+    private weak var contentStack: NSStackView?
     private let previewButton = NSButton(title: "Preview", target: nil, action: nil)
     private let statePopup = NSPopUpButton()
     private var directionSegments: [Facing: NSButton] = [:]
@@ -160,12 +171,14 @@ final class CoatWorkshopPanel: JumbiniPanel {
         // Grouped into the same labelled cards Settings uses, so the three
         // panels read as one app rather than three separately-built windows.
         let cardWidth = Self.panelWidth - Self.contentInset * 2
+        let findingsCard = PanelBuilder.card([findingsScroll], width: cardWidth)
+        validationCard = findingsCard
         let stack = NSStackView(views: [
             header,
             PanelTheme.sectionHeader("Coat file"),
             PanelBuilder.card([importRow, statusLabel], width: cardWidth),
-            PanelTheme.sectionHeader("Validation"),
-            PanelBuilder.card([findingsScroll], width: cardWidth),
+            validationHeader,
+            findingsCard,
             PanelTheme.sectionHeader("Preview"),
             PanelBuilder.card([previewRow, directionRow, scaleStack], width: cardWidth),
             installButton,
@@ -181,11 +194,29 @@ final class CoatWorkshopPanel: JumbiniPanel {
             bottom: Self.contentInset, right: Self.contentInset
         )
 
+        contentStack = stack
+        showValidation(false)
+
         stack.layoutSubtreeIfNeeded()
         let fittedHeight = stack.fittingSize.height
 
         installChrome(around: stack)
         setContentSize(NSSize(width: Self.panelWidth, height: fittedHeight))
+    }
+
+    /// Show or hide the Validation section as a whole, and resize the window to
+    /// whatever the layout now needs.
+    private func showValidation(_ visible: Bool) {
+        findingsScroll.isHidden = !visible
+        validationHeader.isHidden = !visible
+        validationCard?.isHidden = !visible
+        // Only once the stack is in the window. During setUp it is still a
+        // loose view and setUpContent does the sizing itself a few lines later.
+        guard let stack = contentStack, stack.superview != nil else { return }
+        stack.layoutSubtreeIfNeeded()
+        let fitted = stack.fittingSize.height
+        guard fitted > 1 else { return }
+        setContentSize(NSSize(width: Self.panelWidth, height: fitted))
     }
 
 
@@ -295,7 +326,7 @@ final class CoatWorkshopPanel: JumbiniPanel {
         }
 
         findingsTextView.string = text
-        findingsScroll.isHidden = false
+        showValidation(true)
 
         statusLabel.stringValue = errors.isEmpty
             ? "Validation passed with \(warnings.count) warning(s), \(infos.count) info(s)."
@@ -452,7 +483,7 @@ final class CoatWorkshopPanel: JumbiniPanel {
         previewButton.isEnabled = false
         statePopup.isEnabled = false
         for btn in directionSegments.values { btn.isEnabled = false }
-        findingsScroll.isHidden = true
+        showValidation(false)
         findingsTextView.string = ""
         installButton.isEnabled = false
         exportButton.isEnabled = false
@@ -555,7 +586,7 @@ private func updateDirectionButtons() {
         } else {
             statusLabel.stringValue = "\(coat.title) is a built-in coat — export not available."
             exportButton.isEnabled = false
-            findingsScroll.isHidden = true
+            showValidation(false)
             return
         }
 

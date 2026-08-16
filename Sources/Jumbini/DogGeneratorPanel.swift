@@ -18,9 +18,9 @@ final class DogGeneratorPanel: JumbiniPanel {
     private var sideData: Data?
     private var backData: Data?
 
-    private let frontButton = NSButton(title: "Front photo…", target: nil, action: nil)
-    private let sideButton = NSButton(title: "Side photo…", target: nil, action: nil)
-    private let backButton = NSButton(title: "Back photo…", target: nil, action: nil)
+    private let frontButton = NSButton(title: "Front…", target: nil, action: nil)
+    private let sideButton = NSButton(title: "Side…", target: nil, action: nil)
+    private let backButton = NSButton(title: "Back…", target: nil, action: nil)
     private let generateButton = NSButton(title: "Generate", target: nil, action: nil)
     private let applyButton = NSButton(title: "Apply", target: nil, action: nil)
     private let spinner = NSProgressIndicator()

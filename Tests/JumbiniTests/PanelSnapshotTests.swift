@@ -187,6 +187,51 @@ private func clearsTheTitleBar(_ view: NSView, in panel: JumbiniPanel) -> (Bool,
     #expect(clears, "Make Your Own Dog header — \(detail)")
 }
 
+@Test @MainActor func theWorkshopHidesValidationUntilThereIsSomethingToSay() {
+    let panel = CoatWorkshopPanel()
+    guard let content = panel.contentView,
+          let header = label("VALIDATION", under: content)
+    else {
+        Issue.record("no Validation header")
+        return
+    }
+    // Hiding only the scroll view inside the card left the card itself behind:
+    // a rounded empty sliver under the word VALIDATION, which reads as a
+    // section that failed to load rather than one that does not apply yet.
+    #expect(header.isHidden, "the Validation header is showing on a fresh panel")
+    guard let stack = header.superview as? NSStackView,
+          let index = stack.arrangedSubviews.firstIndex(of: header),
+          stack.arrangedSubviews.indices.contains(index + 1)
+    else {
+        Issue.record("the Validation header has no card after it")
+        return
+    }
+    #expect(
+        stack.arrangedSubviews[index + 1].isHidden,
+        "the Validation card is showing on a fresh panel"
+    )
+}
+
+@Test @MainActor func theGeneratorsPhotoButtonsFitInsideTheirCard() {
+    let panel = DogGeneratorPanel()
+    guard let content = panel.contentView,
+          let front = firstSubview(of: NSButton.self, under: content),
+          let row = front.superview
+    else {
+        Issue.record("no photo row")
+        return
+    }
+    // The card is the panel width less the content inset on each side, less the
+    // card's own padding on each side. Three buttons wider than that push the
+    // last one through the card's right border — visible in the render as a
+    // button with no gap between it and the rounded edge.
+    let inner = 340 - 16 * 2 - PanelTheme.cardInset * 2
+    #expect(
+        row.fittingSize.width <= inner,
+        "photo row is \(row.fittingSize.width)pt inside a \(inner)pt card"
+    )
+}
+
 /// Any panel's window, title bar included, as a bitmap.
 @MainActor
 private func renderWindow(_ panel: JumbiniPanel) -> NSBitmapImageRep? {
