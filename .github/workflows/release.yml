@@ -291,14 +291,28 @@ jobs:
           # Nothing is lost either way: every release attaches its DMG to the
           # GitHub Release (see "Attach DMG to the release" below), which is
           # where an old build should be fetched from anyway.
-          ls "$PAGES"/Jumbini-*.dmg 2>/dev/null \
-            | sed 's|.*/Jumbini-\(.*\)\.dmg|\1|' \
-            | sort -V \
-            | head -n -"$KEEP_RELEASES" \
-            | while read -r old; do
-                echo "  pruning Jumbini-$old.dmg (keeping the newest $KEEP_RELEASES)"
-                rm -f "$PAGES/Jumbini-$old.dmg"
-              done
+          # "All but the newest N", written for BSD userland. The obvious
+          # `sort -V | head -n -N` is two GNU extensions in one line and this
+          # job runs on macOS: BSD head rejects a negative count outright
+          # ("illegal line count"), which under `set -euo pipefail` would abort
+          # the release here — after signing and notarizing, having spent the
+          # round-trip to Apple. Same family of trap as the bash 3.2 credential
+          # bug in #14; the `sed -i ''` further down is the other tell that this
+          # runner is not GNU.
+          #
+          # So: reverse-sort and skip the first N with `tail -n +K`, both POSIX.
+          # The sort is on numeric version fields rather than `sort -V` to drop
+          # the second extension as well, and it still orders 4.10 above 4.9.
+          PRUNE_LIST="$(
+            ls "$PAGES"/Jumbini-*.dmg 2>/dev/null \
+              | sed 's|.*/Jumbini-\(.*\)\.dmg|\1|' \
+              | sort -t. -k1,1nr -k2,2nr -k3,3nr \
+              | tail -n +$((KEEP_RELEASES + 1)) || true
+          )"
+          for old in $PRUNE_LIST; do
+            echo "  pruning Jumbini-$old.dmg (keeping the newest $KEEP_RELEASES)"
+            rm -f "$PAGES/Jumbini-$old.dmg"
+          done
 
           SPARKLE_ED25519_KEY="$SPARKLE_ED25519_KEY" ./Scripts/appcast.sh "$PAGES"
 
@@ -338,7 +352,11 @@ jobs:
           PRUNE
 
           echo "Pages payload after retention:"
-          du -ch "$PAGES"/*.dmg "$PAGES"/*.delta 2>/dev/null | tail -1
+          # `|| true` because this is a progress line, not a check. Under
+          # pipefail an unmatched glob — no deltas yet, which is the normal
+          # state of a first release — makes du exit non-zero and would take
+          # the whole release down for the sake of a size summary.
+          du -ch "$PAGES"/*.dmg "$PAGES"/*.delta 2>/dev/null | tail -1 || true
 
       # The download page ships in the same payload as the appcast, because it
       # has to be served from the same place. SUFeedURL is compiled into every
