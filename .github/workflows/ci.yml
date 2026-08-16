@@ -55,3 +55,10 @@ jobs:
       # doesn't survive `-c release`, or an Info.plist that stops matching.
       - name: Bundle the app
         run: ./Scripts/bundle.sh
+
+      # Assembling the .app says it can be built, not that it starts. Six
+      # releases shipped crashing a second into launch because every check
+      # stopped at "the bundle exists" -- see the header of smoke.sh. This
+      # runs the binary and fails if it is not still alive a few seconds later.
+      - name: Smoke test the bundled app
+        run: ./Scripts/smoke.sh
