@@ -95,6 +95,11 @@ He looks for a window within about 700 points whose top edge is a climb of no mo
 420 points, walks to it, and hops up. Once he is up there he patrols the title bar,
 stopping at each end to put his nose over the edge and look down at whatever is underneath.
 
+Once in a while, instead of coming back down, he hops straight across to a neighbouring
+window — a row of open windows becomes one connected landscape he crosses without
+touching the floor — and on a wide, still title bar he curls up for a nap before moving
+on.
+
 Move that window and he rides it. Move it faster than about 180 points between two polls
 and the drag shakes him off — he falls, accelerating at 2000 points per second squared up
 to a terminal velocity that keeps him reading as a dog and not a meteor, and lands with a
@@ -246,7 +251,7 @@ Worth stating plainly, because a lot of things in this category do:
 - **No permissions.** No Accessibility, no Screen Recording, no Full Disk Access, no
   Input Monitoring. He reads window geometry, idle time, battery and thermal state through
   public APIs that require no prompt, and reads nothing else.
-- **No AI — for Jumba.** He is a state machine with 29 states and a dice roll, and he does
+- **No AI — for Jumba.** He is a state machine with 31 states and a dice roll, and he does
   not have anything to say to you. The optional **Make Your Own Dog** feature is the one
   place a model touches the app: it generates your dog's sprites from your photos via
   Pixellab. Nothing else is generated, and nothing you make is shared.
@@ -352,11 +357,12 @@ end up with a dog walking on the ceiling.
 
 | File | Lines | What lives there |
 |---|---|---|
-| `Sources/Jumbini/DogBrain.swift` | 1428 | The state machine. 29 states, 16 events, 28 effects, every tuning knob |
-| `Sources/Jumbini/PetScene.swift` | 2443 | Applies effects, owns all mouse input, zoomies physics, cursor-sniff stepping, wardrobe, click-through |
+| `Sources/Jumbini/DogBrain.swift` | 1623 | The state machine. 31 states, 16 events, 28 effects, every tuning knob |
+| `Sources/Jumbini/PetScene.swift` | 2505 | Applies effects, owns all mouse input, zoomies physics, cursor-sniff stepping, wardrobe, click-through |
 | `Sources/Jumbini/SpriteLoader.swift` | 437 | `Facing` (8 directions) and `SpriteLibrary` (coat resolution, texture cache, nearest-neighbor, strip-sheet slicing) |
 | `Sources/Jumbini/SystemMonitor.swift` | 373 | Idle, battery, thermal, build and Focus tracking. Pure transition logic, thin sampling shell |
 | `Sources/Jumbini/WindowSurfaces.swift` | 349 | Reads `CGWindowList`, converts to scene coordinates, hands the brain a list of walkable surfaces |
+| `Sources/Jumbini/ParkourGraph.swift` | 162 | The pure window-to-window reachability graph behind parkour hopping |
 | `Sources/Jumbini/AppDelegate.swift` | 284 | Menu bar item, Jumbini Cam and its hotkey, pause, mute, hunger gag, display changes |
 | `Sources/Jumbini/Dog.swift` | 225 | The dog sprite: plays animations in whichever of 8 directions he faces, walks to targets, reports arrival |
 | `Sources/Jumbini/ScreenLayout.swift` | 197 | Multi-display bounds, and the holes in them that an uneven monitor arrangement leaves behind |
@@ -367,7 +373,7 @@ end up with a dog walking on the ceiling.
 | `Sources/Jumbini/Ball.swift` | 71 | Tennis ball: throw arc, bounce, landing callback |
 | `Sources/Jumbini/EmoteBubble.swift` | 71 | The thought bubble. Deliberately ignorant of why it was asked for |
 | `Sources/Jumbini/OverlayWindow.swift` | 46 | Borderless non-activating `NSPanel` at status-bar level, click-through by default |
-| `Tests/JumbiniTests/` | 4703 | 378 deterministic tests across brain, tricks, system signals, window surfaces, screen layout and coat resolution |
+| `Tests/JumbiniTests/` | 5270 | 419 deterministic tests across brain, tricks, system signals, window surfaces, parkour, screen layout and coat resolution |
 
 ### Two details worth knowing
 
@@ -451,7 +457,7 @@ Sources/Jumbini/           app code
   Resources/sprites/       props, emote icons, 12 bed variants, wardrobe
   Resources/audio/         3 barks, growl, whine, yip, squeak, grunt, chime, shutter
   Resources/Icons/         menu bar icon (16 and 32 px)
-Tests/JumbiniTests/        378 deterministic tests
+Tests/JumbiniTests/        419 deterministic tests
 Tools/                     import_jumba.py, import_kit_art.py, import_kit_props.py, make_sprites.py
 Scripts/                   test.sh, bundle.sh, dmg.sh, Info.plist
 icon/                      app icon sources and iconsets
