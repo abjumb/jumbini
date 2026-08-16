@@ -132,9 +132,11 @@ echo "==> Signing with: $SIGN_IDENTITY"
 # Only sign it if it carries an Info.plist. codesign identifies a directory as a
 # bundle by that file alone, and without one it refuses the whole directory with
 # "bundle format unrecognized, invalid, or unsuitable". Which SwiftPM emits is
-# toolchain-dependent: Swift 6.4 writes Contents/Info.plist, the Swift 6.1 on
-# GitHub's macos-15 runners writes none at all. Signing it unconditionally means
-# the release builds on the developer's Mac and dies on CI.
+# toolchain-dependent: Swift 6.4 writes Contents/Info.plist, the Swift 6.1 that
+# GitHub's macos-15 image shipped wrote none at all. Signing it unconditionally
+# meant the release built on the developer's Mac and died on CI. The release
+# runner has since moved to macos-26, which does write one — the check stays
+# because the next toolchain bump gets no more say in this than the last.
 #
 # Skipping is safe rather than merely expedient. The bundle has no Mach-O, so
 # there is no code in it to sign, and `codesign` on the .app below seals every
