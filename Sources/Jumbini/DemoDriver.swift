@@ -168,3 +168,76 @@ struct DemoTimeline {
         return out
     }
 }
+
+// MARK: - The impure half
+//
+// Mirrors SystemMonitor: a timer, a closure the app layer wires to the
+// scene, and a stop(). Nothing here decides anything.
+
+/// Plays a scripted timeline into the running scene. Built ONLY when
+/// `JUMBINI_DEMO` names a readable, parseable script — a normal launch
+/// never has one, so a normal launch never has a driver.
+///
+/// This exists so the landing-page footage can be re-shot on demand. Every
+/// beat it plays goes through the same entry point as a menu click or a
+/// SystemMonitor signal, so what gets filmed is the shipping behaviour and
+/// not a special demo mode of the dog.
+final class DemoDriver {
+    let script: DemoScript
+    /// Delivered on the main thread, like SystemMonitor.onSignal.
+    var onBeat: ((DemoBeat) -> Void)?
+    /// Called once when the script's duration is up.
+    var onFinish: (() -> Void)?
+
+    private var timeline: DemoTimeline
+    private var timer: Timer?
+    private var startedAt: Date?
+
+    /// Beats are checked 30 times a second — fine enough that a beat lands
+    /// within a frame or two of its mark at 60fps capture.
+    private static let tick: TimeInterval = 1.0 / 30.0
+
+    init(script: DemoScript) {
+        self.script = script
+        self.timeline = DemoTimeline(script: script)
+    }
+
+    /// The gate. A missing variable, an unreadable file, or a script that
+    /// doesn't parse all mean the same thing: no driver, app behaves normally.
+    static func fromEnvironment(
+        _ environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> DemoDriver? {
+        guard let path = environment["JUMBINI_DEMO"] else { return nil }
+        guard let data = FileManager.default.contents(atPath: path) else { return nil }
+        guard let script = try? DemoScript(json: data) else { return nil }
+        return DemoDriver(script: script)
+    }
+
+    func start() {
+        guard timer == nil else { return }
+        startedAt = Date()
+        let timer = Timer(timeInterval: Self.tick, repeats: true) { [weak self] _ in
+            self?.fire()
+        }
+        // .common so the beats keep landing while a menu is tracking.
+        RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer
+    }
+
+    func stop() {
+        timer?.invalidate()
+        timer = nil
+    }
+
+    private func fire() {
+        guard let startedAt else { return }
+        let elapsed = Date().timeIntervalSince(startedAt)
+        for beat in timeline.due(at: elapsed) {
+            onBeat?(beat)
+        }
+        if elapsed >= script.duration {
+            stop()
+            onFinish?()
+        }
+    }
+}

@@ -154,3 +154,41 @@ private func script(_ beats: [DemoBeat]) -> DemoScript {
         try DemoScript(json: Data(json.utf8))
     }
 }
+
+// MARK: - Gating
+//
+// The one property that matters for a shipping app: a normal launch cannot
+// reach the driver. Everything else about it is a convenience.
+
+@Test func noDriverWithoutTheEnvironmentVariable() {
+    #expect(DemoDriver.fromEnvironment([:]) == nil)
+}
+
+@Test func noDriverWhenTheScriptPathDoesNotExist() {
+    let env = ["JUMBINI_DEMO": "/nonexistent/path/to/nowhere.json"]
+    #expect(DemoDriver.fromEnvironment(env) == nil)
+}
+
+@Test func noDriverWhenTheScriptIsNotValidJSON() throws {
+    let url = FileManager.default.temporaryDirectory
+        .appendingPathComponent("bad-\(UUID().uuidString).json")
+    try Data("not json at all".utf8).write(to: url)
+    defer { try? FileManager.default.removeItem(at: url) }
+    #expect(DemoDriver.fromEnvironment(["JUMBINI_DEMO": url.path]) == nil)
+}
+
+@Test func driverIsBuiltFromAValidScriptOnDisk() throws {
+    let url = FileManager.default.temporaryDirectory
+        .appendingPathComponent("good-\(UUID().uuidString).json")
+    let json = """
+    {"name":"probe","duration":4.0,"showCursor":true,
+     "beats":[{"at":1,"kind":"command","command":"sit"}]}
+    """
+    try Data(json.utf8).write(to: url)
+    defer { try? FileManager.default.removeItem(at: url) }
+
+    let driver = DemoDriver.fromEnvironment(["JUMBINI_DEMO": url.path])
+    #expect(driver?.script.name == "probe")
+    #expect(driver?.script.duration == 4.0)
+    #expect(driver?.script.showCursor == true)
+}

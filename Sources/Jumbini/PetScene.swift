@@ -2195,6 +2195,13 @@ final class PetScene: SKScene {
 
     @objc private func commandChosen(_ sender: NSMenuItem) {
         guard let command = sender.representedObject as? DogCommand else { return }
+        perform(command)
+    }
+
+    /// Run a command as though it had been picked from his right-click menu.
+    /// Not private: the demo driver plays scripted commands through here, so
+    /// recorded footage goes down the same path a real click does.
+    func perform(_ command: DogCommand) {
         let effects = brain.handle(.command(command), at: lastTime)
         apply(effects: effects)
         // `handleCommand` returns nothing for exactly one reason: he's in

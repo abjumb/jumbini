@@ -20,6 +20,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // System reactions: ambient machine watcher, stopped in applicationWillTerminate.
     private var systemMonitor: SystemMonitor?
 
+    // Demo capture: nil on every normal launch. See DemoDriver.fromEnvironment.
+    private var demoDriver: DemoDriver?
+
     // Auto-update: Sparkle's standard updater controller, which owns the
     // background update checks and the "Check for Updates…" UI.
     private var updaterController: SPUStandardUpdaterController?
@@ -44,6 +47,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // the scene the signals are delivered to.
         startSystemMonitor()
         // System reactions block end.
+        // Demo capture block: no-op unless JUMBINI_DEMO names a script.
+        startDemoDriver()
+        // Demo capture block end.
         // Jumbini Cam block: global hotkey ⌥⇧J (Carbon; no accessibility
         // permission needed, unlike a CGEvent tap). Keep as the last line of
         // this method — self-contained, order-independent.
@@ -55,6 +61,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // System reactions: drop the poll timer and the thermal observer.
         systemMonitor?.stop()
         systemMonitor = nil
+        demoDriver?.stop()
+        demoDriver = nil
     }
 
     // MARK: - Overlay
@@ -226,6 +234,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         monitor.start()
         systemMonitor = monitor
+    }
+
+    /// Landing-page capture only. Returns immediately on a normal launch
+    /// because `fromEnvironment` finds no JUMBINI_DEMO to act on.
+    private func startDemoDriver() {
+        guard let driver = DemoDriver.fromEnvironment() else { return }
+        driver.onBeat = { [weak self] beat in
+            guard let self, let scene = self.scene else { return }
+            switch beat.action {
+            case .command(let command):
+                scene.perform(command)
+            case .system(let signal):
+                scene.receive(signal)
+            case .cursor(let point):
+                // Warping needs no Accessibility permission, unlike posting
+                // a synthetic move event. Top-left origin, like the display.
+                CGWarpMouseCursorPosition(point)
+            case .wait:
+                break
+            }
+        }
+        driver.onFinish = { NSApp.terminate(nil) }
+        driver.start()
+        demoDriver = driver
     }
 
     // MARK: - Jumbini Cam
