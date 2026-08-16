@@ -227,8 +227,8 @@ Paste it into Slack. That is the whole feature.
   will. It is the joke.
 - **Treats eaten: N (no effect)** — counts up forever, does nothing, see above.
 - **Jumbini Cam** (⌥⇧J) — see above.
-- **Settings…** (⌘,) — securely save a Pixellab key and turn bathroom breaks,
-  Mac-aware reactions, or window climbing on and off.
+- **Settings…** (⌘,) — open Jumbini at login, securely save a Pixellab key, and turn
+  bathroom breaks, Mac-aware reactions, or window climbing on and off.
 - **Mute Sounds** — he barks (three different takes), growls, whines, yips, squeaks and
   grunts. Sometimes you are in a meeting.
 - **Pause** — hides the overlay and freezes the scene. Click **Resume** to bring him back.
@@ -278,7 +278,7 @@ the result.
 Other scripts:
 
 ```bash
-./Scripts/test.sh            # run the test suite (390 tests)
+./Scripts/test.sh            # run the test suite (410 tests)
 ./Scripts/dmg.sh             # → build/Jumbini.dmg, drag-to-Applications layout
 ```
 
