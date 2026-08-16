@@ -187,16 +187,31 @@ private func clearsTheTitleBar(_ view: NSView, in panel: JumbiniPanel) -> (Bool,
     #expect(clears, "Make Your Own Dog header — \(detail)")
 }
 
-@Test @MainActor func settingsSnapshotIsPrintedWhenAskedFor() {
-    guard ProcessInfo.processInfo.environment["JUMBINI_SNAPSHOT"] == "1" else { return }
-    guard let (rep, _) = renderSettingsWindow() ?? renderSettingsLayout(),
-          let png = rep.representation(using: .png, properties: [:])
-    else {
-        Issue.record("could not encode the settings layout as PNG")
+/// Any panel's window, title bar included, as a bitmap.
+@MainActor
+private func renderWindow(_ panel: JumbiniPanel) -> NSBitmapImageRep? {
+    panel.orderFrontRegardless()
+    defer { panel.orderOut(nil) }
+    guard let frame = panel.contentView?.superview else { return nil }
+    frame.layoutSubtreeIfNeeded()
+    let bounds = frame.bounds
+    guard bounds.width > 1, bounds.height > 1,
+          let rep = frame.bitmapImageRepForCachingDisplay(in: bounds)
+    else { return nil }
+    panel.effectiveAppearance.performAsCurrentDrawingAppearance {
+        frame.cacheDisplay(in: bounds, to: rep)
+    }
+    return rep
+}
+
+@MainActor
+private func dump(_ rep: NSBitmapImageRep?, named name: String) {
+    guard let png = rep?.representation(using: .png, properties: [:]) else {
+        Issue.record("could not encode \(name) as PNG")
         return
     }
     let encoded = png.base64EncodedString()
-    print("JUMBINI_SNAPSHOT_BEGIN \(png.count)")
+    print("JUMBINI_SNAPSHOT_BEGIN \(name) \(png.count)")
     var index = encoded.startIndex
     while index < encoded.endIndex {
         let end = encoded.index(index, offsetBy: 180, limitedBy: encoded.endIndex)
@@ -204,7 +219,17 @@ private func clearsTheTitleBar(_ view: NSView, in panel: JumbiniPanel) -> (Bool,
         print("SNAP:" + encoded[index..<end])
         index = end
     }
-    print("JUMBINI_SNAPSHOT_END")
+    print("JUMBINI_SNAPSHOT_END \(name)")
+}
+
+@Test @MainActor func panelSnapshotsArePrintedWhenAskedFor() {
+    guard ProcessInfo.processInfo.environment["JUMBINI_SNAPSHOT"] == "1" else { return }
+    // All three, because the design is shared: a change to PanelKit lands in
+    // every panel at once, and a render of only the settings window would say
+    // nothing about the two that inherit from it.
+    dump(renderSettingsWindow()?.image, named: "settings")
+    dump(renderWindow(CoatWorkshopPanel()), named: "workshop")
+    dump(renderWindow(DogGeneratorPanel()), named: "generator")
 }
 
 @Test @MainActor func theSettingsLayoutActuallyRendersDark() {
