@@ -29,16 +29,45 @@ command -v ffmpeg >/dev/null || die "ffmpeg missing. Run: brew install ffmpeg"
 mkdir -p "$RAW"
 
 # A black recording means the permission was never granted, and it is far
-# better to find that out now than after nine takes.
+# better to find that out now than after nine takes. A denied recording is
+# NOT an empty file — screencapture still writes a full-length, near-uniform
+# black .mov — so a bare size check would pass right through a denial. Measure
+# the first frame's average luma instead.
 probe="$RAW/.permission-probe.mov"
 screencapture -v -V 1 "$probe" >/dev/null 2>&1 || true
 [ -s "$probe" ] || die "screencapture produced nothing — grant Screen Recording permission and re-run"
+
+probe_luma=$(ffmpeg -v error -i "$probe" \
+  -vf "signalstats,metadata=print:key=lavfi.signalstats.YAVG:file=-" \
+  -frames:v 1 -f null - 2>/dev/null | grep -m1 -o 'YAVG=[0-9.]\+' | cut -d= -f2)
+
+case "$probe_luma" in
+  ''|*[!0-9.]*)
+    die "could not measure the probe recording's brightness (got '$probe_luma') — screencapture or ffmpeg output looks broken"
+    ;;
+esac
+
+# True black reads YAVG 0; a limited-range black frame can read as high as
+# 16. Real desktop content — even a dark wallpaper, once menu bar/dock/cursor
+# chrome is counted — reads far higher (~45 measured on the authoring
+# machine). 20 sits with margin above the black ceiling and well below real
+# content.
+awk -v y="$probe_luma" 'BEGIN { exit (y > 20) ? 0 : 1 }' \
+  || die "probe recording is near-black (avg luma $probe_luma) — Screen Recording permission was not granted; grant it and re-run"
+
 rm -f "$probe"
 
 shots=("$@")
 if [ ${#shots[@]} -eq 0 ]; then
   shots=(climb thermal build-party quiet fetch toys tricks pounce charm)
 fi
+
+# Pre-flight every requested shot's script before spending any capture time.
+# A typo caught after six takes wastes six takes; caught here, it wastes
+# nothing.
+for shot in "${shots[@]}"; do
+  [ -f "$SHOTS/$shot.json" ] || die "no shot script at $SHOTS/$shot.json"
+done
 
 original_dnd_note="Do Not Disturb is left on for the session; turn it off when you are done."
 echo "capture: enabling Do Not Disturb — $original_dnd_note"
@@ -55,7 +84,8 @@ for shot in "${shots[@]}"; do
   echo "capture: $shot (${duration}s)"
 
   # A pile left by the previous take would sit in the corner of this one.
-  # Defaults are the only state the dog persists (coat, bed, wardrobe).
+  # UserDefaults is the only state the dog persists — coat, bed, wardrobe,
+  # sound-muted, and trick-training progress — and this clears all of it.
   defaults delete com.alex.jumbini 2>/dev/null || true
 
   osascript "$HERE/stage-windows.applescript" open
@@ -65,6 +95,8 @@ for shot in "${shots[@]}"; do
   app_pid=$!
   # The scene needs to exist before the first beat lands.
   sleep 2
+  kill -0 "$app_pid" 2>/dev/null \
+    || die "Jumbini exited immediately after launch — check Console.app for a crash log"
 
   cursor_flag=""
   [ "$show_cursor" = "True" ] && cursor_flag="-C"
@@ -82,6 +114,8 @@ for shot in "${shots[@]}"; do
   fi
 
   wait $rec_pid
+  [ -s "$RAW/$shot.mov" ] \
+    || die "screencapture for $shot produced no output — check Console.app and re-run this shot"
   kill "$app_pid" 2>/dev/null || true
   wait "$app_pid" 2>/dev/null || true
   osascript "$HERE/stage-windows.applescript" close
