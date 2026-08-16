@@ -1,0 +1,136 @@
+name: Delete merged branches
+
+# A one-shot cleanup, run by hand. Fourteen branches had accumulated because
+# every pull request in the repository was closed without its branch being
+# deleted, and the session that found them could not delete refs — the token a
+# Claude Code session gets can create and update them but not remove them, and
+# GITHUB_TOKEN here can.
+#
+# Delete this workflow once it has done its job. It is written to be run and
+# thrown away, not kept: the branch list is hardcoded below rather than taken
+# as input, so it can only ever remove those exact branches, and re-running it
+# after they are gone is a no-op.
+#
+# Never fires on its own — workflow_dispatch only.
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "dry-run reports what would go; delete actually removes them"
+        type: choice
+        options: [dry-run, delete]
+        default: dry-run
+
+permissions:
+  contents: write        # deleting a ref is a write to the repository
+
+jobs:
+  delete-branches:
+    runs-on: ubuntu-latest
+    steps:
+      # Full history: the safety check below walks every object main can reach,
+      # which a shallow clone does not have.
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Delete the branches
+        env:
+          MODE: ${{ inputs.mode }}
+        run: |
+          set -euo pipefail
+
+          # Hardcoded on purpose. A free-text input would make this a tool for
+          # deleting any branch in the repository, which is not what it is for.
+          BRANCHES="
+            claude/remove-wardrobe-sprites-mzfsut
+            copilot/fix-release-action-failure
+            fix-release-workflow-failure
+            fix-update-feed-and-download-page
+            signing-and-readme
+            v4-version-strings
+            worktree-demo-assets
+            claude/repository-cleanup-review-unz5nt
+          "
+
+          git fetch -q origin --prune "+refs/heads/*:refs/remotes/origin/*"
+
+          DEFAULT="$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||' || echo main)"
+
+          # Every object main's history can reach. Deliberately the whole
+          # history and not just the tip: a file that main used to carry and has
+          # since deleted is still recoverable from it, so a branch holding that
+          # file is not holding anything unique.
+          git rev-list --objects "origin/$DEFAULT" | awk '{print $1}' | sort -u > /tmp/main-objects
+
+          fail=0
+          doomed=""
+
+          for b in $BRANCHES; do
+            # gh-pages is what Sparkle downloads from and $DEFAULT is the trunk;
+            # neither is in the list above, but a typo should not be able to
+            # reach them.
+            case "$b" in
+              "$DEFAULT"|gh-pages|main)
+                echo "::error::refusing to delete protected branch $b"
+                fail=1; continue ;;
+            esac
+
+            if ! git rev-parse -q --verify "refs/remotes/origin/$b" >/dev/null; then
+              echo "  already gone: $b"
+              continue
+            fi
+
+            # "Merged" is not the same as "has no commits of its own": every
+            # pull request here was squash-merged, so `git cherry` reports the
+            # pre-squash commits as unique even though their content landed.
+            # The question that actually matters is whether deleting the branch
+            # loses anything, so compare content rather than commits.
+            git ls-tree -r "refs/remotes/origin/$b" | awk '{print $3}' | sort -u > /tmp/branch-objects
+            missing="$(comm -23 /tmp/branch-objects /tmp/main-objects | wc -l | tr -d ' ')"
+
+            if [ "$missing" != "0" ]; then
+              echo "::error::$b holds $missing object(s) that main's history cannot reach — refusing to delete it"
+              git ls-tree -r "refs/remotes/origin/$b" \
+                | awk '{print $3, $4}' \
+                | while read -r sha path; do
+                    grep -qx "$sha" /tmp/main-objects || echo "    unique: $path"
+                  done
+              fail=1
+              continue
+            fi
+
+            echo "  safe: $b (every object is reachable from $DEFAULT)"
+            doomed="$doomed $b"
+          done
+
+          if [ "$fail" != "0" ]; then
+            echo "::error::refusing to run: at least one branch did not pass the safety check."
+            exit 1
+          fi
+
+          if [ -z "${doomed// /}" ]; then
+            echo "Nothing to do — every branch in the list is already gone."
+            exit 0
+          fi
+
+          if [ "$MODE" != "delete" ]; then
+            echo
+            echo "Dry run. Re-run with mode=delete to remove:"
+            for b in $doomed; do echo "  $b"; done
+            exit 0
+          fi
+
+          # Printed before the delete so the tip is in the log: recovering a
+          # branch deleted in error is `git push origin <sha>:refs/heads/<name>`.
+          echo
+          for b in $doomed; do
+            sha="$(git rev-parse "refs/remotes/origin/$b")"
+            echo "deleting $b (was $sha)"
+            git push origin --delete "$b"
+          done
+
+          echo
+          echo "Remaining branches:"
+          git ls-remote --heads origin | sed 's|.*refs/heads/|  |'
