@@ -204,9 +204,8 @@ final class SettingsPanel: JumbiniPanel {
 
         pageContainer.translatesAutoresizingMaskIntoConstraints = false
 
-        let container = NSView()
-        container.wantsLayer = true
-        container.layer?.backgroundColor = PanelTheme.contentBackground.cgColor
+        let container = PanelSurfaceView()
+        container.fill = PanelTheme.contentBackground
         container.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(pageContainer)
 

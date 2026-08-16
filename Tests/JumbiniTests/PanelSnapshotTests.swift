@@ -90,3 +90,34 @@ private func renderSettingsLayout() -> (image: NSBitmapImageRep, size: NSSize)? 
     }
     print("JUMBINI_SNAPSHOT_END")
 }
+
+@Test @MainActor func theSettingsLayoutActuallyRendersDark() {
+    guard let (rep, size) = renderSettingsLayout() else {
+        Issue.record("settings layout produced no bitmap")
+        return
+    }
+    // The bug this exists for: a dynamic NSColor asked for its .cgColor resolves
+    // once, against whatever appearance is current at that moment. Every
+    // layer-backed surface froze light while the text on top of it went dark,
+    // so the card came out white with white lettering and the login checkbox
+    // vanished. Nothing else here noticed — it compiled, it laid out at the
+    // right size, and it had plenty of distinct colours.
+    var samples: [CGFloat] = []
+    for x in stride(from: 8, to: Int(size.width) - 8, by: 23) {
+        for y in stride(from: 8, to: Int(size.height) - 8, by: 23) {
+            guard let colour = rep.colorAt(x: x, y: y)?
+                .usingColorSpace(.deviceRGB) else { continue }
+            samples.append(
+                0.299 * colour.redComponent
+                    + 0.587 * colour.greenComponent
+                    + 0.114 * colour.blueComponent
+            )
+        }
+    }
+    guard !samples.isEmpty else {
+        Issue.record("could not sample the render")
+        return
+    }
+    let mean = samples.reduce(0, +) / CGFloat(samples.count)
+    #expect(mean < 0.5, "mean luminance \(mean) — the panel rendered light")
+}

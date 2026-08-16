@@ -80,6 +80,43 @@ enum PanelTheme {
     }
 }
 
+// MARK: - Surfaces
+
+/// A rounded, filled, optionally-bordered rectangle that stays the right colour.
+///
+/// Asking a dynamic `NSColor` for its `.cgColor` resolves it once, against
+/// whatever appearance happens to be current at that moment — during a panel's
+/// `init` that is the application default, not the panel's own. Every
+/// layer-backed surface here froze light while the text and controls on top of
+/// them went dark, which is how the settings card ended up white with white
+/// lettering on it and the login checkbox simply disappeared.
+///
+/// Drawing the fill in `updateLayer`, inside this view's own appearance, is what
+/// keeps a dark panel dark — and redoing it when the appearance changes is what
+/// keeps it right if the user flips the system theme with the panel open.
+final class PanelSurfaceView: NSView {
+    var fill: NSColor = .clear { didSet { needsDisplay = true } }
+    var stroke: NSColor? { didSet { needsDisplay = true } }
+    var radius: CGFloat = 0 { didSet { needsDisplay = true } }
+
+    override var wantsUpdateLayer: Bool { true }
+
+    override func updateLayer() {
+        wantsLayer = true
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            layer?.cornerRadius = radius
+            layer?.backgroundColor = fill.cgColor
+            layer?.borderWidth = stroke == nil ? 0 : 1
+            layer?.borderColor = stroke?.cgColor
+        }
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        needsDisplay = true
+    }
+}
+
 // MARK: - Dragging
 
 /// A view whose whole job is to hand mouse drags to the window.
@@ -341,7 +378,6 @@ final class PanelSidebarButton: NSButton {
         alignment = .left
         isBordered = false
         wantsLayer = true
-        layer?.cornerRadius = 6
         translatesAutoresizingMaskIntoConstraints = false
         heightAnchor.constraint(equalToConstant: 28).isActive = true
         setAccessibilityLabel(section.title)
@@ -351,10 +387,20 @@ final class PanelSidebarButton: NSButton {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 
+    /// Same trap as the card surfaces: resolve the fill under this row's own
+    /// appearance, not whichever one happened to be current at init.
     private func refresh() {
-        layer?.backgroundColor =
-            isSelectedRow ? PanelTheme.sidebarSelection.cgColor : NSColor.clear.cgColor
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            layer?.cornerRadius = 6
+            layer?.backgroundColor =
+                isSelectedRow ? PanelTheme.sidebarSelection.cgColor : NSColor.clear.cgColor
+        }
         setAccessibilitySelected(isSelectedRow)
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        refresh()
     }
 }
 
@@ -376,12 +422,10 @@ enum PanelBuilder {
             right: PanelTheme.cardInset
         )
 
-        let container = NSView()
-        container.wantsLayer = true
-        container.layer?.cornerRadius = PanelTheme.cardRadius
-        container.layer?.backgroundColor = PanelTheme.cardBackground.cgColor
-        container.layer?.borderWidth = 1
-        container.layer?.borderColor = PanelTheme.cardBorder.cgColor
+        let container = PanelSurfaceView()
+        container.radius = PanelTheme.cardRadius
+        container.fill = PanelTheme.cardBackground
+        container.stroke = PanelTheme.cardBorder
         container.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(stack)
 
@@ -438,10 +482,9 @@ enum PanelBuilder {
         target: AnyObject,
         action: Selector
     ) -> NSView {
-        let tile = NSView()
-        tile.wantsLayer = true
-        tile.layer?.cornerRadius = 5
-        tile.layer?.backgroundColor = tint.withAlphaComponent(0.20).cgColor
+        let tile = PanelSurfaceView()
+        tile.radius = 5
+        tile.fill = tint.withAlphaComponent(0.20)
         tile.translatesAutoresizingMaskIntoConstraints = false
 
         let glyph = NSImageView()
