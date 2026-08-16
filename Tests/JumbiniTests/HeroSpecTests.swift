@@ -72,9 +72,16 @@ private let animationsJSON: URL = URL(fileURLWithPath: #filePath)
                 byDirection[facing.fileSuffix],
                 "animations.json is missing \(poseName)/\(facing.fileSuffix)"
             )
-            #expect(actual["frames"] as? [String] == expected.frames)
-            #expect(actual["fps"] as? Double == expected.fps)
-            #expect(CGFloat(actual["scale"] as? Double ?? -1) == expected.scale)
+            // The whole point of this test is diagnosing drift, so every
+            // failure has to name the pose and facing that drifted — otherwise
+            // it reports 40 nameless comparisons and one of them is wrong.
+            let what = "\(poseName)/\(facing.fileSuffix)"
+            #expect(actual["frames"] as? [String] == expected.frames, "frames drifted for \(what)")
+            #expect(actual["fps"] as? Double == expected.fps, "fps drifted for \(what)")
+            #expect(
+                CGFloat(actual["scale"] as? Double ?? -1) == expected.scale,
+                "scale drifted for \(what)"
+            )
         }
     }
 }
