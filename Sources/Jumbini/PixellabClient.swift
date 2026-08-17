@@ -192,21 +192,21 @@ final class PixellabClient: PixellabClientProtocol {
 
         let request = CreateCharacterV3Request(
             description: "a dog",
-            reference_image: Base64Image(base64: try pngBase64(referenceImage, maxDimension: 256)),
-            image_size: V3OutputImageSize(width: DogGenerator.canvasSize, height: DogGenerator.canvasSize),
-            template_id: "dog",
+            referenceImage: Base64Image(base64: try pngBase64(referenceImage, maxDimension: 256)),
+            imageSize: V3OutputImageSize(width: DogGenerator.canvasSize, height: DogGenerator.canvasSize),
+            templateId: "dog",
             view: "low top-down",
-            no_background: true
+            noBackground: true
         )
 
         let response: CreateCharacterV3Response = try await post(
             "/create-character-v3", body: request
         )
-        try await waitForJob(response.background_job_id)
+        try await waitForJob(response.backgroundJobId)
 
-        let detail: CharacterDetail = try await get("/characters/\(response.character_id)")
+        let detail: CharacterDetail = try await get("/characters/\(response.characterId)")
         var rotations: [Facing: Data] = [:]
-        guard let urls = detail.rotation_urls else {
+        guard let urls = detail.rotationUrls else {
             throw PixellabError.invalidResponse
         }
         for (name, urlString) in rotationURLPairs(urls) {
@@ -215,7 +215,7 @@ final class PixellabClient: PixellabClientProtocol {
             rotations[facing] = try await download(url)
         }
         guard rotations.count == 8 else { throw PixellabError.invalidResponse }
-        return GeneratedCharacter(id: response.character_id, rotations: rotations)
+        return GeneratedCharacter(id: response.characterId, rotations: rotations)
     }
 
     // MARK: - animate
@@ -225,25 +225,25 @@ final class PixellabClient: PixellabClientProtocol {
 
         let directions = Facing.allCases.map(\.fileSuffix)
         let request = CreateCharacterAnimationRequest(
-            character_id: characterID,
-            animation_name: action.animationName,
-            action_description: action.actionDescription,
+            characterId: characterID,
+            animationName: action.animationName,
+            actionDescription: action.actionDescription,
             mode: "v3",
-            frame_count: action.frameCount,
+            frameCount: action.frameCount,
             directions: directions
         )
 
         let response: CreateCharacterAnimationResponse = try await post(
             "/animate-character", body: request
         )
-        for jobID in response.background_job_ids {
+        for jobID in response.backgroundJobIds {
             try await waitForJob(jobID)
         }
 
         // The animation frames live on the character, keyed by display name.
         let detail: CharacterDetail = try await get("/characters/\(characterID)")
         guard let group = detail.animations.first(where: {
-            $0.display_name == action.animationName || $0.animation_type == action.animationName
+            $0.displayName == action.animationName || $0.animationType == action.animationName
         }) else {
             throw PixellabError.invalidResponse
         }
@@ -281,17 +281,34 @@ final class PixellabClient: PixellabClientProtocol {
         return request
     }
 
+    /// Pixellab speaks snake_case on the wire and Swift does not, so the
+    /// translation is configured here once rather than written out as a
+    /// `CodingKeys` block per DTO. The only DTO that still declares its own
+    /// keys is `CharacterRotationUrls`, whose diagonal keys are hyphenated
+    /// ("south-east") — a shape no case conversion produces.
+    private static let encoder: JSONEncoder = {
+        let encoder = JSONEncoder()
+        encoder.keyEncodingStrategy = .convertToSnakeCase
+        return encoder
+    }()
+
+    private static let decoder: JSONDecoder = {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        return decoder
+    }()
+
     private func post<T: Encodable, U: Decodable>(_ path: String, body: T) async throws -> U {
-        let data = try JSONEncoder().encode(body)
+        let data = try Self.encoder.encode(body)
         let (responseData, response) = try await session.data(for: request(path, method: "POST", body: data))
         try validate(response)
-        return try JSONDecoder().decode(U.self, from: responseData)
+        return try Self.decoder.decode(U.self, from: responseData)
     }
 
     private func get<U: Decodable>(_ path: String) async throws -> U {
         let (data, response) = try await session.data(for: request(path))
         try validate(response)
-        return try JSONDecoder().decode(U.self, from: data)
+        return try Self.decoder.decode(U.self, from: data)
     }
 
     private func download(_ url: URL) async throws -> Data {
@@ -364,10 +381,10 @@ final class PixellabClient: PixellabClientProtocol {
         var pairs: [(String, String)] = [
             ("south", urls.south), ("west", urls.west), ("east", urls.east), ("north", urls.north),
         ]
-        if let v = urls.south_east { pairs.append(("south-east", v)) }
-        if let v = urls.north_east { pairs.append(("north-east", v)) }
-        if let v = urls.north_west { pairs.append(("north-west", v)) }
-        if let v = urls.south_west { pairs.append(("south-west", v)) }
+        if let v = urls.southEast { pairs.append(("south-east", v)) }
+        if let v = urls.northEast { pairs.append(("north-east", v)) }
+        if let v = urls.northWest { pairs.append(("north-west", v)) }
+        if let v = urls.southWest { pairs.append(("south-west", v)) }
         return pairs
     }
 }
@@ -387,29 +404,29 @@ private struct V3OutputImageSize: Encodable {
 
 private struct CreateCharacterV3Request: Encodable {
     let description: String
-    let reference_image: Base64Image
-    let image_size: V3OutputImageSize
-    let template_id: String
+    let referenceImage: Base64Image
+    let imageSize: V3OutputImageSize
+    let templateId: String
     let view: String
-    let no_background: Bool
+    let noBackground: Bool
 }
 
 private struct CreateCharacterV3Response: Decodable {
-    let background_job_id: String
-    let character_id: String
+    let backgroundJobId: String
+    let characterId: String
 }
 
 private struct CreateCharacterAnimationRequest: Encodable {
-    let character_id: String
-    let animation_name: String
-    let action_description: String
+    let characterId: String
+    let animationName: String
+    let actionDescription: String
     let mode: String
-    let frame_count: Int
+    let frameCount: Int
     let directions: [String]
 }
 
 private struct CreateCharacterAnimationResponse: Decodable {
-    let background_job_ids: [String]
+    let backgroundJobIds: [String]
     let directions: [String]
 }
 
@@ -418,32 +435,35 @@ private struct BackgroundJobResponse: Decodable {
 }
 
 private struct CharacterDetail: Decodable {
-    let rotation_urls: CharacterRotationUrls?
+    let rotationUrls: CharacterRotationUrls?
     let animations: [AnimationGroup]
 }
 
+/// The one DTO that keeps explicit keys. Pixellab hyphenates the diagonals
+/// ("south-east"), which `.convertFromSnakeCase` leaves untouched — it only
+/// knows about underscores — so the mapping has to be written down.
 private struct CharacterRotationUrls: Decodable {
     let south: String
     let west: String
     let east: String
     let north: String
-    let south_east: String?
-    let north_east: String?
-    let north_west: String?
-    let south_west: String?
+    let southEast: String?
+    let northEast: String?
+    let northWest: String?
+    let southWest: String?
 
     enum CodingKeys: String, CodingKey {
         case south, west, east, north
-        case south_east = "south-east"
-        case north_east = "north-east"
-        case north_west = "north-west"
-        case south_west = "south-west"
+        case southEast = "south-east"
+        case northEast = "north-east"
+        case northWest = "north-west"
+        case southWest = "south-west"
     }
 }
 
 private struct AnimationGroup: Decodable {
-    let animation_type: String
-    let display_name: String?
+    let animationType: String
+    let displayName: String?
     let directions: [AnimationDirection]
 }
 
