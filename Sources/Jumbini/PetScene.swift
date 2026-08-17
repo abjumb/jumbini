@@ -585,19 +585,25 @@ final class PetScene: SKScene {
         stepTug(dt: dt)
         send(.tick)
         updateContactShadow()
-        trackHover(at: currentTime)
+        // The cursor and his hit box, read ONCE and handed down. Both used to
+        // be recomputed by each of the callers below — three window-server
+        // round trips for the mouse and two accumulated-frame walks per frame,
+        // for two numbers that cannot change inside a single frame.
+        let cursor = mouseLocationInScene()
+        let hoverFrame = dogHoverFrame()
+        trackHover(at: currentTime, cursor: cursor, hoverFrame: hoverFrame)
         // Every frame (cheap): the anchor depends on the dog's node size,
         // which changes with the pose (sit vs idle), not just the facing.
         reseatWornItem()
-        updateClickThrough()
+        updateClickThrough(cursor: cursor, hoverFrame: hoverFrame)
+        updateIdleCosts()
     }
 
     /// A cursor lingering over the dog for a while counts as a provocation.
     /// Resets after firing — the brain's bark cooldown governs repeats.
-    private func trackHover(at now: TimeInterval) {
+    private func trackHover(at now: TimeInterval, cursor: CGPoint, hoverFrame: CGRect) {
         // A press/drag on him is interaction, not loitering.
-        guard dogHoverFrame().contains(mouseLocationInScene()),
-              !mouseDownOnDog, !isCarryingDog else {
+        guard hoverFrame.contains(cursor), !mouseDownOnDog, !isCarryingDog else {
             hoverStart = nil
             return
         }
@@ -607,8 +613,75 @@ final class PetScene: SKScene {
         }
         if now - start >= Self.hoverProvokeDelay {
             hoverStart = nil
-            send(.provoked(at: mouseLocationInScene()))
+            send(.provoked(at: cursor))
         }
+    }
+
+    // MARK: - What the idle dog costs
+    //
+    // He spends most of his life doing nothing, on a machine that is doing
+    // something else. Rendering a still image sixty times a second and asking
+    // the window server for a window list three times a second are both
+    // entirely wasted in that state, and both are paid out of someone's
+    // battery. The two rates below follow what he is actually doing.
+
+    /// While anything is moving.
+    private static let activeFrameRate = 60
+    /// While he is standing, sitting, lying or asleep. Every resting pose is a
+    /// single static frame (see `SpriteLibrary`), so nothing about him looks
+    /// different at this rate — it only governs how quickly the overlay
+    /// notices the cursor arriving, and 1/15s is well under a reaction time.
+    private static let restingFrameRate = 15
+
+    /// Scene time until which a transient effect still needs full frames.
+    /// Flourishes are SKActions the frame loop knows nothing about, so they
+    /// say how long they need rather than being discovered.
+    private var fullFrameRateUntil: TimeInterval = 0
+    /// Last value pushed to the view, so the setter is touched on change only.
+    private var appliedFrameRate = 0
+
+    /// Ask for full frames for `duration` — anything that animates without
+    /// changing `brain.state` calls this before it starts.
+    private func needsFullFrames(for duration: TimeInterval) {
+        fullFrameRateUntil = max(fullFrameRateUntil, lastTime + duration)
+    }
+
+    /// Is anything actually moving?
+    private var isAnythingMoving: Bool {
+        if lastTime < fullFrameRateUntil { return true }
+        // Toys and treats move under their own steam, or are being dragged.
+        if ball != nil || frisbee != nil || squeaky != nil || rope != nil { return true }
+        if treatInHand != nil || groundTreat != nil { return true }
+        if zoomiesVelocity != nil || fallVelocity != nil || isSniffing { return true }
+        // A press in progress: the overlay must keep up with the cursor.
+        if mouseDownOnDog || isCarryingDog || pressedTreatBox
+            || draggedFurniture != nil || draggedPile != nil || draggingRope { return true }
+        switch brain.state {
+        case .idle, .sitting, .lyingDown, .sleeping, .perchSleeping: return false
+        default: return true
+        }
+    }
+
+    /// Window polling only has to be quick while he is dealing with a window:
+    /// walking to one, mid-hop, or standing on one that the user might drag
+    /// out from under him. Everywhere else 1 Hz is plenty to notice that a new
+    /// window has appeared.
+    private var needsFastWindowPolling: Bool {
+        switch brain.state {
+        case .headingToSurface, .hoppingUp, .hoppingAcross, .perched, .perchSleeping, .falling:
+            true
+        default:
+            false
+        }
+    }
+
+    private func updateIdleCosts() {
+        let wanted = isAnythingMoving ? Self.activeFrameRate : Self.restingFrameRate
+        if wanted != appliedFrameRate, let view {
+            appliedFrameRate = wanted
+            view.preferredFramesPerSecond = wanted
+        }
+        windowSurfaces?.rate = needsFastWindowPolling ? .fast : .idle
     }
 
     /// Route an event to the brain and apply what comes back.
@@ -675,6 +748,7 @@ final class PetScene: SKScene {
     /// doesn't fight the hearts, which rise straight up from the same line.
     private func showEmote(_ icon: String) {
         guard let bubble = EmoteBubble(icon: icon) else { return }
+        needsFullFrames(for: 2.4)
         bubble.position = CGPoint(
             x: dog.position.x + 30,
             y: dog.position.y + dog.size.height / 2 + 14
@@ -1633,6 +1707,7 @@ final class PetScene: SKScene {
             ),
             let rest = SpriteLibrary.shared.singleProp(named: "treat_box")
         else { return }
+        needsFullFrames(for: 0.6)
         treatBox.removeAction(forKey: "wobble")
         treatBox.run(.sequence([
             .animate(with: wobble.textures, timePerFrame: 1 / wobble.fps,
@@ -1833,6 +1908,7 @@ final class PetScene: SKScene {
     /// Dropped anywhere else: it just sits there. He's not sorry.
     private func dropPile(_ pile: SKSpriteNode, at location: CGPoint) {
         guard isTrashZone(location) else { return }
+        needsFullFrames(for: 0.3)
         piles.removeAll { $0 === pile }
         pile.run(.sequence([
             .group([.scale(to: 0.1, duration: 0.25), .fadeOut(withDuration: 0.25)]),
@@ -1858,6 +1934,7 @@ final class PetScene: SKScene {
         guard let anim = SpriteLibrary.shared.propSequence(
             named: name, frames: frames, fps: Double(frames) / duration
         ) else { return nil }
+        needsFullFrames(for: duration)
         let node = SKSpriteNode(texture: anim.textures[0])
         node.size = CGSize(width: side, height: side)
         node.zPosition = 20 // with the hearts: above the dog and everything he owns
@@ -1944,6 +2021,7 @@ final class PetScene: SKScene {
     // MARK: - Petting feedback
 
     private func showHearts() {
+        needsFullFrames(for: 1.6)
         for i in 0..<3 {
             let heart: SKNode
             if let anim = SpriteLibrary.shared.prop(named: "heart", frameWidth: 8, fps: 1) {
@@ -1978,6 +2056,7 @@ final class PetScene: SKScene {
     /// doesn't stack two bubbles on top of each other.
     private func showTrickBadge() {
         guard let art = SpriteLibrary.shared.singleProp(named: "badge_trick") else { return }
+        needsFullFrames(for: 2.0)
         let badge = SKSpriteNode(texture: art.textures[0])
         badge.size = CGSize(width: 34, height: 34)
         badge.position = CGPoint(
@@ -2002,7 +2081,7 @@ final class PetScene: SKScene {
     /// The window ignores mouse events except while the cursor is over
     /// something interactive (or a drag/throw is in progress), so clicks land
     /// in the user's real apps everywhere else.
-    private func updateClickThrough() {
+    private func updateClickThrough(cursor: CGPoint, hoverFrame: CGRect) {
         guard let window = overlayWindow else { return }
         // A held press counts too: the dog can walk out from under a stationary
         // cursor, and the window must keep the mouseUp.
@@ -2010,17 +2089,29 @@ final class PetScene: SKScene {
             || treatInHand != nil || draggedFurniture != nil || draggedPile != nil
             || draggingRope
         let shouldAcceptClicks = armedForThrow || dragging
-            || interactiveFrames().contains { $0.contains(mouseLocationInScene()) }
-        if window.ignoresMouseEvents == shouldAcceptClicks {
-            window.ignoresMouseEvents = !shouldAcceptClicks
-        }
+            || isOverSomethingInteractive(cursor, hoverFrame: hoverFrame)
+        window.ignoresMouseEvents = !shouldAcceptClicks
     }
 
-    private func interactiveFrames() -> [CGRect] {
-        [dogHoverFrame(), treatBoxFrame(), bed.frame.insetBy(dx: -6, dy: -6)]
-            + piles.map { $0.frame.insetBy(dx: -6, dy: -6) }
-            // The free end of the rope is a grab target whenever it's loose.
-            + (carryingRope ? [] : [rope?.freeEndFrame()].compactMap { $0 })
+    /// Is the cursor over something the overlay has to catch the click for?
+    ///
+    /// A scan that stops at the first hit, rather than the array of every
+    /// interactive rectangle it used to build. This runs every frame and the
+    /// array was thrown away every frame — a fresh allocation, plus a `frame`
+    /// for every pile on the desktop, to answer one yes/no question that
+    /// usually resolves on the dog.
+    private func isOverSomethingInteractive(_ point: CGPoint, hoverFrame: CGRect) -> Bool {
+        if hoverFrame.contains(point) { return true }
+        if treatBoxFrame().contains(point) { return true }
+        if bed.frame.insetBy(dx: -6, dy: -6).contains(point) { return true }
+        for pile in piles where pile.frame.insetBy(dx: -6, dy: -6).contains(point) {
+            return true
+        }
+        // The free end of the rope is a grab target whenever it's loose.
+        if !carryingRope, let freeEnd = rope?.freeEndFrame(), freeEnd.contains(point) {
+            return true
+        }
+        return false
     }
 
     private func dogHoverFrame() -> CGRect {
@@ -2574,6 +2665,7 @@ final class PetScene: SKScene {
     private func flashCamFeedback() {
         playSound(named: "shutter")
         guard let view, !view.isPaused, !isPaused else { return }
+        needsFullFrames(for: 0.3)
         // Only the display he's standing on. The scene spans the whole desk,
         // and whiting out three monitors to photograph one dog is a jump
         // scare, not feedback.

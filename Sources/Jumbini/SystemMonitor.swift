@@ -172,6 +172,17 @@ final class SystemMonitor {
     /// for a 120s idle threshold and a 30s build, and cheap enough to ignore.
     private static let pollInterval: TimeInterval = 5
 
+    /// How often the build probe forks `pgrep` while builds are happening.
+    private static let buildProbeInterval: TimeInterval = 5
+    /// And how often once they have plainly stopped. Forking a process every
+    /// five seconds forever is the single most expensive thing this app does
+    /// while nothing is going on, and on a machine nobody is building on it
+    /// buys precisely nothing.
+    private static let quietBuildProbeInterval: TimeInterval = 30
+    /// No build tool seen for this long and the probe backs off. One sighting
+    /// puts it straight back on the fast cadence.
+    private static let buildQuietPeriod: TimeInterval = 300
+
     /// Build tools worth watching. One `pgrep -x` handles all of them: the
     /// pattern is an extended regex and `-x` anchors it to the whole name.
     private static let buildTools = [
@@ -198,12 +209,22 @@ final class SystemMonitor {
     /// stacking up behind itself.
     private var buildProbeInFlight = false
     private let buildQueue = DispatchQueue(label: "com.jumbini.systemmonitor.build")
+    /// When the last probe was forked, and when a build tool was last seen.
+    /// Together they decide whether the next tick probes at all.
+    private var lastBuildProbe: TimeInterval = 0
+    private var lastBuildSighting: TimeInterval = 0
 
     // MARK: Lifecycle
 
     func start() {
         guard !lifecycle.isRunning else { return }
         _ = lifecycle.start()
+
+        // Launch counts as a sighting: a fresh start probes at the fast rate
+        // for the first few minutes, in case the reason the app just came up
+        // is that the machine is busy.
+        lastBuildSighting = Date.timeIntervalSinceReferenceDate
+        lastBuildProbe = 0
 
         // Thermal is notification-driven; no polling needed.
         NotificationCenter.default.addObserver(
@@ -352,8 +373,26 @@ final class SystemMonitor {
 
     // MARK: Build finished
 
+    /// Fork `pgrep`, but not on every tick forever.
+    ///
+    /// The 5s cadence only earns its keep while there is something to see. On
+    /// a machine that has not built anything for five minutes the probe backs
+    /// off to 30s, and the first sighting after that puts it straight back.
+    ///
+    /// Backing off does delay noticing a build by up to half a minute, which
+    /// costs nothing: `BuildWatcher.minimumDuration` already ignores anything
+    /// that ran for less than 30 seconds, and the clock it measures starts at
+    /// the first sighting either way.
     private func pollBuild(at now: TimeInterval) {
         guard buildAvailable, !buildProbeInFlight else { return }
+
+        let quiet = now - lastBuildSighting >= Self.buildQuietPeriod
+        let interval = quiet ? Self.quietBuildProbeInterval : Self.buildProbeInterval
+        // Half a second of slack: the timer fires on its own schedule and a
+        // tick landing at 29.99s must not push the probe out to the next one.
+        guard now - lastBuildProbe >= interval - 0.5 else { return }
+
+        lastBuildProbe = now
         buildProbeInFlight = true
         let token = lifecycle.token
         buildQueue.async { [weak self] in
@@ -367,6 +406,7 @@ final class SystemMonitor {
                     self.buildAvailable = false
                     return
                 }
+                if running { self.lastBuildSighting = now }
                 self.emit(self.build.update(toolsRunning: running, at: now), token: token)
             }
         }

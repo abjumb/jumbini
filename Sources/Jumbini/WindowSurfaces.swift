@@ -270,10 +270,33 @@ final class WindowSurfaces {
     /// resized (or moved to another display) at any time.
     var geometry: () -> SurfaceGeometry
 
-    /// 3 Hz. Fast enough that dragging a window keeps the dog aboard, slow
-    /// enough that the copy (a few hundred microseconds for a dozen windows)
-    /// never shows up in a profile.
-    private static let pollInterval: TimeInterval = 1.0 / 3.0
+    /// How closely the dog is currently involved with your windows.
+    ///
+    /// `.fast` is 3 Hz: fast enough that dragging a window keeps him aboard.
+    /// `.idle` is 1 Hz, which is all that is needed to spot a new window he
+    /// might one day want to climb — and he spends the overwhelming majority
+    /// of his life on the floor, not on a title bar.
+    enum PollRate {
+        case fast
+        case idle
+
+        var interval: TimeInterval {
+            switch self {
+            case .fast: 1.0 / 3.0
+            case .idle: 1.0
+            }
+        }
+    }
+
+    /// Set by the scene from the dog's state. Changing it re-arms the timer;
+    /// setting it to what it already is does nothing, which matters because
+    /// the scene assigns this every frame.
+    var rate: PollRate = .fast {
+        didSet {
+            guard rate != oldValue, isRunning else { return }
+            startTimer()
+        }
+    }
 
     private var timer: Timer?
     private var isRunning = false
@@ -294,9 +317,15 @@ final class WindowSurfaces {
         guard !isRunning else { return }
         isRunning = true
         poll() // don't make the dog wait a third of a second for his world
-        // .common mode: an open menu or a window drag must not stall polling —
-        // a window drag is precisely when we most need fresh numbers.
-        let timer = Timer(timeInterval: Self.pollInterval, repeats: true) { [weak self] _ in
+        startTimer()
+    }
+
+    /// Replaces any timer already running, which is how a rate change takes
+    /// effect. `.common` mode: an open menu or a window drag must not stall
+    /// polling — a window drag is precisely when we most need fresh numbers.
+    private func startTimer() {
+        timer?.invalidate()
+        let timer = Timer(timeInterval: rate.interval, repeats: true) { [weak self] _ in
             self?.poll()
         }
         RunLoop.main.add(timer, forMode: .common)

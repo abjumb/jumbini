@@ -8,7 +8,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var skView: SKView?
     private var scene: PetScene?
     private var statusItem: NSStatusItem?
-    private var isPaused = false
+
+    // Three independent reasons to stop the dog, all of which compose into
+    // `isSuspended`. Only the first of them hides the overlay window; the
+    // other two are cases where there is already nothing to see.
+    /// The Pause menu item.
+    private var isPausedByUser = false
+    /// The displays have gone to sleep.
+    private var screensAsleep = false
+    /// The overlay is completely covered by another window.
+    private var overlayHidden = false
+
+    /// Rendering, window polling and the machine watcher all follow this.
+    private var isSuspended: Bool { isPausedByUser || screensAsleep || overlayHidden }
+
     private var hungerItem: NSMenuItem?
     private var treatsItem: NSMenuItem?
     private var treatsEaten = 0
@@ -57,6 +70,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             name: Notification.Name("JumbiniAteTreat"),
             object: nil
         )
+        observeScreenSleep()
         // Demo capture block: no-op unless JUMBINI_DEMO names a script.
         startDemoDriver()
         // Demo capture block end.
@@ -67,6 +81,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        NSWorkspace.shared.notificationCenter.removeObserver(self)
         unregisterCamHotKey()
         // System reactions: drop the poll timer and the thermal observer.
         systemMonitor?.stop()
@@ -89,6 +104,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let window = OverlayWindow(frame: layout.unionFrame)
         let skView = SKView(frame: NSRect(origin: .zero, size: layout.size))
         skView.allowsTransparency = true
+        // The opening rate only. From the first frame on, the scene drives
+        // this from what the dog is doing — 60 while something is moving, a
+        // quarter of that while he is asleep on a static sprite.
         skView.preferredFramesPerSecond = 60
 
         let scene = PetScene(layout: layout, settings: settings)
@@ -100,6 +118,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.window = window
         self.skView = skView
         self.scene = scene
+
+        // A window nothing can see is a window nothing needs to draw.
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(overlayOcclusionChanged),
+            name: NSWindow.didChangeOcclusionStateNotification,
+            object: window
+        )
     }
 
     /// A display was plugged in, unplugged, rearranged or had its resolution
@@ -236,17 +262,67 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func togglePause(_ sender: NSMenuItem) {
-        isPaused.toggle()
-        sender.title = isPaused ? "Resume" : "Pause"
-        // Window walking: stop polling the window server while he's away.
-        scene?.setWindowWatching(!isPaused)
-        if isPaused {
-            skView?.isPaused = true
+        isPausedByUser.toggle()
+        sender.title = isPausedByUser ? "Resume" : "Pause"
+        if isPausedByUser {
             window?.orderOut(nil)
         } else {
-            skView?.isPaused = false
             window?.orderFrontRegardless()
+            // A window that has been ordered out reads as occluded, and the
+            // notification putting that right arrives a beat after this. Say
+            // so now rather than leaving him frozen until it does — if he
+            // really is covered, the notification will say so again.
+            overlayHidden = false
         }
+        applyRunState()
+    }
+
+    // MARK: - Suspending
+
+    /// Nobody is looking: the displays went to sleep.
+    ///
+    /// Everything the app does while nothing is on screen is pure waste —
+    /// sixty renders a second into a dark display, a window-server poll for
+    /// windows nobody can see, a `pgrep` fork for a build nobody is watching.
+    private func observeScreenSleep() {
+        let workspace = NSWorkspace.shared.notificationCenter
+        workspace.addObserver(
+            self, selector: #selector(screensDidSleep),
+            name: NSWorkspace.screensDidSleepNotification, object: nil
+        )
+        workspace.addObserver(
+            self, selector: #selector(screensDidWake),
+            name: NSWorkspace.screensDidWakeNotification, object: nil
+        )
+    }
+
+    @objc private func screensDidSleep() {
+        screensAsleep = true
+        applyRunState()
+    }
+
+    @objc private func screensDidWake() {
+        screensAsleep = false
+        applyRunState()
+    }
+
+    /// The overlay was fully covered, or uncovered again. Unlike Pause this
+    /// leaves the window exactly where it is: it is still up, it just has
+    /// nothing to contribute until something moves off it.
+    @objc private func overlayOcclusionChanged() {
+        guard let window, !isPausedByUser else { return }
+        overlayHidden = !window.occlusionState.contains(.visible)
+        applyRunState()
+    }
+
+    /// The one place that decides whether the dog is running. Called by every
+    /// reason he might stop, so the three of them can't fight over the view.
+    private func applyRunState() {
+        let suspended = isSuspended
+        skView?.isPaused = suspended
+        // Window walking: stop polling the window server while he's away.
+        scene?.setWindowWatching(!suspended)
+        updateSystemMonitor()
     }
 
     // MARK: - System reactions
@@ -259,9 +335,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let monitor = SystemMonitor()
         monitor.onSignal = { [weak self] signal in
             // SystemMonitor guarantees main-thread delivery, which is what
-            // the scene needs. Paused means the overlay is hidden and the
-            // view is frozen — the dog should not be reacting to anything.
-            guard let self, !self.isPaused else { return }
+            // the scene needs. Suspended means the view is frozen and there
+            // is nothing on screen — the dog should not be reacting to
+            // anything, and a signal that arrived in the gap before the
+            // monitor stopped must not sneak through.
+            guard let self, !self.isSuspended else { return }
             self.scene?.receive(signal)
         }
         monitor.start()
@@ -277,7 +355,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func apply(settings: JumbiniSettings) {
         self.settings = settings
         scene?.apply(settings: settings)
-        if settings.systemReactionsEnabled {
+        updateSystemMonitor()
+    }
+
+    /// The monitor runs only when the user wants reactions AND there is a dog
+    /// awake to react. Both the settings switch and every suspension route
+    /// come through here.
+    private func updateSystemMonitor() {
+        if settings.systemReactionsEnabled && !isSuspended {
             startSystemMonitor()
         } else {
             stopSystemMonitor()
