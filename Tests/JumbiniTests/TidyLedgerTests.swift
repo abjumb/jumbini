@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import Testing
 @testable import Jumbini
@@ -171,15 +172,16 @@ import Testing
         let pass = TidyPassRecord.started(trigger: .manual, at: timestamp)
         let source = items.url.appendingPathComponent("a.png")
         let destination = items.url.appendingPathComponent("Images/a.png")
-        let move = TidyCompletedMove.fixture(
-            source: source.path,
-            destination: destination.path
-        )
         try FileManager.default.createDirectory(
             at: destination.deletingLastPathComponent(),
             withIntermediateDirectories: true
         )
         try writeFixture("moved", to: destination)
+        let move = completedMove(
+            source: source,
+            destination: destination,
+            fileID: try actualFileID(at: destination)
+        )
         try ledger.begin(pass)
         try ledger.recordIntent(move, in: pass.id)
 
@@ -209,11 +211,12 @@ import Testing
         let pass = TidyPassRecord.started(trigger: .idle, at: timestamp)
         let source = items.url.appendingPathComponent("a.png")
         let destination = items.url.appendingPathComponent("Images/a.png")
-        let move = TidyCompletedMove.fixture(
-            source: source.path,
-            destination: destination.path
-        )
         try writeFixture("not moved", to: source)
+        let move = completedMove(
+            source: source,
+            destination: destination,
+            fileID: try actualFileID(at: source)
+        )
         try ledger.begin(pass)
         try ledger.recordIntent(move, in: pass.id)
 
@@ -226,6 +229,77 @@ import Testing
         #expect(line.hasSuffix("\taction=RECOVERED\tsource=\(source.path)" +
             "\tdestination=\(destination.path)\trule_id=\(move.ruleID.uuidString)" +
             "\trule_name=Images\tresult=not_moved"))
+    }
+
+    @Test func reconciliationBlocksWhenSoleItemHasDifferentIdentity() throws {
+        let support = try TemporaryDirectory.make()
+        let items = try TemporaryDirectory.make()
+        let ledger = TidyLedger(directory: support.url)
+        let pass = TidyPassRecord.started(trigger: .manual, at: .now)
+        let source = items.url.appendingPathComponent("a.png")
+        let destination = items.url.appendingPathComponent("Images/a.png")
+        try FileManager.default.createDirectory(
+            at: destination.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try writeFixture("unrelated replacement", to: destination)
+        let actualID = try actualFileID(at: destination)
+        let expectedID = TidyFileID(
+            device: actualID.device,
+            inode: actualID.inode ^ 1
+        )
+        let move = completedMove(
+            source: source,
+            destination: destination,
+            fileID: expectedID
+        )
+        try ledger.begin(pass)
+        try ledger.recordIntent(move, in: pass.id)
+        let journalBefore = try journalData(in: support.url)
+        let auditBefore = try auditData(in: support.url)
+
+        #expect(throws: TidyRecoveryError.identityMismatch(
+            path: destination,
+            expected: expectedID,
+            actual: actualID
+        )) {
+            try ledger.reconcile()
+        }
+        #expect(try journalData(in: support.url) == journalBefore)
+        #expect(try auditData(in: support.url) == auditBefore)
+        #expect(try ledger.loadLatestPass()?.intendedMove == move)
+    }
+
+    @Test(arguments: [Int32(EACCES), Int32(EIO)])
+    func reconciliationBlocksWhenIdentityProbeFails(errorCode: Int32) throws {
+        let support = try TemporaryDirectory.make()
+        let items = try TemporaryDirectory.make()
+        let source = items.url.appendingPathComponent("a.png")
+        let destination = items.url.appendingPathComponent("Images/a.png")
+        let probe = StubTidyFileIdentityProbe(results: [
+            source.path: .failed(errorCode),
+            destination.path: .absent,
+        ])
+        let ledger = TidyLedger(directory: support.url, identityProbe: probe)
+        let pass = TidyPassRecord.started(trigger: .manual, at: .now)
+        let move = TidyCompletedMove.fixture(
+            source: source.path,
+            destination: destination.path
+        )
+        try ledger.begin(pass)
+        try ledger.recordIntent(move, in: pass.id)
+        let journalBefore = try journalData(in: support.url)
+        let auditBefore = try auditData(in: support.url)
+
+        #expect(throws: TidyRecoveryError.probeFailed(
+            path: source,
+            errorCode: errorCode
+        )) {
+            try ledger.reconcile()
+        }
+        #expect(try journalData(in: support.url) == journalBefore)
+        #expect(try auditData(in: support.url) == auditBefore)
+        #expect(try ledger.loadLatestPass()?.intendedMove == move)
     }
 
     @Test func reconciliationRefusesToGuessWhenBothPathsExist() throws {
@@ -386,5 +460,42 @@ import Testing
 
     private func auditData(in directory: URL) throws -> Data {
         try Data(contentsOf: directory.appendingPathComponent("tidy.log"))
+    }
+
+    private func actualFileID(at url: URL) throws -> TidyFileID {
+        var information = stat()
+        guard Darwin.lstat(url.path, &information) == 0 else {
+            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+        }
+        return TidyFileID(
+            device: UInt64(information.st_dev),
+            inode: UInt64(information.st_ino)
+        )
+    }
+
+    private func completedMove(
+        source: URL,
+        destination: URL,
+        fileID: TidyFileID
+    ) -> TidyCompletedMove {
+        let fixture = TidyCompletedMove.fixture(
+            source: source.path,
+            destination: destination.path
+        )
+        return TidyCompletedMove(
+            source: source,
+            destination: destination,
+            fileID: fileID,
+            ruleID: fixture.ruleID,
+            ruleName: fixture.ruleName
+        )
+    }
+}
+
+private struct StubTidyFileIdentityProbe: TidyFileIdentityProbing {
+    let results: [String: TidyFileIdentityProbeResult]
+
+    func probe(at url: URL) -> TidyFileIdentityProbeResult {
+        results[url.path] ?? .absent
     }
 }

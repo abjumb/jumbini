@@ -50,11 +50,41 @@ enum TidyLedgerError: Error, Equatable {
 enum TidyRecoveryError: Error, Equatable {
     case bothPathsExist(source: URL, destination: URL)
     case neitherPathExists(source: URL, destination: URL)
+    case identityMismatch(path: URL, expected: TidyFileID, actual: TidyFileID)
+    case probeFailed(path: URL, errorCode: Int32)
+}
+
+enum TidyFileIdentityProbeResult: Equatable {
+    case absent
+    case present(TidyFileID)
+    case failed(Int32)
+}
+
+protocol TidyFileIdentityProbing {
+    func probe(at url: URL) -> TidyFileIdentityProbeResult
+}
+
+struct SystemTidyFileIdentityProbe: TidyFileIdentityProbing {
+    func probe(at url: URL) -> TidyFileIdentityProbeResult {
+        var information = stat()
+        guard Darwin.lstat(url.path, &information) == 0 else {
+            let errorCode = errno
+            if errorCode == ENOENT || errorCode == ENOTDIR {
+                return .absent
+            }
+            return .failed(errorCode)
+        }
+        return .present(TidyFileID(
+            device: UInt64(information.st_dev),
+            inode: UInt64(information.st_ino)
+        ))
+    }
 }
 
 final class TidyLedger {
     private let directory: URL
     private let fileManager: FileManager
+    private let identityProbe: TidyFileIdentityProbing
     private let now: () -> Date
 
     private var auditURL: URL {
@@ -72,10 +102,12 @@ final class TidyLedger {
     init(
         directory: URL? = nil,
         fileManager: FileManager = .default,
+        identityProbe: TidyFileIdentityProbing = SystemTidyFileIdentityProbe(),
         now: @escaping () -> Date = Date.init
     ) {
         self.directory = directory ?? TidyStore.defaultDirectory(fileManager: fileManager)
         self.fileManager = fileManager
+        self.identityProbe = identityProbe
         self.now = now
     }
 
@@ -208,11 +240,18 @@ final class TidyLedger {
             return pass
         }
 
-        let sourceExists = itemExists(at: move.source)
-        let destinationExists = itemExists(at: move.destination)
+        let sourceID = try recoveryFileID(at: move.source)
+        let destinationID = try recoveryFileID(at: move.destination)
         // Audit first so a failed append leaves the intent available to retry.
-        switch (sourceExists, destinationExists) {
-        case (true, false):
+        switch (sourceID, destinationID) {
+        case (.some(let actualID), nil):
+            guard actualID == move.fileID else {
+                throw TidyRecoveryError.identityMismatch(
+                    path: move.source,
+                    expected: move.fileID,
+                    actual: actualID
+                )
+            }
             try append(
                 passID: pass.id,
                 action: "RECOVERED",
@@ -223,7 +262,14 @@ final class TidyLedger {
                 result: "not_moved"
             )
             pass.intendedMove = nil
-        case (false, true):
+        case (nil, .some(let actualID)):
+            guard actualID == move.fileID else {
+                throw TidyRecoveryError.identityMismatch(
+                    path: move.destination,
+                    expected: move.fileID,
+                    actual: actualID
+                )
+            }
             try append(
                 passID: pass.id,
                 action: "RECOVERED",
@@ -235,12 +281,12 @@ final class TidyLedger {
             )
             pass.intendedMove = nil
             pass.moves.append(move)
-        case (true, true):
+        case (.some, .some):
             throw TidyRecoveryError.bothPathsExist(
                 source: move.source,
                 destination: move.destination
             )
-        case (false, false):
+        case (nil, nil):
             throw TidyRecoveryError.neitherPathExists(
                 source: move.source,
                 destination: move.destination
@@ -335,9 +381,18 @@ final class TidyLedger {
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
     }
 
-    private func itemExists(at url: URL) -> Bool {
-        var information = stat()
-        return Darwin.lstat(url.path, &information) == 0
+    private func recoveryFileID(at url: URL) throws -> TidyFileID? {
+        switch identityProbe.probe(at: url) {
+        case .absent:
+            return nil
+        case .present(let fileID):
+            return fileID
+        case .failed(let errorCode):
+            throw TidyRecoveryError.probeFailed(
+                path: url,
+                errorCode: errorCode
+            )
+        }
     }
 
     private static func timestamp(_ date: Date) -> String {
