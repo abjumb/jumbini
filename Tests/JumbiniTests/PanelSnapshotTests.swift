@@ -269,12 +269,89 @@ private func dump(_ rep: NSBitmapImageRep?, named name: String) {
 
 @Test @MainActor func panelSnapshotsArePrintedWhenAskedFor() {
     guard ProcessInfo.processInfo.environment["JUMBINI_SNAPSHOT"] == "1" else { return }
-    // All three, because the design is shared: a change to PanelKit lands in
+    // All of them, because the design is shared: a change to PanelKit lands in
     // every panel at once, and a render of only the settings window would say
-    // nothing about the two that inherit from it.
+    // nothing about the ones that inherit from it.
     dump(renderSettingsWindow()?.image, named: "settings")
     dump(renderWindow(CoatWorkshopPanel()), named: "workshop")
     dump(renderWindow(DogGeneratorPanel()), named: "generator")
+    dump(renderWindow(populatedTidySettings()), named: "tidy-settings")
+    let rules = populatedTidySettings()
+    rules.showSection(TidySettingsPanel.Section.rules)
+    dump(renderWindow(rules), named: "tidy-rules")
+    dump(renderWindow(populatedTidyPreview()), named: "tidy-preview")
+}
+
+/// The two Tidy panels are only worth looking at with something in them: an
+/// unrendered rules list and an empty preview are both a blank card, which is
+/// exactly the failure the snapshot exists to catch.
+@MainActor
+private func populatedTidySettings() -> TidySettingsPanel {
+    let panel = TidySettingsPanel()
+    panel.render(state: TidyCoordinator.State(
+        folder: URL(fileURLWithPath: "/Users/someone/Desktop", isDirectory: true),
+        rules: .defaults,
+        preferences: TidyPreferences(
+            needsPreview: false, recencyMinutes: 5, idleEnabled: false,
+            idleMinutes: 10, completedManualPass: true
+        ),
+        isRunning: false,
+        undoCount: 0,
+        blockingError: nil
+    ))
+    return panel
+}
+
+@MainActor
+private func populatedTidyPreview() -> TidyPreviewPanel {
+    let panel = TidyPreviewPanel()
+    let plan = TidyPlan.fixture(moveCount: 6)
+    panel.show(plan: TidyPlan(
+        root: plan.root,
+        movable: plan.movable,
+        skipped: [
+            TidySkippedItem(
+                id: UUID(),
+                source: plan.root.appendingPathComponent("just-saved.png"),
+                reason: .recent
+            ),
+            TidySkippedItem(
+                id: UUID(),
+                source: plan.root.appendingPathComponent("notes.xyz"),
+                reason: .unmatched
+            ),
+        ]
+    ))
+    return panel
+}
+
+@Test @MainActor func theTidyPanelsRenderAtTheirDesignedSizes() {
+    #expect(populatedTidySettings().frame.size.width == 720)
+    #expect(populatedTidyPreview().frame.size.width == 640)
+}
+
+@Test @MainActor func theTidySettingsSidebarClearsTheTrafficLights() {
+    let panel = populatedTidySettings()
+    guard let content = panel.contentView,
+          let sidebar = firstSubview(of: PanelSidebarButton.self, under: content)
+    else {
+        Issue.record("no Tidy sidebar")
+        return
+    }
+    let (clears, detail) = clearsTheTitleBar(sidebar, in: panel)
+    #expect(clears, "Tidy sidebar — \(detail)")
+}
+
+@Test @MainActor func theTidyPreviewHeaderClearsTheTrafficLights() {
+    let panel = populatedTidyPreview()
+    guard let content = panel.contentView,
+          let header = label("Tidy preview", under: content)
+    else {
+        Issue.record("no Tidy preview header")
+        return
+    }
+    let (clears, detail) = clearsTheTitleBar(header, in: panel)
+    #expect(clears, "Tidy preview header — \(detail)")
 }
 
 @Test @MainActor func theSettingsLayoutActuallyRendersDark() {

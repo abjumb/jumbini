@@ -131,6 +131,68 @@ API, the private database is protected, and without Full Disk Access the very fi
 fails and that source switches itself off for good. That is the expected outcome, not a
 bug. Jumbini will never ask you for Full Disk Access.
 
+## He tidies one folder, if you ask
+
+Tidy is off until you turn it on, and turning it on means choosing exactly one folder in a
+standard macOS open panel. Desktop and Downloads are shortcuts *inside* that panel, not
+grants — nothing is chosen until you press Choose. Until then Tidy reads nothing, watches
+nothing and moves nothing.
+
+Once a folder is chosen, Jumba sorts its files into subfolders using rules you can read
+and edit. Four presets ship, in order: Screenshots, Images, Installers, Archives. Rules
+are checked top down and **the first match wins**; a file no rule matches is left exactly
+where it is.
+
+**Nothing moves until you have looked at a preview.** The preview lists every proposed
+move with both full paths, a checkbox per row, and a reason beside every file staying put.
+Cancel writes nothing at all — no folders are created, no log is touched. Untick a row and
+that file is not passed to the mover. The preview comes back every time you change a rule,
+add or remove one, reorder them, or change the recency setting, and no live run is
+possible until you have looked at it again.
+
+What Tidy will not do, by construction:
+
+- **Never deletes, trashes, overwrites, compresses, uploads, or edits a file.** It moves
+  files with `FileManager.moveItem` and renames only to avoid a collision: `photo.png`
+  becomes `photo 2.png`, then `photo 3.png`.
+- **Never leaves the folder you chose.** Every source and destination is re-checked
+  against the folder's real, symlink-resolved path immediately before each move, and a
+  destination is one plain folder name — no slashes, no `..`, no leading dot.
+- **Never recurses.** Only the folder's immediate children are considered, so the
+  subfolders it sorts into are never revisited. Ordinary folders, aliases and symlinks are
+  skipped, and an app or other package is treated as one indivisible item.
+- **Never touches something you are still working on.** Files modified in the last five
+  minutes are left alone (configurable, minimum one minute), and files another app has
+  open are skipped where macOS will say so.
+- **Never moves more than 50 files in one pass.** If there are more, it stops at 50 and
+  says so.
+- **Never reads what is inside your files.** It looks at names, extensions, types, sizes
+  and dates. Nothing is sent anywhere; Tidy makes no network calls and uses no AI.
+
+**Undo.** The last pass can be reversed from `Tidy → Undo Last Tidy (N)`, which restores
+the exact original paths. It checks first that every original path is free, and if even
+one is occupied it moves nothing at all rather than half-undoing. Only the most recent
+pass is undoable.
+
+**While you are away.** Idle tidying is off by default and cannot be switched on until one
+manual pass has been previewed and run. It waits for the idle interval you set (ten
+minutes by default), never runs while the screen is locked or the displays are asleep, and
+if you come back mid-pass it stops after the file it is on — never during one. What it
+moved before stopping is a complete, undoable pass.
+
+**Where it keeps things.** `~/Library/Application Support/Jumbini/` holds `tidy-rules.json`
+(readable and hand-editable), `tidy-last-pass.json` (what undo reverses), and `tidy.log` —
+an append-only plain-text record of every move, skip, failure, cap and reversal. The
+folder grant itself is a security-scoped bookmark and is the only thing
+`Tidy → Forget Folder…` removes: your files, your rules and your log are all left as they
+are.
+
+**The dog's part is theatre.** After the files have moved, Jumba trots to a plausible spot
+and puts something down a few times. He does not know where your icons are — reading that
+would need Accessibility permission, which Jumbini never asks for. Reduce Motion, a paused
+dog or a hidden overlay produce no animation at all, and the files are already where they
+are either way.
+
 ## Controls
 
 Everything is mouse-driven, directly on the dog and his stuff.
@@ -232,6 +294,11 @@ Paste it into Slack. That is the whole feature.
   will. It is the joke.
 - **Treats eaten: N (no effect)** — counts up forever, does nothing, see above.
 - **Jumbini Cam** (⌥⇧J) — see above.
+- **Tidy** — a submenu, and off until you set it up. **Set Up Tidy…** becomes **Tidy Up…**
+  once a folder is chosen; **Undo Last Tidy (N)** reverses the most recent pass;
+  **Tidy Settings…** edits the folder, the rules and the timings; **Tidy While Idle**
+  unlocks after one manual pass; **Forget Folder…** revokes the folder grant and moves
+  nothing. See above.
 - **Settings…** (⌘,) — open Jumbini at login, securely save a Pixellab key, and turn
   bathroom breaks, Mac-aware reactions, or window climbing on and off.
 - **Mute Sounds** — he barks (three different takes), growls, whines, yips, squeaks and
@@ -250,7 +317,12 @@ Worth stating plainly, because a lot of things in this category do:
 - **No account, no login, no telemetry, no analytics.**
 - **No permissions.** No Accessibility, no Screen Recording, no Full Disk Access, no
   Input Monitoring. He reads window geometry, idle time, battery and thermal state through
-  public APIs that require no prompt, and reads nothing else.
+  public APIs that require no prompt, and reads nothing else. **Tidy** touches files, and
+  only the one folder you hand it in a standard open panel — that grant is the whole
+  permission, it is revocable from `Tidy → Forget Folder…`, and Tidy is switched off until
+  you give it.
+- **No file is ever deleted.** Tidy moves and renames-to-avoid-collision, and nothing
+  else. No trash, no overwrite, no compression, no upload, no reading of file contents.
 - **No AI — for Jumba.** He is a state machine with 31 states and a dice roll, and he does
   not have anything to say to you. The optional **Make Your Own Dog** feature is the one
   place a model touches the app: it generates your dog's sprites from your photos via
@@ -358,12 +430,13 @@ end up with a dog walking on the ceiling.
 | File | Lines | What lives there |
 |---|---|---|
 | `Sources/Jumbini/DogBrain.swift` | 1623 | The state machine. 31 states, 16 events, 28 effects, every tuning knob |
-| `Sources/Jumbini/PetScene.swift` | 2505 | Applies effects, owns all mouse input, zoomies physics, cursor-sniff stepping, wardrobe, click-through |
+| `Sources/Jumbini/PetScene.swift` | 2671 | Applies effects, owns all mouse input, zoomies physics, cursor-sniff stepping, wardrobe, click-through, Tidy cues |
 | `Sources/Jumbini/SpriteLoader.swift` | 437 | `Facing` (8 directions) and `SpriteLibrary` (coat resolution, texture cache, nearest-neighbor, strip-sheet slicing) |
-| `Sources/Jumbini/SystemMonitor.swift` | 373 | Idle, battery, thermal, build and Focus tracking. Pure transition logic, thin sampling shell |
+| `Sources/Jumbini/SystemMonitor.swift` | 434 | Idle, battery, thermal, build and Focus tracking. Pure transition logic, thin sampling shell |
+| `Sources/Jumbini/Tidy/` | 4001 | The file organizer: pure rule engine, read-only planner, journaled executor with exact undo, main-thread coordinator, three panels, and the animation policy |
 | `Sources/Jumbini/WindowSurfaces.swift` | 349 | Reads `CGWindowList`, converts to scene coordinates, hands the brain a list of walkable surfaces |
 | `Sources/Jumbini/ParkourGraph.swift` | 162 | The pure window-to-window reachability graph behind parkour hopping |
-| `Sources/Jumbini/AppDelegate.swift` | 284 | Menu bar item, Jumbini Cam and its hotkey, pause, mute, hunger gag, display changes |
+| `Sources/Jumbini/AppDelegate.swift` | 908 | Menu bar item, Jumbini Cam and its hotkey, pause, mute, hunger gag, display changes, the Tidy submenu and folder picker |
 | `Sources/Jumbini/Dog.swift` | 225 | The dog sprite: plays animations in whichever of 8 directions he faces, walks to targets, reports arrival |
 | `Sources/Jumbini/ScreenLayout.swift` | 197 | Multi-display bounds, and the holes in them that an uneven monitor arrangement leaves behind |
 | `Sources/Jumbini/CoatCatalog.swift` | 146 | `Coat` and the catalog of installed ones: which folders on disk qualify, their manifests, where each coat's sprites resolve |
@@ -373,7 +446,7 @@ end up with a dog walking on the ceiling.
 | `Sources/Jumbini/Ball.swift` | 71 | Tennis ball: throw arc, bounce, landing callback |
 | `Sources/Jumbini/EmoteBubble.swift` | 71 | The thought bubble. Deliberately ignorant of why it was asked for |
 | `Sources/Jumbini/OverlayWindow.swift` | 46 | Borderless non-activating `NSPanel` at status-bar level, click-through by default |
-| `Tests/JumbiniTests/` | 5270 | 419 deterministic tests across brain, tricks, system signals, window surfaces, parkour, screen layout and coat resolution |
+| `Tests/JumbiniTests/` | 9931 | 660 deterministic tests across brain, tricks, system signals, window surfaces, parkour, screen layout, coat resolution and every layer of Tidy |
 
 ### Two details worth knowing
 
@@ -457,7 +530,7 @@ Sources/Jumbini/           app code
   Resources/sprites/       props, emote icons, 12 bed variants, wardrobe
   Resources/audio/         3 barks, growl, whine, yip, squeak, grunt, chime, shutter
   Resources/Icons/         menu bar icon (16 and 32 px)
-Tests/JumbiniTests/        419 deterministic tests
+Tests/JumbiniTests/        660 deterministic tests
 Tools/                     import_jumba.py, import_kit_art.py, import_kit_props.py, make_sprites.py
 Scripts/                   test.sh, bundle.sh, dmg.sh, Info.plist
 icon/                      app icon sources and iconsets

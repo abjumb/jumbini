@@ -263,6 +263,17 @@ final class SpriteLibrary {
         return animation
     }
 
+    /// The deposit art, borrowed for Tidy's theatre.
+    ///
+    /// Same three lumps a real pile is drawn from, but a Tidy cue keeps its node
+    /// for a second and throws it away: nothing here joins `piles`, ages, dries
+    /// out or survives the animation. The variant is chosen by the caller from a
+    /// stable hash rather than at random, so the same file is carried the same
+    /// way every time.
+    func tidyDepositProp(variant: Int) -> Animation? {
+        singleProp(named: "deposit_\(variant % 3 + 1)")
+    }
+
     /// Single-frame prop: the whole PNG as one texture at prop scale (×3).
     /// Used by imported furniture whose frame width varies per file.
     func singleProp(named name: String) -> Animation? {
