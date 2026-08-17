@@ -9,8 +9,9 @@ import UniformTypeIdentifiers
 /// real generator) and reports the result back to `onApply`.
 final class DogGeneratorPanel: NSPanel {
     /// Run the generation and return the `idle_south` sprite as preview data.
-    /// The closure is expected to have already written the coat to disk.
-    var generate: ((DogPhotos) async throws -> Data)?
+    /// The closure is expected to have already written the coat to disk, and
+    /// to forward the pipeline's progress to the handler it is given.
+    var generate: ((DogPhotos, @escaping GenerationProgress) async throws -> Data)?
     /// The user clicked Apply — select the generated coat.
     var onApply: (() -> Void)?
 
@@ -22,12 +23,15 @@ final class DogGeneratorPanel: NSPanel {
     private let sideButton = NSButton(title: "Side photo…", target: nil, action: nil)
     private let backButton = NSButton(title: "Back photo…", target: nil, action: nil)
     private let generateButton = NSButton(title: "Generate", target: nil, action: nil)
+    private let cancelButton = NSButton(title: "Cancel", target: nil, action: nil)
     private let applyButton = NSButton(title: "Apply", target: nil, action: nil)
     private let closeButton = NSButton(title: "", target: nil, action: nil)
-    private let spinner = NSProgressIndicator()
+    private let progressBar = NSProgressIndicator()
     private let statusLabel = NSTextField(labelWithString: "")
     private let previewView = NSImageView()
     private var isBusy = false
+    /// The run in flight. Held for exactly one reason: so Cancel can stop it.
+    private var generateTask: Task<Void, Never>?
 
     /// The width is fixed and the height is measured: the title row and the
     /// wrapping status label are both laid out against a known width, and what
@@ -84,9 +88,25 @@ final class DogGeneratorPanel: NSPanel {
         generateButton.keyEquivalent = "\r"
         generateButton.isEnabled = false
 
-        spinner.style = .spinning
-        spinner.controlSize = .small
-        spinner.isDisplayedWhenStopped = false
+        // A determinate bar, not a barber's pole. The run is six known steps
+        // long and takes minutes; "something is happening" is not enough
+        // information to decide whether to keep waiting.
+        progressBar.style = .bar
+        progressBar.isIndeterminate = false
+        progressBar.controlSize = .small
+        progressBar.minValue = 0
+        progressBar.maxValue = Double(GenerationStep.count)
+        progressBar.doubleValue = 0
+        progressBar.isHidden = true
+        progressBar.setAccessibilityLabel("Generation progress")
+        progressBar.translatesAutoresizingMaskIntoConstraints = false
+        progressBar.widthAnchor.constraint(equalToConstant: 140).isActive = true
+
+        // Only there while there is something to cancel. Before this, the way
+        // out of a run that was going nowhere was to quit the app.
+        cancelButton.target = self
+        cancelButton.action = #selector(cancelGeneration)
+        cancelButton.isHidden = true
 
         statusLabel.font = .preferred(.subheadline)
         statusLabel.textColor = .secondaryLabelColor
@@ -99,7 +119,7 @@ final class DogGeneratorPanel: NSPanel {
         // case keeps the panel a fixed size instead of jumping as it reports.
         statusLabel.heightAnchor.constraint(greaterThanOrEqualToConstant: 44).isActive = true
 
-        let progress = NSStackView(views: [spinner, generateButton])
+        let progress = NSStackView(views: [generateButton, cancelButton, progressBar])
         progress.orientation = .horizontal
         progress.spacing = 8
 
@@ -317,27 +337,66 @@ final class DogGeneratorPanel: NSPanel {
     @objc private func generateDog() {
         guard let frontData, let sideData, let backData, let generate else { return }
         setBusy(true)
-        report("Generating… this can take a few minutes.")
-        Task { [weak self] in
+        report("Starting… this can take a few minutes.")
+
+        let photos = DogPhotos(front: frontData, side: sideData, back: backData)
+        // Called from inside the pipeline, on whatever thread it is on.
+        let onProgress: GenerationProgress = { [weak self] step in
+            Task { @MainActor in self?.show(step) }
+        }
+
+        generateTask = Task { [weak self] in
             do {
-                let preview = try await generate(
-                    DogPhotos(front: frontData, side: sideData, back: backData)
-                )
-                await MainActor.run {
+                let preview = try await generate(photos, onProgress)
+                // Cancelled in the gap between the last step finishing and
+                // this line: the user asked to stop, so say so rather than
+                // presenting a dog they had already given up on.
+                if Task.isCancelled {
+                    self?.finish(CancellationError())
+                } else {
                     self?.previewView.image = NSImage(data: preview)
                     self?.previewView.imageScaling = .scaleProportionallyUpOrDown
                     self?.previewView.setAccessibilityLabel("Your generated dog, sitting idle")
                     self?.applyButton.isEnabled = true
                     self?.report("Done — click Apply to put him on screen.")
-                    self?.setBusy(false)
                 }
             } catch {
-                await MainActor.run {
-                    self?.report("Generation failed: \(error.localizedDescription)")
-                    self?.setBusy(false)
-                }
+                self?.finish(error)
             }
+            self?.setBusy(false)
         }
+    }
+
+    /// One step of the run began.
+    ///
+    /// Half a step, not a whole one: the bar has to move the moment a step
+    /// starts, or the longest step in the run — drawing him from the photos,
+    /// which is the first — would sit at zero for a minute and read as
+    /// nothing happening, which is the thing this replaced.
+    private func show(_ step: GenerationStep) {
+        guard isBusy else { return }
+        progressBar.doubleValue = Double(step.number) - 0.5
+        report("Step \(step.number) of \(GenerationStep.count): \(step.label)")
+    }
+
+    /// Cancelling is not a failure, and must not be reported as one.
+    ///
+    /// It arrives as either a `CancellationError` from the pipeline's own
+    /// checks or a cancelled `URLError` from whichever request was in flight
+    /// when the user pressed the button — both mean the same thing here.
+    private func finish(_ error: Error) {
+        let cancelled = error is CancellationError
+            || (error as? URLError)?.code == .cancelled
+        report(cancelled
+            ? "Generation cancelled. Your photos are still here."
+            : "Generation failed: \(error.localizedDescription)")
+    }
+
+    @objc private func cancelGeneration() {
+        guard isBusy else { return }
+        cancelButton.isEnabled = false
+        report("Cancelling…")
+        generateTask?.cancel()
     }
 
     @objc private func applyDog() {
@@ -369,7 +428,11 @@ final class DogGeneratorPanel: NSPanel {
 
     private func setBusy(_ busy: Bool) {
         isBusy = busy
-        if busy { spinner.startAnimation(nil) } else { spinner.stopAnimation(nil) }
+        progressBar.isHidden = !busy
+        if !busy { progressBar.doubleValue = 0 }
+        cancelButton.isHidden = !busy
+        cancelButton.isEnabled = busy
+        if !busy { generateTask = nil }
         frontButton.isEnabled = !busy
         sideButton.isEnabled = !busy
         backButton.isEnabled = !busy

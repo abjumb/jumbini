@@ -563,8 +563,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         let panel = DogGeneratorPanel()
-        panel.generate = { photos in
-            let sprites = try await DogGenerator.generate(photos: photos, client: PixellabClient())
+        panel.generate = { photos, onProgress in
+            let sprites = try await DogGenerator.generate(
+                photos: photos, client: PixellabClient(), onProgress: onProgress
+            )
             let support = try FileManager.default.url(
                 for: .applicationSupportDirectory, in: .userDomainMask,
                 appropriateFor: nil, create: true

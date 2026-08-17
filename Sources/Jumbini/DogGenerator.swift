@@ -88,6 +88,51 @@ enum DogGeneratorError: Error, Equatable {
     case missingFrame(CoatState, Facing)
 }
 
+/// The six steps `generate` walks through, in order.
+///
+/// One character creation plus one call per `PixellabAction`. They exist
+/// because the whole run takes minutes and used to report as an indeterminate
+/// spinner — a barber's pole conveys "something is happening", which after
+/// four minutes is indistinguishable from "something is wrong".
+enum GenerationStep: CaseIterable, Sendable {
+    case creatingCharacter
+    case drawingRun
+    case drawingSit
+    case drawingSleep
+    case drawingBark
+    case drawingSniff
+
+    static func step(for action: PixellabAction) -> GenerationStep {
+        switch action {
+        case .run: .drawingRun
+        case .sit: .drawingSit
+        case .sleep: .drawingSleep
+        case .bark: .drawingBark
+        case .sniff: .drawingSniff
+        }
+    }
+
+    /// What the panel writes in its status line, and says out loud.
+    var label: String {
+        switch self {
+        case .creatingCharacter: "Drawing him from your photos…"
+        case .drawingRun: "Animating his run…"
+        case .drawingSit: "Animating him sitting…"
+        case .drawingSleep: "Animating him asleep…"
+        case .drawingBark: "Animating his bark…"
+        case .drawingSniff: "Animating him sniffing…"
+        }
+    }
+
+    /// 1-based, for "step 3 of 6".
+    var number: Int { (Self.allCases.firstIndex(of: self) ?? 0) + 1 }
+
+    static var count: Int { allCases.count }
+}
+
+/// Reported as each step BEGINS, from whatever thread the pipeline is on.
+typealias GenerationProgress = @Sendable (GenerationStep) -> Void
+
 /// The generation pipeline, the sprite normaliser, and the coat writer.
 enum DogGenerator {
     /// The stable coat id. Regenerating overwrites the previous dog, so the
@@ -112,14 +157,25 @@ enum DogGenerator {
     /// Run the whole generation: create the character, animate the five
     /// actions, normalise every sprite, and write the coat folder. Returns the
     /// coat folder written.
+    ///
+    /// Cancellable at every step. The network calls drop out on their own when
+    /// the task is cancelled, but the post-processing between them is a tight
+    /// pixel loop over 56 sprites that would otherwise run to completion after
+    /// the user had already given up on it — so each phase checks first.
+    ///
+    /// `onProgress` fires as each step begins, on the pipeline's own thread.
     static func generate(
         photos: DogPhotos,
-        client: PixellabClientProtocol
+        client: PixellabClientProtocol,
+        onProgress: GenerationProgress = { _ in }
     ) async throws -> [CoatState: [Facing: Data]] {
+        try Task.checkCancellation()
+        onProgress(.creatingCharacter)
         let character = try await client.createCharacter(referenceImage: photos.front)
 
         var sprites: [CoatState: [Facing: Data]] = [:]
         for direction in Facing.allCases {
+            try Task.checkCancellation()
             guard let idle = character.rotations[direction] else {
                 throw DogGeneratorError.missingRotation(direction)
             }
@@ -127,9 +183,12 @@ enum DogGenerator {
         }
 
         for action in PixellabAction.allCases {
+            try Task.checkCancellation()
+            onProgress(GenerationStep.step(for: action))
             let frames = try await client.animate(characterID: character.id, action: action)
             for (state, frameIndex) in action.states {
                 for direction in Facing.allCases {
+                    try Task.checkCancellation()
                     guard let directionFrames = frames[direction],
                           frameIndex < directionFrames.count else {
                         throw DogGeneratorError.missingFrame(state, direction)
@@ -147,9 +206,10 @@ enum DogGenerator {
         photos: DogPhotos,
         client: PixellabClientProtocol,
         coatsDirectory: URL,
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default,
+        onProgress: GenerationProgress = { _ in }
     ) async throws -> URL {
-        let sprites = try await generate(photos: photos, client: client)
+        let sprites = try await generate(photos: photos, client: client, onProgress: onProgress)
         return try writeCoat(
             sprites,
             to: coatsDirectory.appendingPathComponent(coatID, isDirectory: true),
