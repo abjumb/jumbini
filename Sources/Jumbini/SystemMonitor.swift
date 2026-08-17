@@ -413,7 +413,7 @@ private func poll() {
 
         let sinceSighting = lastBuildSightingAt.map { clockNow - $0 } ?? .seconds(999)
         let quiet = sinceSighting >= .seconds(Self.buildQuietPeriod)
-        let interval: Int = quiet ? Self.quietBuildProbeInterval : Self.buildProbeInterval
+        let interval: TimeInterval = quiet ? Self.quietBuildProbeInterval : Self.buildProbeInterval
         // Half a second of slack: the timer fires on its own schedule and a
         // tick landing at 29.99s must not push the probe out to the next one.
         if let lastProbe = lastBuildProbeAt,

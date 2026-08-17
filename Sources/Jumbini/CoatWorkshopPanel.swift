@@ -610,7 +610,7 @@ private func updateDirectionButtons() {
                 guard let self else { return }
                 // A second Import was started and accepted while this install
                 // was running — the fields are now someone else's.
-                guard self.stagingURL == staging, self.report == report else { return }
+                guard self.stagingURL == staging, self.report?.coatID == report.coatID else { return }
                 // Before the message, not after: stopPreview writes its own
                 // line into the status label.
                 self.stopPreview()
@@ -622,7 +622,7 @@ private func updateDirectionButtons() {
             } catch {
                 guard let self else { return }
                 // Same guard: a fresh Import swapped the fields under us.
-                guard self.stagingURL == staging, self.report == report else { return }
+                guard self.stagingURL == staging, self.report?.coatID == report.coatID else { return }
                 self.statusLabel.stringValue = "Install failed: \(error.localizedDescription)"
                 self.installButton.isEnabled = true
             }
