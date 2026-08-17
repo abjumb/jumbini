@@ -31,10 +31,14 @@ final class TidyStore {
 
     init(directory: URL? = nil, fileManager: FileManager = .default) {
         self.fileManager = fileManager
-        self.directory = directory ?? fileManager.urls(
+        self.directory = directory ?? Self.defaultDirectory(fileManager: fileManager)
+    }
+
+    static func defaultDirectory(fileManager: FileManager) -> URL {
+        fileManager.urls(
             for: .applicationSupportDirectory,
             in: .userDomainMask
-        )[0].appendingPathComponent("Jumbini/Tidy", isDirectory: true)
+        )[0].appendingPathComponent("Jumbini", isDirectory: true)
     }
 
     func loadRules() throws -> TidyRuleSet {

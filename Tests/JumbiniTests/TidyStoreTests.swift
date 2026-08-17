@@ -3,6 +3,17 @@ import Testing
 @testable import Jumbini
 
 @Suite struct TidyStoreTests {
+    @Test func defaultDirectoryIsTheJumbiniApplicationSupportFolder() throws {
+        let applicationSupport = try #require(FileManager.default.urls(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask
+        ).first)
+
+        let directory = TidyStore.defaultDirectory(fileManager: .default)
+        #expect(directory.deletingLastPathComponent().standardizedFileURL == applicationSupport.standardizedFileURL)
+        #expect(directory.lastPathComponent == "Jumbini")
+    }
+
     @Test func rulesRoundTripAsReadableJSON() throws {
         let support = try TemporaryDirectory.make()
         let store = TidyStore(directory: support.url)
