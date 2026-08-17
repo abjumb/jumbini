@@ -94,3 +94,59 @@ struct TidyItemMetadata: Codable, Equatable {
 enum TidySafety {
     static let maximumMoves = 50
 }
+
+struct TidyFileID: Codable, Hashable, Equatable {
+    let device: UInt64
+    let inode: UInt64
+}
+
+enum TidySkipReason: String, Codable, Equatable {
+    case unmatched, recent, alias, symbolicLink, ordinaryDirectory
+    case openByAnotherProcess, unreadableMetadata
+}
+
+struct TidyPlannedMove: Identifiable, Equatable {
+    let id: UUID
+    let source: URL
+    let destination: URL
+    let sourceID: TidyFileID
+    let modifiedAt: Date
+    let ruleID: UUID
+    let ruleName: String
+}
+
+struct TidySkippedItem: Identifiable, Equatable {
+    let id: UUID
+    let source: URL
+    let reason: TidySkipReason
+}
+
+enum TidyPlanRow: Identifiable, Equatable {
+    case movable(TidyPlannedMove)
+    case skipped(TidySkippedItem)
+
+    var id: UUID {
+        switch self {
+        case .movable(let move):
+            return move.id
+        case .skipped(let item):
+            return item.id
+        }
+    }
+}
+
+struct TidyPlan: Equatable {
+    let root: URL
+    let movable: [TidyPlannedMove]
+    let skipped: [TidySkippedItem]
+
+    var exceedsCap: Bool {
+        movable.count > TidySafety.maximumMoves
+    }
+}
+
+enum TidyPlanError: Error, Equatable {
+    case unsafeRoot(URL)
+    case unsafeDestination(String)
+    case enumerationFailed(String)
+}
