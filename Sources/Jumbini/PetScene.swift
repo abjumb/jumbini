@@ -166,11 +166,53 @@ final class PetScene: SKScene {
         windowClimbingEnabled = initialSettings.windowClimbingEnabled
         apply(effects: [.play(.idle)])
         startWatchingWindows()
+        startWatchingReduceMotion()
     }
 
     override func willMove(from view: SKView) {
         windowSurfaces?.stop()
         windowSurfaces = nil
+        NSWorkspace.shared.notificationCenter.removeObserver(self)
+    }
+
+    // MARK: - Reduce Motion
+    //
+    // A desktop pet is, structurally, unrequested movement in the corner of
+    // someone's eye — which is the exact thing Reduce Motion exists to turn
+    // down. Turning him off entirely is not the answer, so what goes is the
+    // motion that carries no information: the drift on a flourish, the rain
+    // of confetti, the full-screen camera flash, and his own idea to tear
+    // around the desk. What stays is everything the user asked for, and every
+    // effect's meaning — a heart still appears when he is petted, it just
+    // appears where it is rather than sailing upwards.
+
+    /// His configured chance of deciding on zoomies unprompted, kept so the
+    /// setting can be switched back off again.
+    private var spontaneousZoomiesChance: Double = 0
+
+    private func startWatchingReduceMotion() {
+        spontaneousZoomiesChance = brain.tuning.zoomiesChance
+        applyReduceMotion()
+        // It is a System Settings switch, so it can change under a running app.
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self,
+            selector: #selector(reduceMotionChanged),
+            name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification,
+            object: nil
+        )
+    }
+
+    @objc private func reduceMotionChanged() {
+        applyReduceMotion()
+    }
+
+    /// Only the zoomies he decides on HIMSELF. A user who picks "Zoomies!"
+    /// from his menu has asked for zoomies and gets them.
+    private func applyReduceMotion() {
+        guard brain != nil else { return }
+        brain.tuning.zoomiesChance = Accessibility.prefersReducedMotion
+            ? 0
+            : spontaneousZoomiesChance
     }
 
     private static func propNode(
@@ -1942,9 +1984,12 @@ final class PetScene: SKScene {
         addChild(node)
         node.run(.animate(with: anim.textures, timePerFrame: duration / Double(frames),
                           resize: false, restore: false))
+        // Reduce Motion keeps the sprite and drops the travel: the puff still
+        // leaves his mouth, it just doesn't sail across the desktop.
+        let travel = Accessibility.prefersReducedMotion ? CGVector.zero : drift
         node.run(.sequence([
             .group([
-                .moveBy(x: drift.dx, y: drift.dy, duration: duration),
+                .moveBy(x: travel.dx, y: travel.dy, duration: duration),
                 .sequence([
                     .wait(forDuration: duration * 0.5),
                     .fadeOut(withDuration: duration * 0.5),
@@ -2004,6 +2049,10 @@ final class PetScene: SKScene {
     /// character sprite rather than confetti and isn't imported. See
     /// Tools/import_kit_props.py.
     private func showConfetti() {
+        // Seven sprites raining across the screen at once, unprompted, is the
+        // loudest thing the app does. Under Reduce Motion the build still gets
+        // its party — the brain's `.celebrate` and the emote both still fire.
+        guard !Accessibility.prefersReducedMotion else { return }
         for _ in 0..<7 {
             spawnFlourish(
                 named: "confetti", frames: 3,
@@ -2022,6 +2071,7 @@ final class PetScene: SKScene {
 
     private func showHearts() {
         needsFullFrames(for: 1.6)
+        let rise: CGFloat = Accessibility.prefersReducedMotion ? 0 : 60
         for i in 0..<3 {
             let heart: SKNode
             if let anim = SpriteLibrary.shared.prop(named: "heart", frameWidth: 8, fps: 1) {
@@ -2042,7 +2092,7 @@ final class PetScene: SKScene {
             heart.run(.sequence([
                 .wait(forDuration: 0.12 * Double(i)),
                 .group([
-                    .moveBy(x: CGFloat.random(in: -10...10), y: 60, duration: 0.9),
+                    .moveBy(x: rise == 0 ? 0 : CGFloat.random(in: -10...10), y: rise, duration: 0.9),
                     .sequence([.wait(forDuration: 0.5), .fadeOut(withDuration: 0.4)]),
                 ]),
                 .removeFromParent(),
@@ -2065,8 +2115,19 @@ final class PetScene: SKScene {
         )
         badge.zPosition = 21
         badge.alpha = 0
-        badge.setScale(0.3)
         addChild(badge)
+        // Reduce Motion: it fades in where it belongs and fades out again,
+        // rather than popping past full size and floating off.
+        guard !Accessibility.prefersReducedMotion else {
+            badge.run(.sequence([
+                .fadeIn(withDuration: 0.15),
+                .wait(forDuration: 1.0),
+                .fadeOut(withDuration: 0.45),
+                .removeFromParent(),
+            ]))
+            return
+        }
+        badge.setScale(0.3)
         badge.run(.sequence([
             .group([.fadeIn(withDuration: 0.12), .scale(to: 1.15, duration: 0.18)]),
             .scale(to: 1, duration: 0.1),
@@ -2665,6 +2726,10 @@ final class PetScene: SKScene {
     private func flashCamFeedback() {
         playSound(named: "shutter")
         guard let view, !view.isPaused, !isPaused else { return }
+        // A display whited out to 70% and back inside a quarter of a second is
+        // exactly the kind of thing Reduce Motion is asked for. The shutter
+        // click above already said the photo was taken.
+        guard !Accessibility.prefersReducedMotion else { return }
         needsFullFrames(for: 0.3)
         // Only the display he's standing on. The scene spans the whole desk,
         // and whiting out three monitors to photograph one dog is a jump

@@ -66,7 +66,7 @@ final class DogGeneratorPanel: NSPanel {
 
     private func setUpContent() {
         let title = NSTextField(labelWithString: "Make Your Own Dog")
-        title.font = .systemFont(ofSize: 15, weight: .semibold)
+        title.font = .preferred(.title3, weight: .semibold)
 
         frontButton.target = self
         frontButton.action = #selector(chooseFront)
@@ -88,7 +88,7 @@ final class DogGeneratorPanel: NSPanel {
         spinner.controlSize = .small
         spinner.isDisplayedWhenStopped = false
 
-        statusLabel.font = .systemFont(ofSize: 11)
+        statusLabel.font = .preferred(.subheadline)
         statusLabel.textColor = .secondaryLabelColor
         statusLabel.maximumNumberOfLines = 0
         statusLabel.preferredMaxLayoutWidth = Self.panelWidth - Self.contentInset * 2
@@ -106,6 +106,10 @@ final class DogGeneratorPanel: NSPanel {
         previewView.translatesAutoresizingMaskIntoConstraints = false
         previewView.imageScaling = .scaleNone
         previewView.setContentHuggingPriority(.defaultLow, for: .vertical)
+        // An unlabelled image view is announced as "image", which for the one
+        // thing the whole panel exists to produce is not enough. Replaced with
+        // the real thing once there is a dog in it.
+        previewView.setAccessibilityLabel("No dog generated yet")
         NSLayoutConstraint.activate([
             previewView.widthAnchor.constraint(equalToConstant: 96),
             previewView.heightAnchor.constraint(equalToConstant: 96),
@@ -276,8 +280,9 @@ final class DogGeneratorPanel: NSPanel {
                 }.value
                 self?.accept(data, for: slot)
             } catch {
-                self?.statusLabel.stringValue =
+                self?.report(
                     "Could not read \(url.lastPathComponent): \(error.localizedDescription)"
+                )
             }
         }
     }
@@ -312,7 +317,7 @@ final class DogGeneratorPanel: NSPanel {
     @objc private func generateDog() {
         guard let frontData, let sideData, let backData, let generate else { return }
         setBusy(true)
-        statusLabel.stringValue = "Generating… this can take a few minutes."
+        report("Generating… this can take a few minutes.")
         Task { [weak self] in
             do {
                 let preview = try await generate(
@@ -321,14 +326,14 @@ final class DogGeneratorPanel: NSPanel {
                 await MainActor.run {
                     self?.previewView.image = NSImage(data: preview)
                     self?.previewView.imageScaling = .scaleProportionallyUpOrDown
+                    self?.previewView.setAccessibilityLabel("Your generated dog, sitting idle")
                     self?.applyButton.isEnabled = true
-                    self?.statusLabel.stringValue = "Done — click Apply to put him on screen."
+                    self?.report("Done — click Apply to put him on screen.")
                     self?.setBusy(false)
                 }
             } catch {
                 await MainActor.run {
-                    self?.statusLabel.stringValue =
-                        "Generation failed: \(error.localizedDescription)"
+                    self?.report("Generation failed: \(error.localizedDescription)")
                     self?.setBusy(false)
                 }
             }
@@ -349,6 +354,17 @@ final class DogGeneratorPanel: NSPanel {
     /// mid-run costs nothing but the wait.
     @objc private func dismissPanel() {
         orderOut(nil)
+    }
+
+    /// Write to the status line AND say it.
+    ///
+    /// Generation takes minutes and reports through a label that never takes
+    /// focus, so a screen reader user who started it has no way to learn that
+    /// it finished — or that it failed — short of going back and re-reading
+    /// the panel on a hunch. Every outcome goes through here.
+    private func report(_ message: String) {
+        statusLabel.stringValue = message
+        Accessibility.announce(message)
     }
 
     private func setBusy(_ busy: Bool) {

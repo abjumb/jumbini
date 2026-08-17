@@ -80,7 +80,7 @@ final class CoatWorkshopPanel: NSPanel {
 
     private func setUpContent() {
         let title = NSTextField(labelWithString: "Coat Workshop")
-        title.font = .systemFont(ofSize: 15, weight: .semibold)
+        title.font = .preferred(.title3, weight: .semibold)
 
         closeButton.image = NSImage(
             systemSymbolName: "xmark",
@@ -119,7 +119,7 @@ final class CoatWorkshopPanel: NSPanel {
         exportButton.isEnabled = false
 
         // Status.
-        statusLabel.font = .systemFont(ofSize: 11)
+        statusLabel.font = .preferred(.subheadline)
         statusLabel.textColor = .secondaryLabelColor
         statusLabel.maximumNumberOfLines = 3
         statusLabel.preferredMaxLayoutWidth = Self.panelWidth - Self.contentInset * 2
@@ -131,7 +131,11 @@ final class CoatWorkshopPanel: NSPanel {
         findingsTextView.isEditable = false
         findingsTextView.isSelectable = true
         findingsTextView.drawsBackground = false
-        findingsTextView.font = .monospacedSystemFont(ofSize: 10, weight: .regular)
+        // Monospaced, because the findings are filenames — but sized from the
+        // text style, so it grows with everything else in the panel.
+        findingsTextView.font = .monospacedSystemFont(
+            ofSize: NSFont.preferred(.caption1).pointSize, weight: .regular
+        )
         findingsTextView.textContainerInset = NSSize(width: 4, height: 4)
         findingsScroll.documentView = findingsTextView
         findingsScroll.hasVerticalScroller = true
@@ -160,8 +164,11 @@ final class CoatWorkshopPanel: NSPanel {
             let btn = NSButton(title: directionShortLabel(dir), target: self, action: #selector(directionChosen(_:)))
             btn.bezelStyle = .rounded
             btn.controlSize = .small
-            btn.font = .systemFont(ofSize: 9)
+            btn.font = .preferred(.caption2)
             btn.identifier = NSUserInterfaceItemIdentifier(rawValue: "dir:" + dir.fileSuffix)
+            // "NE" is two letters to read and an abbreviation to guess at.
+            // The button says NE; VoiceOver says north-east.
+            btn.setAccessibilityLabel(Self.directionName(dir))
             btn.isEnabled = false
             btn.translatesAutoresizingMaskIntoConstraints = false
             NSLayoutConstraint.activate([
@@ -381,7 +388,7 @@ final class CoatWorkshopPanel: NSPanel {
         guard !statesWithAllDirections.isEmpty else { return }
 
         let header = NSTextField(labelWithString: "Per-state scale overrides:")
-        header.font = .systemFont(ofSize: 11, weight: .semibold)
+        header.font = .preferred(.subheadline, weight: .semibold)
         scaleStack.addArrangedSubview(header)
 
         for state in statesWithAllDirections {
@@ -390,13 +397,13 @@ final class CoatWorkshopPanel: NSPanel {
             row.spacing = 6
 
             let label = NSTextField(labelWithString: "\(state):")
-            label.font = .systemFont(ofSize: 11)
+            label.font = .preferred(.subheadline)
             label.alignment = .right
             label.translatesAutoresizingMaskIntoConstraints = false
             label.widthAnchor.constraint(equalToConstant: 64).isActive = true
 
             let field = NSTextField()
-            field.font = .systemFont(ofSize: 11)
+            field.font = .preferred(.subheadline)
             field.controlSize = .small
             field.stringValue = String(format: "%.1f", scaleEdits[state] ?? SpriteLibrary.baseScale)
             field.target = self
@@ -407,11 +414,11 @@ final class CoatWorkshopPanel: NSPanel {
             let resetBtn = NSButton(title: "Reset", target: self, action: #selector(resetScale(_:)))
             resetBtn.bezelStyle = .inline
             resetBtn.controlSize = .small
-            resetBtn.font = .systemFont(ofSize: 10)
+            resetBtn.font = .preferred(.caption1)
             resetBtn.identifier = NSUserInterfaceItemIdentifier(rawValue: "reset:" + state)
 
             let defaultLabel = NSTextField(labelWithString: "(default: \(String(format: "%.1f", SpriteLibrary.baseScale)))")
-            defaultLabel.font = .systemFont(ofSize: 10)
+            defaultLabel.font = .preferred(.caption1)
             defaultLabel.textColor = .secondaryLabelColor
 
             row.addArrangedSubview(label)
@@ -557,6 +564,20 @@ private func updateDirectionButtons() {
         case .northWest: "NW"
         case .west: "W"
         case .southWest: "SW"
+        }
+    }
+
+    /// The same eight directions, spelled out.
+    private static func directionName(_ dir: Facing) -> String {
+        switch dir {
+        case .south: "Facing south"
+        case .southEast: "Facing south-east"
+        case .east: "Facing east"
+        case .northEast: "Facing north-east"
+        case .north: "Facing north"
+        case .northWest: "Facing north-west"
+        case .west: "Facing west"
+        case .southWest: "Facing south-west"
         }
     }
 

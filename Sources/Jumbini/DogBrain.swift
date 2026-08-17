@@ -335,7 +335,9 @@ final class DogBrain {
     /// current; today it stays 1.0.
     var dogScale: CGFloat = 1.0
 
-    let tuning: BrainTuning
+    /// `var` for one reason: Reduce Motion turns the spontaneous-zoomies
+    /// chance off. Nothing else touches it after init.
+    var tuning: BrainTuning
     private var rng: any RandomNumberGenerator
 
     init(

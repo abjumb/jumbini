@@ -61,7 +61,7 @@ final class SettingsPanel: NSPanel {
 
     private func setUpContent() {
         let title = NSTextField(labelWithString: "Jumbini Settings")
-        title.font = .systemFont(ofSize: 17, weight: .semibold)
+        title.font = .preferred(.title2, weight: .semibold)
         title.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
         closeButton.image = NSImage(
@@ -87,7 +87,7 @@ final class SettingsPanel: NSPanel {
 
         let startupTitle = sectionTitle("Startup")
         loginCheckbox.title = "Open Jumbini at login"
-        loginCheckbox.font = .systemFont(ofSize: 13, weight: .medium)
+        loginCheckbox.font = .preferred(.body, weight: .medium)
         loginCheckbox.setAccessibilityLabel("Open Jumbini at login")
         loginCheckbox.target = self
         loginCheckbox.action = #selector(loginItemChanged)
@@ -96,7 +96,7 @@ final class SettingsPanel: NSPanel {
         // most of the time and a wrapped refusal occasionally. Rather than park
         // four empty rows under the checkbox forever, the label sizes to its
         // text and the panel re-fits around it — see resizeToFitContent().
-        loginStatusLabel.font = .systemFont(ofSize: 11)
+        loginStatusLabel.font = .preferred(.subheadline)
         loginStatusLabel.textColor = .secondaryLabelColor
         loginStatusLabel.maximumNumberOfLines = 4
         loginStatusLabel.lineBreakMode = .byWordWrapping
@@ -146,7 +146,7 @@ final class SettingsPanel: NSPanel {
             "Make Your Own Dog uses your Pixellab key. It stays in your login Keychain and is sent only to Pixellab."
         )
 
-        keyStatusLabel.font = .systemFont(ofSize: 12, weight: .medium)
+        keyStatusLabel.font = .preferred(.callout, weight: .medium)
         keyStatusLabel.maximumNumberOfLines = 2
 
         apiKeyField.placeholderString = "Paste a Pixellab API key"
@@ -165,7 +165,7 @@ final class SettingsPanel: NSPanel {
         keyActions.orientation = .horizontal
         keyActions.spacing = 8
 
-        keyFeedbackLabel.font = .systemFont(ofSize: 11)
+        keyFeedbackLabel.font = .preferred(.subheadline)
         keyFeedbackLabel.textColor = .secondaryLabelColor
         keyFeedbackLabel.maximumNumberOfLines = 3
         keyFeedbackLabel.preferredMaxLayoutWidth = Self.panelWidth - Self.inset * 2
@@ -235,13 +235,13 @@ final class SettingsPanel: NSPanel {
 
     private func sectionTitle(_ text: String) -> NSTextField {
         let label = NSTextField(labelWithString: text)
-        label.font = .systemFont(ofSize: 13, weight: .semibold)
+        label.font = .preferred(.headline)
         return label
     }
 
     private func detailLabel(_ text: String) -> NSTextField {
         let label = NSTextField(wrappingLabelWithString: text)
-        label.font = .systemFont(ofSize: 11)
+        label.font = .preferred(.subheadline)
         label.textColor = .secondaryLabelColor
         label.preferredMaxLayoutWidth = Self.panelWidth - Self.inset * 2
         return label
@@ -253,7 +253,7 @@ final class SettingsPanel: NSPanel {
         detail: String
     ) -> NSStackView {
         checkbox.title = title
-        checkbox.font = .systemFont(ofSize: 13, weight: .medium)
+        checkbox.font = .preferred(.body, weight: .medium)
         checkbox.setAccessibilityLabel(title)
         let row = NSStackView(views: [checkbox, indented(detailLabel(detail))])
         row.orientation = .vertical
@@ -350,22 +350,11 @@ final class SettingsPanel: NSPanel {
         loginStatusLabel.textColor = state.isFailure ? .systemRed : .secondaryLabelColor
         loginStatusLabel.stringValue = state.message
         resizeToFitContent()
+        // A refused toggle snaps the checkbox back on its own, which sighted
+        // users see and VoiceOver users would otherwise only hear as a state
+        // that did not change. Say why, at the moment it happens.
         guard announcing, state.needsAttention else { return }
-        announce(state.message)
-    }
-
-    /// A refused toggle snaps the checkbox back on its own, which sighted users
-    /// see and VoiceOver users would otherwise only hear as a state that did
-    /// not change. Say why, at the moment it happens.
-    private func announce(_ message: String) {
-        NSAccessibility.post(
-            element: NSApp as Any,
-            notification: .announcementRequested,
-            userInfo: [
-                .announcement: message,
-                .priority: NSAccessibilityPriorityLevel.high.rawValue,
-            ]
-        )
+        Accessibility.announce(state.message)
     }
 
     /// Registration happens now, and the row redraws from whatever macOS

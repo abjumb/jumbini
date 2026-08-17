@@ -180,13 +180,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
         // Gag feature: the hunger meter is bottomless. It must NEVER decrease,
         // no matter how many treats the dog eats. Do not "fix" this.
+        //
+        // The bar is ten block characters, which VoiceOver reads out as ten
+        // block characters. The joke survives being said in words; being
+        // spelled out one glyph at a time, it does not.
         let hungerItem = NSMenuItem(title: "Hunger: ██████████ 100%", action: nil, keyEquivalent: "")
         hungerItem.isEnabled = false
+        hungerItem.setAccessibilityLabel(Self.hungerLabel)
         menu.addItem(hungerItem)
         let treatsItem = NSMenuItem(title: "Treats eaten: 0", action: nil, keyEquivalent: "")
         treatsItem.isEnabled = false
+        treatsItem.setAccessibilityLabel(Self.treatsLabel(eaten: 0))
         menu.addItem(treatsItem)
         menu.addItem(.separator())
+        // Every command from his right-click menu, reachable from the keyboard.
+        // The overlay is click-through and the dog moves; hunting him with a
+        // pointer to open a context menu is not a route everyone has.
+        menu.addItem(jumbaCommandsItem())
         // Jumbini Cam block: between the counters separator and Pause. Stays
         // enabled while paused — the capture renders offscreen and still works.
         let camItem = NSMenuItem(title: "Jumbini Cam", action: #selector(captureJumbiniCam), keyEquivalent: "j")
@@ -245,13 +255,63 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.treatsItem = treatsItem
     }
 
+    /// What the two counters say out loud. The titles carry a drawn bar and a
+    /// parenthetical gag; these carry the same information as a sentence.
+    private static let hungerLabel = "Hunger: full, 100 percent. Bottomless."
+
+    private static func treatsLabel(eaten: Int) -> String {
+        let treats = eaten == 1 ? "1 treat" : "\(eaten) treats"
+        return eaten > 0
+            ? "\(treats) eaten, with no effect on his hunger."
+            : "\(treats) eaten."
+    }
+
     @objc private func jumbiniAteTreat() {
         treatsEaten += 1
         treatsItem?.title = treatsEaten > 0
             ? "Treats eaten: \(treatsEaten) (no effect)"
             : "Treats eaten: \(treatsEaten)"
+        treatsItem?.setAccessibilityLabel(Self.treatsLabel(eaten: treatsEaten))
         // Hunger stays pinned at 100% forever — bottomless by design.
         hungerItem?.title = "Hunger: ██████████ 100%"
+        hungerItem?.setAccessibilityLabel(Self.hungerLabel)
+    }
+
+    // MARK: - Jumba (keyboard route to his commands)
+
+    /// The same commands his right-click menu offers, in the status bar.
+    ///
+    /// `PetScene.perform` is the one entry point for a command however it was
+    /// chosen — the context menu, the demo driver and this all go down it —
+    /// so mirroring the list here costs nothing but the titles.
+    private static let jumbaCommands: [(String, DogCommand)] = [
+        ("Sit", .sit),
+        ("Lie Down", .lieDown),
+        ("Spin", .spin),
+        ("Spin Forever", .spinForever),
+        ("Zoomies!", .zoomies),
+        ("Fetch", .fetch),
+        ("Settle Down", .relax),
+    ]
+
+    private func jumbaCommandsItem() -> NSMenuItem {
+        let item = NSMenuItem(title: "Jumba", action: nil, keyEquivalent: "")
+        let submenu = NSMenu()
+        for (title, command) in Self.jumbaCommands {
+            let entry = NSMenuItem(
+                title: title, action: #selector(jumbaCommandChosen(_:)), keyEquivalent: ""
+            )
+            entry.target = self
+            entry.representedObject = command
+            submenu.addItem(entry)
+        }
+        item.submenu = submenu
+        return item
+    }
+
+    @objc private func jumbaCommandChosen(_ sender: NSMenuItem) {
+        guard let command = sender.representedObject as? DogCommand else { return }
+        scene?.perform(command)
     }
 
     @objc private func toggleMute(_ sender: NSMenuItem) {
