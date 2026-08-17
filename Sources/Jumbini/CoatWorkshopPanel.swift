@@ -8,7 +8,7 @@ import SpriteKit
 /// A borderless, non-activating NSPanel like the DogGeneratorPanel. It owns
 /// none of the rendering — it sends pose/direction commands to the scene so
 /// the preview happens on the real dog in the overlay.
-final class CoatWorkshopPanel: NSPanel {
+final class CoatWorkshopPanel: JumbiniPanel {
     // MARK: - Closures (wired by the scene)
 
     /// Ask the scene to temporarily wear a staged coat.
@@ -44,66 +44,31 @@ final class CoatWorkshopPanel: NSPanel {
     private let scaleStack = NSStackView()
     private let installButton = NSButton(title: "Install", target: nil, action: nil)
     private let exportButton = NSButton(title: "Export…", target: nil, action: nil)
-    private let closeButton = NSButton(title: "", target: nil, action: nil)
     private var isInstalledCoat: Bool = false
 
     private static let panelWidth: CGFloat = 400
-    private static let initialHeight: CGFloat = 520
-    private static let contentInset: CGFloat = 16
-    private static let cornerRadius: CGFloat = 22
 
     init(fileManager: FileManager = .default) {
         self.fileManager = fileManager
-        super.init(
-            contentRect: NSRect(x: 0, y: 0, width: Self.panelWidth, height: Self.initialHeight),
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false
-        )
-        isOpaque = false
-        backgroundColor = .clear
-        hasShadow = true
-        isFloatingPanel = true
-        isReleasedWhenClosed = false
-        animationBehavior = .none
-        level = .statusBar
-        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        super.init(width: Self.panelWidth)
         setUpContent()
     }
-
-    override var canBecomeKey: Bool { true }
 
     // MARK: - Content layout
 
     private func setUpContent() {
         let title = NSTextField(labelWithString: "Coat Workshop")
-        title.font = .systemFont(ofSize: 15, weight: .semibold)
-
-        closeButton.image = NSImage(
-            systemSymbolName: "xmark",
-            accessibilityDescription: "Close"
-        )?.withSymbolConfiguration(.init(pointSize: 11, weight: .semibold))
-        closeButton.isBordered = false
-        closeButton.contentTintColor = .secondaryLabelColor
-        closeButton.target = self
-        closeButton.action = #selector(dismissPanel)
-        closeButton.keyEquivalent = "\u{1b}"
-        closeButton.setContentHuggingPriority(.required, for: .horizontal)
-        closeButton.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            closeButton.widthAnchor.constraint(equalToConstant: 22),
-            closeButton.heightAnchor.constraint(equalToConstant: 22),
-        ])
+        title.font = PanelStyle.title
         title.setContentHuggingPriority(.defaultLow, for: .horizontal)
+
+        let closeButton = makeCloseButton(action: #selector(dismissPanel))
 
         let header = NSStackView(views: [title, closeButton])
         header.orientation = .horizontal
         header.distribution = .fill
         header.alignment = .centerY
         header.translatesAutoresizingMaskIntoConstraints = false
-        header.widthAnchor.constraint(
-            equalToConstant: Self.panelWidth - Self.contentInset * 2
-        ).isActive = true
+        header.widthAnchor.constraint(equalToConstant: contentWidth).isActive = true
 
         // Import row.
         importButton.target = self
@@ -116,10 +81,10 @@ final class CoatWorkshopPanel: NSPanel {
         exportButton.isEnabled = false
 
         // Status.
-        statusLabel.font = .systemFont(ofSize: 11)
+        statusLabel.font = PanelStyle.detail
         statusLabel.textColor = .secondaryLabelColor
         statusLabel.maximumNumberOfLines = 3
-        statusLabel.preferredMaxLayoutWidth = Self.panelWidth - Self.contentInset * 2
+        statusLabel.preferredMaxLayoutWidth = contentWidth
         statusLabel.stringValue = "Import a coat folder or zip to validate and preview."
         statusLabel.translatesAutoresizingMaskIntoConstraints = false
         statusLabel.heightAnchor.constraint(greaterThanOrEqualToConstant: 36).isActive = true
@@ -192,47 +157,17 @@ final class CoatWorkshopPanel: NSPanel {
         ])
         stack.orientation = .vertical
         stack.alignment = .leading
-        stack.spacing = 10
+        stack.spacing = PanelStyle.spacing
         stack.edgeInsets = NSEdgeInsets(
-            top: Self.contentInset, left: Self.contentInset,
-            bottom: Self.contentInset, right: Self.contentInset
+            top: PanelStyle.inset, left: PanelStyle.inset,
+            bottom: PanelStyle.inset, right: PanelStyle.inset
         )
 
         stack.layoutSubtreeIfNeeded()
         let fittedHeight = stack.fittingSize.height
 
-        contentView = makeBackdrop(around: stack)
-        setContentSize(NSSize(width: Self.panelWidth, height: fittedHeight))
-    }
-
-    private func makeBackdrop(around content: NSView) -> NSView {
-        content.translatesAutoresizingMaskIntoConstraints = false
-
-        let backdrop: NSView
-        if #available(macOS 26.0, *) {
-            let glass = NSGlassEffectView()
-            glass.cornerRadius = Self.cornerRadius
-            glass.contentView = content
-            backdrop = glass
-        } else {
-            let blur = NSVisualEffectView()
-            blur.material = .hudWindow
-            blur.blendingMode = .behindWindow
-            blur.state = .active
-            blur.wantsLayer = true
-            blur.layer?.cornerRadius = Self.cornerRadius
-            blur.layer?.masksToBounds = true
-            blur.addSubview(content)
-            backdrop = blur
-        }
-
-        NSLayoutConstraint.activate([
-            content.topAnchor.constraint(equalTo: backdrop.topAnchor),
-            content.bottomAnchor.constraint(equalTo: backdrop.bottomAnchor),
-            content.leadingAnchor.constraint(equalTo: backdrop.leadingAnchor),
-            content.trailingAnchor.constraint(equalTo: backdrop.trailingAnchor),
-        ])
-        return backdrop
+        embed(stack)
+        setContentSize(NSSize(width: panelWidth, height: fittedHeight))
     }
 
     // MARK: - Import
@@ -614,11 +549,5 @@ private func updateDirectionButtons() {
     @objc private func dismissPanel() {
         if isPreviewing { stopPreview() }
         orderOut(nil)
-    }
-
-    func present() {
-        center()
-        orderFrontRegardless()
-        makeKey()
     }
 }

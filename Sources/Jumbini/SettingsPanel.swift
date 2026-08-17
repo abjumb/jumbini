@@ -5,7 +5,7 @@ import AppKit
 /// Behavior switches save immediately. The Pixellab key is deliberately a
 /// separate, explicit action: secrets go to Keychain, never UserDefaults, and
 /// a half-entered key must not replace a working one as the user types.
-final class SettingsPanel: NSPanel {
+final class SettingsPanel: JumbiniPanel {
     var onSettingsChanged: ((JumbiniSettings) -> Void)?
 
     private let defaults: UserDefaults
@@ -20,16 +20,14 @@ final class SettingsPanel: NSPanel {
     private let keyFeedbackLabel = NSTextField(labelWithString: "")
     private let saveKeyButton = NSButton(title: "Save Key", target: nil, action: nil)
     private let removeKeyButton = NSButton(title: "Remove Key", target: nil, action: nil)
-    private let closeButton = NSButton(title: "", target: nil, action: nil)
     private var contentStack: NSStackView?
 
     private static let panelWidth: CGFloat = 440
-    private static let initialHeight: CGFloat = 520
-    private static let inset: CGFloat = 20
-    private static let cornerRadius: CGFloat = 22
-    private static let indentWidth: CGFloat = 22
-    private static let contentWidth = panelWidth - inset * 2
-    private static let detailWidth = contentWidth - indentWidth
+    /// Secondary text lines up under a checkbox's title rather than under its
+    /// box, and the box is the same width as a close button.
+    private static let indentWidth = PanelStyle.closeButtonSide
+
+    private var detailWidth: CGFloat { contentWidth - Self.indentWidth }
 
     init(
         defaults: UserDefaults = .standard,
@@ -37,48 +35,17 @@ final class SettingsPanel: NSPanel {
     ) {
         self.defaults = defaults
         self.loginItem = loginItem
-        super.init(
-            contentRect: NSRect(
-                x: 0, y: 0, width: Self.panelWidth, height: Self.initialHeight
-            ),
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false
-        )
-        isOpaque = false
-        backgroundColor = .clear
-        hasShadow = true
-        isFloatingPanel = true
-        isReleasedWhenClosed = false
-        animationBehavior = .none
-        level = .statusBar
-        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        super.init(width: Self.panelWidth)
         setUpContent()
         reload()
     }
 
-    override var canBecomeKey: Bool { true }
-
     private func setUpContent() {
         let title = NSTextField(labelWithString: "Jumbini Settings")
-        title.font = .systemFont(ofSize: 17, weight: .semibold)
+        title.font = PanelStyle.title
         title.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
-        closeButton.image = NSImage(
-            systemSymbolName: "xmark",
-            accessibilityDescription: "Close settings"
-        )?.withSymbolConfiguration(.init(pointSize: 11, weight: .semibold))
-        closeButton.isBordered = false
-        closeButton.contentTintColor = .secondaryLabelColor
-        closeButton.target = self
-        closeButton.action = #selector(dismissPanel)
-        closeButton.toolTip = "Close"
-        closeButton.keyEquivalent = "\u{1b}"
-        closeButton.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            closeButton.widthAnchor.constraint(equalToConstant: 24),
-            closeButton.heightAnchor.constraint(equalToConstant: 24),
-        ])
+        let closeButton = makeCloseButton(action: #selector(dismissPanel))
 
         let header = NSStackView(views: [title, closeButton])
         header.orientation = .horizontal
@@ -96,14 +63,14 @@ final class SettingsPanel: NSPanel {
         // most of the time and a wrapped refusal occasionally. Rather than park
         // four empty rows under the checkbox forever, the label sizes to its
         // text and the panel re-fits around it — see resizeToFitContent().
-        loginStatusLabel.font = .systemFont(ofSize: 11)
+        loginStatusLabel.font = PanelStyle.detail
         loginStatusLabel.textColor = .secondaryLabelColor
         loginStatusLabel.maximumNumberOfLines = 4
         loginStatusLabel.lineBreakMode = .byWordWrapping
-        loginStatusLabel.preferredMaxLayoutWidth = Self.detailWidth
+        loginStatusLabel.preferredMaxLayoutWidth = detailWidth
         loginStatusLabel.translatesAutoresizingMaskIntoConstraints = false
         loginStatusLabel.widthAnchor.constraint(
-            equalToConstant: Self.detailWidth
+            equalToConstant: detailWidth
         ).isActive = true
         let loginRow = NSStackView(views: [loginCheckbox, indented(loginStatusLabel)])
         loginRow.orientation = .vertical
@@ -152,9 +119,7 @@ final class SettingsPanel: NSPanel {
         apiKeyField.placeholderString = "Paste a Pixellab API key"
         apiKeyField.setAccessibilityLabel("Pixellab API key")
         apiKeyField.translatesAutoresizingMaskIntoConstraints = false
-        apiKeyField.widthAnchor.constraint(
-            equalToConstant: Self.panelWidth - Self.inset * 2
-        ).isActive = true
+        apiKeyField.widthAnchor.constraint(equalToConstant: contentWidth).isActive = true
 
         saveKeyButton.target = self
         saveKeyButton.action = #selector(saveAPIKey)
@@ -165,10 +130,10 @@ final class SettingsPanel: NSPanel {
         keyActions.orientation = .horizontal
         keyActions.spacing = 8
 
-        keyFeedbackLabel.font = .systemFont(ofSize: 11)
+        keyFeedbackLabel.font = PanelStyle.detail
         keyFeedbackLabel.textColor = .secondaryLabelColor
         keyFeedbackLabel.maximumNumberOfLines = 3
-        keyFeedbackLabel.preferredMaxLayoutWidth = Self.panelWidth - Self.inset * 2
+        keyFeedbackLabel.preferredMaxLayoutWidth = contentWidth
         keyFeedbackLabel.translatesAutoresizingMaskIntoConstraints = false
         keyFeedbackLabel.heightAnchor.constraint(greaterThanOrEqualToConstant: 34).isActive = true
 
@@ -192,15 +157,14 @@ final class SettingsPanel: NSPanel {
         ])
         stack.orientation = .vertical
         stack.alignment = .leading
-        stack.spacing = 10
+        stack.spacing = PanelStyle.spacing
         stack.edgeInsets = NSEdgeInsets(
-            top: Self.inset,
-            left: Self.inset,
-            bottom: Self.inset,
-            right: Self.inset
+            top: PanelStyle.inset,
+            left: PanelStyle.inset,
+            bottom: PanelStyle.inset,
+            right: PanelStyle.inset
         )
 
-        let contentWidth = Self.contentWidth
         for view in [
             header, startupDivider, featuresIntro, divider, apiIntro, keyStatusLabel,
             keyFeedbackLabel,
@@ -213,7 +177,7 @@ final class SettingsPanel: NSPanel {
         }
 
         contentStack = stack
-        contentView = makeBackdrop(around: stack)
+        embed(stack)
         resizeToFitContent()
     }
 
@@ -224,7 +188,7 @@ final class SettingsPanel: NSPanel {
         guard let contentStack else { return }
         contentStack.layoutSubtreeIfNeeded()
         let top = frame.maxY
-        setContentSize(NSSize(width: Self.panelWidth, height: contentStack.fittingSize.height))
+        setContentSize(NSSize(width: panelWidth, height: contentStack.fittingSize.height))
         // While it is on screen, grow downward from a fixed top edge: a refusal
         // that wraps onto an extra line must not shove the whole panel up out
         // from under the pointer that just clicked the checkbox. Before it is
@@ -241,9 +205,9 @@ final class SettingsPanel: NSPanel {
 
     private func detailLabel(_ text: String) -> NSTextField {
         let label = NSTextField(wrappingLabelWithString: text)
-        label.font = .systemFont(ofSize: 11)
+        label.font = PanelStyle.detail
         label.textColor = .secondaryLabelColor
-        label.preferredMaxLayoutWidth = Self.panelWidth - Self.inset * 2
+        label.preferredMaxLayoutWidth = contentWidth
         return label
     }
 
@@ -272,36 +236,6 @@ final class SettingsPanel: NSPanel {
         row.alignment = .top
         row.spacing = 0
         return row
-    }
-
-    private func makeBackdrop(around content: NSView) -> NSView {
-        content.translatesAutoresizingMaskIntoConstraints = false
-
-        let backdrop: NSView
-        if #available(macOS 26.0, *) {
-            let glass = NSGlassEffectView()
-            glass.cornerRadius = Self.cornerRadius
-            glass.contentView = content
-            backdrop = glass
-        } else {
-            let blur = NSVisualEffectView()
-            blur.material = .hudWindow
-            blur.blendingMode = .behindWindow
-            blur.state = .active
-            blur.wantsLayer = true
-            blur.layer?.cornerRadius = Self.cornerRadius
-            blur.layer?.masksToBounds = true
-            blur.addSubview(content)
-            backdrop = blur
-        }
-
-        NSLayoutConstraint.activate([
-            content.topAnchor.constraint(equalTo: backdrop.topAnchor),
-            content.bottomAnchor.constraint(equalTo: backdrop.bottomAnchor),
-            content.leadingAnchor.constraint(equalTo: backdrop.leadingAnchor),
-            content.trailingAnchor.constraint(equalTo: backdrop.trailingAnchor),
-        ])
-        return backdrop
     }
 
     private func reload() {
@@ -352,20 +286,6 @@ final class SettingsPanel: NSPanel {
         resizeToFitContent()
         guard announcing, state.needsAttention else { return }
         announce(state.message)
-    }
-
-    /// A refused toggle snaps the checkbox back on its own, which sighted users
-    /// see and VoiceOver users would otherwise only hear as a state that did
-    /// not change. Say why, at the moment it happens.
-    private func announce(_ message: String) {
-        NSAccessibility.post(
-            element: NSApp as Any,
-            notification: .announcementRequested,
-            userInfo: [
-                .announcement: message,
-                .priority: NSAccessibilityPriorityLevel.high.rawValue,
-            ]
-        )
     }
 
     /// Registration happens now, and the row redraws from whatever macOS
@@ -420,10 +340,10 @@ final class SettingsPanel: NSPanel {
         orderOut(nil)
     }
 
-    func present() {
+    /// Re-read the world before showing it: login state comes from macOS, not
+    /// from what the panel last displayed.
+    override func present() {
         reload()
-        center()
-        orderFrontRegardless()
-        makeKey()
+        super.present()
     }
 }
