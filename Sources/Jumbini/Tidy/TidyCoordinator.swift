@@ -460,6 +460,10 @@ final class TidyCoordinator {
         let rules = state.rules.rules
         let recencyMinutes = state.preferences.recencyMinutes
         let date = dependencies.now()
+        // Read on the main actor and carried in: the work itself runs off it,
+        // and reaching back for a main-actor property from there is exactly
+        // what the halt flag's lock exists to avoid.
+        let shouldHalt = shouldHalt
         return try await runPass(clearsPreviewGate: false) {
             try await self.performWithAccess(to: root) { dependencies in
                 let plan = try dependencies.plan(root, rules, recencyMinutes, date)
@@ -468,7 +472,7 @@ final class TidyCoordinator {
                     Set(plan.movable.map(\.id)),
                     .idle,
                     date,
-                    self.shouldHalt
+                    shouldHalt
                 )
             }
         }
@@ -622,9 +626,10 @@ final class TidyCoordinator {
             throw TidyCoordinatorError.previewRequired
         }
         let date = dependencies.now()
+        let shouldHalt = shouldHalt
         return try await runPass(clearsPreviewGate: true) {
             try await self.performWithAccess(to: root) { dependencies in
-                try dependencies.execute(preview, selection, .manual, date, self.shouldHalt)
+                try dependencies.execute(preview, selection, .manual, date, shouldHalt)
             }
         }
     }
@@ -637,6 +642,7 @@ final class TidyCoordinator {
         let rules = state.rules.rules
         let recencyMinutes = state.preferences.recencyMinutes
         let date = dependencies.now()
+        let shouldHalt = shouldHalt
         return try await runPass(clearsPreviewGate: false) {
             try await self.performWithAccess(to: root) { dependencies in
                 let plan = try dependencies.plan(root, rules, recencyMinutes, date)
@@ -645,7 +651,7 @@ final class TidyCoordinator {
                     Set(plan.movable.map(\.id)),
                     .manual,
                     date,
-                    self.shouldHalt
+                    shouldHalt
                 )
             }
         }
@@ -696,8 +702,9 @@ final class TidyCoordinator {
             if result.failures.isEmpty && !result.wasHalted {
                 preferences.completedManualPass = true
             }
+            let updated = preferences
             try await perform { dependencies in
-                try dependencies.savePreferences(preferences)
+                try dependencies.savePreferences(updated)
             }
             updateState { $0.preferences = preferences }
             syncIdleTracker()
@@ -770,8 +777,8 @@ final class TidyCoordinator {
         }
     }
 
-    private func perform<Value>(
-        _ operation: @escaping (Dependencies) throws -> Value
+    private func perform<Value: Sendable>(
+        _ operation: @escaping @Sendable (Dependencies) throws -> Value
     ) async throws -> Value {
         let dependencies = dependencies
         return try await withCheckedThrowingContinuation { continuation in
@@ -783,9 +790,9 @@ final class TidyCoordinator {
         }
     }
 
-    private func performWithAccess<Value>(
+    private func performWithAccess<Value: Sendable>(
         to root: URL,
-        _ operation: @escaping (Dependencies) throws -> Value
+        _ operation: @escaping @Sendable (Dependencies) throws -> Value
     ) async throws -> Value {
         try await perform { dependencies in
             guard dependencies.startAccessing(root) else {

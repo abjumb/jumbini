@@ -417,6 +417,9 @@ final class PanelSidebarButton: NSButton {
 
 // MARK: - Content building blocks
 
+// Every one of these builds AppKit views, which are main-thread only. Stated
+// on the enum rather than on each function so a new builder inherits it.
+@MainActor
 enum PanelBuilder {
     /// A rounded, bordered container holding stacked rows — the boxes the
     /// design groups its checkboxes into.
