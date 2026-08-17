@@ -49,3 +49,28 @@ extension TidyPlan {
         return TidyPlan(root: root, movable: moves, skipped: [])
     }
 }
+
+extension TidyCompletedMove {
+    static func fixture(index: Int) -> TidyCompletedMove {
+        let root = URL(fileURLWithPath: "/tmp/JumbiniTidyFixture", isDirectory: true)
+        let name = "file \(index + 1).png"
+        return TidyCompletedMove(
+            source: root.appendingPathComponent(name),
+            destination: root.appendingPathComponent("Images/\(name)"),
+            fileID: TidyFileID(device: 1, inode: UInt64(index + 1)),
+            ruleID: UUID(uuidString: "A7ACEE7D-5CB0-4C6E-A17E-B43E3EFD12A4")!,
+            ruleName: "Images"
+        )
+    }
+
+    static func fixture(source: String, destination: String) -> TidyCompletedMove {
+        let fixture = fixture(index: 0)
+        return TidyCompletedMove(
+            source: URL(fileURLWithPath: source),
+            destination: URL(fileURLWithPath: destination),
+            fileID: fixture.fileID,
+            ruleID: fixture.ruleID,
+            ruleName: fixture.ruleName
+        )
+    }
+}
