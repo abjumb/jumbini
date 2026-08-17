@@ -148,5 +148,6 @@ struct TidyPlan: Equatable {
 enum TidyPlanError: Error, Equatable {
     case unsafeRoot(URL)
     case unsafeDestination(String)
+    case duplicateRuleID(UUID)
     case enumerationFailed(String)
 }

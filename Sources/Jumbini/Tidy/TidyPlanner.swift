@@ -190,6 +190,9 @@ struct TidyPlanner {
     ) throws -> [UUID: URL] {
         var destinations: [UUID: URL] = [:]
         for rule in rules {
+            guard destinations[rule.id] == nil else {
+                throw TidyPlanError.duplicateRuleID(rule.id)
+            }
             try Self.validateDestination(rule.destination)
             let resolved = root.appendingPathComponent(
                 rule.destination, isDirectory: true
@@ -241,12 +244,17 @@ struct TidyPlanner {
                 candidateName = "\(name) \(suffix).\(pathExtension)"
             }
             let candidate = directory.appendingPathComponent(candidateName).standardizedFileURL
-            if !fileManager.fileExists(atPath: candidate.path),
+            if !isOccupied(candidate),
                !reserved.contains(candidate.path) {
                 reserved.insert(candidate.path)
                 return candidate
             }
             suffix += 1
         }
+    }
+
+    private func isOccupied(_ url: URL) -> Bool {
+        var information = stat()
+        return Darwin.lstat(url.path, &information) == 0
     }
 }

@@ -15,6 +15,30 @@ import Testing
         }
     }
 
+    private final class RecordingOpenFiles: TidyOpenFileDetecting {
+        private(set) var wasCalled = false
+
+        func openPaths(under root: URL) -> Set<String> {
+            wasCalled = true
+            return []
+        }
+    }
+
+    private final class RecordingFileManager: FileManager {
+        private(set) var didEnumerate = false
+
+        override func contentsOfDirectory(
+            at url: URL,
+            includingPropertiesForKeys keys: [URLResourceKey]?,
+            options mask: FileManager.DirectoryEnumerationOptions = []
+        ) throws -> [URL] {
+            didEnumerate = true
+            return try super.contentsOfDirectory(
+                at: url, includingPropertiesForKeys: keys, options: mask
+            )
+        }
+    }
+
     private let imageRule = TidyRule(
         name: "Images", match: .all,
         conditions: [.extensions(["png"])], destination: "Images"
@@ -245,6 +269,52 @@ import Testing
             destination: "Images"
         )
         #expect(plan.movable.first?.destination.lastPathComponent == "photo 3.png")
+    }
+
+    @Test func danglingSymlinkOccupiesCollisionName() throws {
+        let root = try TemporaryDirectory.make()
+        let outside = try TemporaryDirectory.make()
+        let images = root.url.appendingPathComponent("Images", isDirectory: true)
+        try FileManager.default.createDirectory(at: images, withIntermediateDirectories: false)
+        try writeFixture("source", to: root.url.appendingPathComponent("photo.png"))
+        try FileManager.default.createSymbolicLink(
+            at: images.appendingPathComponent("photo.png"),
+            withDestinationURL: outside.url.appendingPathComponent("missing.png")
+        )
+
+        let plan = try planner().plan(
+            root: root.url, rules: [imageRule], recencyMinutes: 1,
+            now: Date(timeIntervalSinceNow: 3_600)
+        )
+
+        #expect(plan.movable.first?.destination.lastPathComponent == "photo 2.png")
+    }
+
+    @Test func duplicateRuleIDsFailBeforeEnumerationOrOpenFileProbe() throws {
+        let root = try TemporaryDirectory.make()
+        try writeFixture("source", to: root.url.appendingPathComponent("photo.png"))
+        let duplicateID = UUID()
+        let first = TidyRule(
+            id: duplicateID, name: "First", match: .all,
+            conditions: [.extensions(["png"])], destination: "First"
+        )
+        let second = TidyRule(
+            id: duplicateID, name: "Second", match: .all,
+            conditions: [.extensions(["png"])], destination: "Second"
+        )
+        let openFiles = RecordingOpenFiles()
+        let fileManager = RecordingFileManager()
+        let before = try directoryNames(at: root.url)
+
+        #expect(throws: TidyPlanError.duplicateRuleID(duplicateID)) {
+            try TidyPlanner(openFiles: openFiles, fileManager: fileManager).plan(
+                root: root.url, rules: [first, second], recencyMinutes: 1,
+                now: Date(timeIntervalSinceNow: 3_600)
+            )
+        }
+        #expect(!fileManager.didEnumerate)
+        #expect(!openFiles.wasCalled)
+        #expect(try directoryNames(at: root.url) == before)
     }
 
     private func planner(openPaths: [String] = []) -> TidyPlanner {
