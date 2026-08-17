@@ -29,13 +29,13 @@ enum AppVersion {
         case let (version?, build?):
             // A version and a build number that read the same look like a typo
             // in a menu, so collapse them rather than print "4.5 (4.5)".
-            return version == build ? "Jumbini \(version)" : "Jumbini \(version) (\(build))"
+            version == build ? "Jumbini \(version)" : "Jumbini \(version) (\(build))"
         case let (version?, nil):
-            return "Jumbini \(version)"
+            "Jumbini \(version)"
         case let (nil, build?):
-            return "Jumbini (build \(build))"
+            "Jumbini (build \(build))"
         case (nil, nil):
-            return "Jumbini (development build)"
+            "Jumbini (development build)"
         }
     }
 

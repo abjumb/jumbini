@@ -288,6 +288,14 @@ final class CoatWorkshopPanel: JumbiniPanel {
 
     // MARK: - Scale editing
 
+    /// How a scale is written into the field, and read back out of it.
+    ///
+    /// Deliberately one style for both directions. A locale that writes 2,4
+    /// also reads 2,4, and formatting with one convention while parsing with
+    /// another would silently reject every edit a German user typed.
+    private static let scaleFormat = FloatingPointFormatStyle<Double>.number
+        .precision(.fractionLength(1))
+
     private func rebuildScaleStack(report: CoatValidationReport) {
         scaleStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
         scaleStack.isHidden = report.presentStates.isEmpty
@@ -316,7 +324,8 @@ final class CoatWorkshopPanel: JumbiniPanel {
             let field = NSTextField()
             field.font = .systemFont(ofSize: 11)
             field.controlSize = .small
-            field.stringValue = String(format: "%.1f", scaleEdits[state] ?? SpriteLibrary.baseScale)
+            field.stringValue = Double(scaleEdits[state] ?? SpriteLibrary.baseScale)
+                .formatted(Self.scaleFormat)
             field.target = self
             field.action = #selector(scaleEdited(_:))
             field.translatesAutoresizingMaskIntoConstraints = false
@@ -328,7 +337,9 @@ final class CoatWorkshopPanel: JumbiniPanel {
             resetBtn.font = .systemFont(ofSize: 10)
             resetBtn.identifier = NSUserInterfaceItemIdentifier(rawValue: "reset:" + state)
 
-            let defaultLabel = NSTextField(labelWithString: "(default: \(String(format: "%.1f", SpriteLibrary.baseScale)))")
+            let defaultLabel = NSTextField(
+                labelWithString: "(default: \(Double(SpriteLibrary.baseScale).formatted(Self.scaleFormat)))"
+            )
             defaultLabel.font = .systemFont(ofSize: 10)
             defaultLabel.textColor = .secondaryLabelColor
 
@@ -344,7 +355,8 @@ final class CoatWorkshopPanel: JumbiniPanel {
         guard let row = sender.superview as? NSStackView,
               let label = row.arrangedSubviews.first as? NSTextField else { return }
         let state = String(label.stringValue.dropLast())
-        guard let value = Double(sender.stringValue), value > 0 else { return }
+        guard let value = try? Double(sender.stringValue, format: Self.scaleFormat), value > 0
+        else { return }
         scaleEdits[state] = CGFloat(value)
 
         // Write updated scales to the staging coat.json.

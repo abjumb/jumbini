@@ -318,7 +318,7 @@ final class PixellabClient: PixellabClientProtocol {
             case "failed":
                 throw PixellabError.jobFailed(jobID)
             default:
-                try await Task.sleep(nanoseconds: UInt64(pollInterval * 1_000_000_000))
+                try await Task.sleep(for: .seconds(pollInterval))
             }
         }
     }

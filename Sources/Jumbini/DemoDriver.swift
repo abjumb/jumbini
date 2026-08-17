@@ -247,7 +247,7 @@ final class DemoDriver {
 
     func start() {
         guard timer == nil else { return }
-        startedAt = startInstant ?? Date()
+        startedAt = startInstant ?? .now
         let timer = Timer(timeInterval: Self.tick, repeats: true) { [weak self] _ in
             self?.fire()
         }
@@ -263,7 +263,7 @@ final class DemoDriver {
 
     private func fire() {
         guard let startedAt else { return }
-        let elapsed = Date().timeIntervalSince(startedAt)
+        let elapsed = Date.now.timeIntervalSince(startedAt)
         // The pre-roll, when startInstant is in the future. DemoTimeline would
         // hold everything anyway (no beat is due at a negative time), but
         // saying so here keeps the finish check below from being read as

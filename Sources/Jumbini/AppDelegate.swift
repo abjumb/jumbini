@@ -54,7 +54,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(jumbiniAteTreat),
-            name: Notification.Name("JumbiniAteTreat"),
+            name: .jumbiniAteTreat,
             object: nil
         )
         // Demo capture block: no-op unless JUMBINI_DEMO names a script.

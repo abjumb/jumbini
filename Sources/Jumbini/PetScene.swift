@@ -1,6 +1,16 @@
 import CoreGraphics
 import SpriteKit
 
+extension Notification.Name {
+    /// Jumba just ate a treat. The menu bar's hunger meter counts these.
+    ///
+    /// Spelled once here rather than as a string literal at each end: the
+    /// poster and the observer used to hold their own copies of
+    /// `"JumbiniAteTreat"`, where a typo in either would have gone unnoticed
+    /// as "the meter stopped moving".
+    static let jumbiniAteTreat = Notification.Name("JumbiniAteTreat")
+}
+
 /// The transparent scene the dog lives in. Owns per-frame mouse polling and
 /// the click-through toggle, routes interactions to the brain, and applies
 /// the brain's effects to the sprites.
@@ -262,23 +272,23 @@ final class PetScene: SKScene {
 
     private static func dogAnimation(forCoatState state: String) -> DogAnimation {
         switch state {
-        case "idle": return .idle
-        case "run1", "run2": return .walk
-        case "sit": return .sit
-        case "sleep": return .sleep
-        case "bark": return .bark
-        case "sniff": return .sniff
-        case "hunch": return .hunch
-        case "stalk": return .stalk
-        case "pounce": return .pounce
-        case "paw": return .shakePaw
-        case "highfive": return .highFive
-        case "playdead": return .playDead
-        case "brace": return .tug
-        case "fall": return .fall
-        case "land": return .land
-        case "peek": return .peek
-        default: return .idle
+        case "idle": .idle
+        case "run1", "run2": .walk
+        case "sit": .sit
+        case "sleep": .sleep
+        case "bark": .bark
+        case "sniff": .sniff
+        case "hunch": .hunch
+        case "stalk": .stalk
+        case "pounce": .pounce
+        case "paw": .shakePaw
+        case "highfive": .highFive
+        case "playdead": .playDead
+        case "brace": .tug
+        case "fall": .fall
+        case "land": .land
+        case "peek": .peek
+        default: .idle
         }
     }
 
@@ -1319,8 +1329,7 @@ final class PetScene: SKScene {
             .group([.scale(to: 0.2, duration: 0.15), .fadeOut(withDuration: 0.15)]),
             .removeFromParent(),
         ]))
-        // The menu bar's hunger meter counts these.
-        NotificationCenter.default.post(name: Notification.Name("JumbiniAteTreat"), object: nil)
+        NotificationCenter.default.post(name: .jumbiniAteTreat, object: nil)
         // A treat soon after a trick attempt is training. recordTreat only
         // ever returns a trick that was locked when attempted, so unlocked
         // here means this very rep completed the training — celebrate.

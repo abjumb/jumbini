@@ -20,21 +20,24 @@ enum Facing: CaseIterable {
     /// Octant of a movement vector (scene coords, +y is up/north).
     static func from(dx: CGFloat, dy: CGFloat) -> Facing {
         guard dx != 0 || dy != 0 else { return .south }
-        let idx = Int((atan2(dy, dx) / (.pi / 4)).rounded())
-        switch idx {
-        case 0: return .east
-        case 1: return .northEast
-        case 2: return .north
-        case 3: return .northWest
-        case -1: return .southEast
-        case -2: return .south
-        case -3: return .southWest
-        default: return .west // 4 / -4
+        return switch Int((atan2(dy, dx) / (.pi / 4)).rounded()) {
+        case 0: .east
+        case 1: .northEast
+        case 2: .north
+        case 3: .northWest
+        case -1: .southEast
+        case -2: .south
+        case -3: .southWest
+        default: .west // 4 / -4
         }
     }
 
+    /// cos 45° = sin 45° = √2⁄2, so a diagonal unit vector covers the same
+    /// ground per step as a straight one.
+    private static let diagonal = (2 as CGFloat).squareRoot() / 2
+
     var unitVector: CGPoint {
-        let d: CGFloat = 0.7071
+        let d = Self.diagonal
         switch self {
         case .south: return CGPoint(x: 0, y: -1)
         case .southEast: return CGPoint(x: d, y: -d)
@@ -110,6 +113,9 @@ final class SpriteLibrary {
     /// it so Jumba doesn't shrink when he sits (idle content 46px vs sit 38px).
     /// Not private: `heroSpec` and its test need to read it too.
     static let sitScale: CGFloat = 2.9
+    /// Props are drawn smaller than the dog and render at a flat ×3, whatever
+    /// their canvas: the treat box, the beds, the flourishes, all of it.
+    private static let propScale: CGFloat = 3
 
     private var textureCache: [String: SKTexture] = [:]
 
@@ -256,7 +262,10 @@ final class SpriteLibrary {
         let animation = Animation(
             textures: textures,
             fps: fps,
-            nodeSize: CGSize(width: CGFloat(frameWidth) * 3, height: CGFloat(cg.height) * 3),
+            nodeSize: CGSize(
+                width: CGFloat(frameWidth) * Self.propScale,
+                height: CGFloat(cg.height) * Self.propScale
+            ),
             flipX: false
         )
         propCache[name] = animation
@@ -277,7 +286,10 @@ final class SpriteLibrary {
         let animation = Animation(
             textures: [texture],
             fps: 1,
-            nodeSize: CGSize(width: CGFloat(cg.width) * 3, height: CGFloat(cg.height) * 3),
+            nodeSize: CGSize(
+                width: CGFloat(cg.width) * Self.propScale,
+                height: CGFloat(cg.height) * Self.propScale
+            ),
             flipX: false
         )
         propCache[name] = animation
@@ -316,7 +328,10 @@ final class SpriteLibrary {
             let texture = SKTexture(cgImage: cg)
             texture.filteringMode = .nearest
             if textures.isEmpty {
-                frameSize = CGSize(width: CGFloat(cg.width) * 3, height: CGFloat(cg.height) * 3)
+                frameSize = CGSize(
+                    width: CGFloat(cg.width) * Self.propScale,
+                    height: CGFloat(cg.height) * Self.propScale
+                )
             }
             textures.append(texture)
         }
