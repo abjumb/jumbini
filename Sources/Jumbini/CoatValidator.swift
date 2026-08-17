@@ -206,13 +206,16 @@ enum CoatValidator {
         let pipe = Pipe()
         process.standardOutput = pipe
         try process.run()
+
+        // Drain before waiting. `unzip -l` on a large archive will fill the
+        // pipe buffer and block forever if we wait for exit first.
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
 
         guard process.terminationStatus == 0 else {
             throw ValidationError.zipListingFailed
         }
 
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
         guard let output = String(data: data, encoding: .utf8) else {
             throw ValidationError.zipListingFailed
         }
@@ -299,8 +302,8 @@ enum CoatValidator {
         process.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
         process.arguments = ["-o", archiveURL.path, "-d", destination.path]
 
-        let pipe = Pipe()
-        process.standardOutput = pipe
+        // The listing chatter is unused; a Pipe nobody drains would deadlock.
+        process.standardOutput = FileHandle.nullDevice
         try process.run()
         process.waitUntilExit()
 
@@ -399,8 +402,8 @@ enum CoatValidator {
         process.arguments = ["-r", destination.path, "."]
         process.currentDirectoryURL = folder
 
-        let pipe = Pipe()
-        process.standardOutput = pipe
+        // Per-file "adding: …" output is unused; a Pipe nobody drains would deadlock.
+        process.standardOutput = FileHandle.nullDevice
         try process.run()
         process.waitUntilExit()
 
