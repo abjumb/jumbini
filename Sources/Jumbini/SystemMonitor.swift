@@ -19,7 +19,7 @@ import IOKit.ps
 /// sample that drops back under it.
 struct IdleTracker {
     /// Quiet seconds that count as "the human has wandered off".
-    var threshold: TimeInterval = 120
+    var threshold: TimeInterval = SystemMonitor.idleSignalThreshold
 
     private(set) var isIdle = false
 
@@ -164,6 +164,13 @@ struct RetryBudget {
 final class SystemMonitor {
     /// Called on the main actor, once per transition.
     var onSignal: ((SystemSignal) -> Void)?
+
+    /// Quiet seconds behind an `idleBegan`. Published because anything counting
+    /// its own idle interval on top of that signal — Tidy does — has to subtract
+    /// the time that had already passed before it arrived. `nonisolated`
+    /// because `IdleTracker`, which is a plain struct off the main actor,
+    /// defaults its own threshold to it.
+    nonisolated static let idleSignalThreshold: TimeInterval = 120
 
     /// One loop drives the three polled sources. 5s is fine-grained enough
     /// for a 120s idle threshold and a 30s build, and cheap enough to ignore.

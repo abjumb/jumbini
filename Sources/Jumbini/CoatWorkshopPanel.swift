@@ -9,7 +9,7 @@ import SpriteKit
 /// none of the rendering — it sends pose/direction commands to the scene so
 /// the preview happens on the real dog in the overlay.
 @MainActor
-final class CoatWorkshopPanel: NSPanel {
+final class CoatWorkshopPanel: JumbiniPanel {
     // MARK: - Closures (wired by the scene)
 
     /// Ask the scene to temporarily wear a staged coat.
@@ -39,40 +39,37 @@ final class CoatWorkshopPanel: NSPanel {
     private let statusLabel = NSTextField(labelWithString: "")
     private let findingsScroll = NSScrollView()
     private let findingsTextView = NSTextView()
+    /// The Validation header and its card, kept so the whole section can come
+    /// and go together. Hiding only the scroll view inside left a labelled but
+    /// empty box on screen — a rounded sliver under the word VALIDATION, which
+    /// reads as something that failed to load rather than something not
+    /// applicable yet.
+    private let validationHeader = PanelTheme.sectionHeader("Validation")
+    private var validationCard: NSView?
+    /// The content stack, so the window can be re-measured when a section is
+    /// shown or hidden. Nothing else resizes it, so a shown section would
+    /// otherwise be clipped by a window still sized for the layout without it.
+    private weak var contentStack: NSStackView?
     private let previewButton = NSButton(title: "Preview", target: nil, action: nil)
     private let statePopup = NSPopUpButton()
     private var directionSegments: [Facing: NSButton] = [:]
     private let scaleStack = NSStackView()
     private let installButton = NSButton(title: "Install", target: nil, action: nil)
     private let exportButton = NSButton(title: "Export…", target: nil, action: nil)
-    private let closeButton = NSButton(title: "", target: nil, action: nil)
     private var isInstalledCoat: Bool = false
 
     private static let panelWidth: CGFloat = 400
     private static let initialHeight: CGFloat = 520
     private static let contentInset: CGFloat = 16
-    private static let cornerRadius: CGFloat = 22
 
     init(fileManager: FileManager = .default) {
         self.fileManager = fileManager
         super.init(
-            contentRect: NSRect(x: 0, y: 0, width: Self.panelWidth, height: Self.initialHeight),
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false
+            autosaveName: "coatWorkshop",
+            size: NSSize(width: Self.panelWidth, height: Self.initialHeight)
         )
-        isOpaque = false
-        backgroundColor = .clear
-        hasShadow = true
-        isFloatingPanel = true
-        isReleasedWhenClosed = false
-        animationBehavior = .none
-        level = .statusBar
-        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         setUpContent()
     }
-
-    override var canBecomeKey: Bool { true }
 
     // MARK: - Content layout
 
@@ -80,24 +77,9 @@ final class CoatWorkshopPanel: NSPanel {
         let title = NSTextField(labelWithString: "Coat Workshop")
         title.font = .systemFont(ofSize: 15, weight: .semibold)
 
-        closeButton.image = NSImage(
-            systemSymbolName: "xmark",
-            accessibilityDescription: "Close"
-        )?.withSymbolConfiguration(.init(pointSize: 11, weight: .semibold))
-        closeButton.isBordered = false
-        closeButton.contentTintColor = .secondaryLabelColor
-        closeButton.target = self
-        closeButton.action = #selector(dismissPanel)
-        closeButton.keyEquivalent = "\u{1b}"
-        closeButton.setContentHuggingPriority(.required, for: .horizontal)
-        closeButton.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            closeButton.widthAnchor.constraint(equalToConstant: 22),
-            closeButton.heightAnchor.constraint(equalToConstant: 22),
-        ])
         title.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
-        let header = NSStackView(views: [title, closeButton])
+        let header = NSStackView(views: [title])
         header.orientation = .horizontal
         header.distribution = .fill
         header.alignment = .centerY
@@ -187,54 +169,57 @@ final class CoatWorkshopPanel: NSPanel {
         installButton.bezelStyle = .rounded
         installButton.keyEquivalent = "\r"
 
+        // Grouped into the same labelled cards Settings uses, so the three
+        // panels read as one app rather than three separately-built windows.
+        let cardWidth = Self.panelWidth - Self.contentInset * 2
+        let findingsCard = PanelBuilder.card([findingsScroll], width: cardWidth)
+        validationCard = findingsCard
         let stack = NSStackView(views: [
-            header, importRow, statusLabel, findingsScroll,
-            previewRow, directionRow, scaleStack, installButton,
+            header,
+            PanelTheme.sectionHeader("Coat file"),
+            PanelBuilder.card([importRow, statusLabel], width: cardWidth),
+            validationHeader,
+            findingsCard,
+            PanelTheme.sectionHeader("Preview"),
+            PanelBuilder.card([previewRow, directionRow, scaleStack], width: cardWidth),
+            installButton,
         ])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 10
+        // Top inset clears the title bar rather than matching the sides: these
+        // panels have real traffic lights now, and the header would otherwise
+        // be laid out underneath them.
         stack.edgeInsets = NSEdgeInsets(
-            top: Self.contentInset, left: Self.contentInset,
+            top: PanelTheme.titleBarInset, left: Self.contentInset,
             bottom: Self.contentInset, right: Self.contentInset
         )
+
+        contentStack = stack
+        showValidation(false)
 
         stack.layoutSubtreeIfNeeded()
         let fittedHeight = stack.fittingSize.height
 
-        contentView = makeBackdrop(around: stack)
+        installChrome(around: stack)
         setContentSize(NSSize(width: Self.panelWidth, height: fittedHeight))
     }
 
-    private func makeBackdrop(around content: NSView) -> NSView {
-        content.translatesAutoresizingMaskIntoConstraints = false
-
-        let backdrop: NSView
-        if #available(macOS 26.0, *) {
-            let glass = NSGlassEffectView()
-            glass.cornerRadius = Self.cornerRadius
-            glass.contentView = content
-            backdrop = glass
-        } else {
-            let blur = NSVisualEffectView()
-            blur.material = .hudWindow
-            blur.blendingMode = .behindWindow
-            blur.state = .active
-            blur.wantsLayer = true
-            blur.layer?.cornerRadius = Self.cornerRadius
-            blur.layer?.masksToBounds = true
-            blur.addSubview(content)
-            backdrop = blur
-        }
-
-        NSLayoutConstraint.activate([
-            content.topAnchor.constraint(equalTo: backdrop.topAnchor),
-            content.bottomAnchor.constraint(equalTo: backdrop.bottomAnchor),
-            content.leadingAnchor.constraint(equalTo: backdrop.leadingAnchor),
-            content.trailingAnchor.constraint(equalTo: backdrop.trailingAnchor),
-        ])
-        return backdrop
+    /// Show or hide the Validation section as a whole, and resize the window to
+    /// whatever the layout now needs.
+    private func showValidation(_ visible: Bool) {
+        findingsScroll.isHidden = !visible
+        validationHeader.isHidden = !visible
+        validationCard?.isHidden = !visible
+        // Only once the stack is in the window. During setUp it is still a
+        // loose view and setUpContent does the sizing itself a few lines later.
+        guard let stack = contentStack, stack.superview != nil else { return }
+        stack.layoutSubtreeIfNeeded()
+        let fitted = stack.fittingSize.height
+        guard fitted > 1 else { return }
+        setContentSize(NSSize(width: Self.panelWidth, height: fitted))
     }
+
 
     // MARK: - Import
 
@@ -342,7 +327,7 @@ final class CoatWorkshopPanel: NSPanel {
         }
 
         findingsTextView.string = text
-        findingsScroll.isHidden = false
+        showValidation(true)
 
         statusLabel.stringValue = errors.isEmpty
             ? "Validation passed with \(warnings.count) warning(s), \(infos.count) info(s)."
@@ -499,7 +484,7 @@ final class CoatWorkshopPanel: NSPanel {
         previewButton.isEnabled = false
         statePopup.isEnabled = false
         for btn in directionSegments.values { btn.isEnabled = false }
-        findingsScroll.isHidden = true
+        showValidation(false)
         findingsTextView.string = ""
         installButton.isEnabled = false
         exportButton.isEnabled = false
@@ -602,7 +587,7 @@ private func updateDirectionButtons() {
         } else {
             statusLabel.stringValue = "\(coat.title) is a built-in coat — export not available."
             exportButton.isEnabled = false
-            findingsScroll.isHidden = true
+            showValidation(false)
             return
         }
 
@@ -612,14 +597,14 @@ private func updateDirectionButtons() {
 
     // MARK: - Dismiss
 
-    @objc private func dismissPanel() {
+    /// The live preview drives the real dog in the overlay, so it must not
+    /// outlive the window that started it — however the window went away.
+    override func panelWillClose() {
         if isPreviewing { stopPreview() }
-        orderOut(nil)
     }
 
+    /// Centred the first time, then wherever the user last dragged it.
     func present() {
-        center()
-        orderFrontRegardless()
-        makeKey()
+        presentPanel()
     }
 }
