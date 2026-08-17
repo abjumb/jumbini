@@ -4,6 +4,12 @@ import SpriteKit
 /// The transparent scene the dog lives in. Owns per-frame mouse polling and
 /// the click-through toggle, routes interactions to the brain, and applies
 /// the brain's effects to the sprites.
+///
+/// Split across four files by subject: the bed catalog is in BedCatalog.swift,
+/// the wardrobe in Wardrobe.swift, tug-of-war in TugController.swift. Swift's
+/// `private` is file-scoped, so the handful of stored properties those
+/// extensions reach for are internal rather than private — the marker is the
+/// comment beside each, not the keyword.
 final class PetScene: SKScene {
     weak var overlayWindow: NSWindow?
 
@@ -41,9 +47,12 @@ final class PetScene: SKScene {
     private var brain: DogBrain!
     private var lastTime: TimeInterval = 0
 
-    // Furniture.
-    private var bed: SKSpriteNode!
+    // Furniture. `bed` is internal for BedCatalog.swift — see the note on the
+    // class above.
+    var bed: SKSpriteNode!
     private var treatBox: SKSpriteNode!
+    /// Which bed he has, by index into `BedCatalog.variants`; nil = built-in.
+    var currentBedVariant: Int?
 
     // Treats.
     private var treatInHand: SKSpriteNode?
@@ -135,8 +144,8 @@ final class PetScene: SKScene {
         bed.position = CGPoint(x: home.maxX - 240, y: home.minY + 150)
         bed.zPosition = 2
         addChild(bed)
-        if let stored = UserDefaults.standard.object(forKey: Self.bedVariantKey) as? Int,
-           Self.bedVariants.indices.contains(stored) {
+        if let stored = UserDefaults.standard.object(forKey: BedCatalog.defaultsKey) as? Int,
+           BedCatalog.variants.indices.contains(stored) {
             applyBedVariant(stored)
         }
 
@@ -187,71 +196,6 @@ final class PetScene: SKScene {
     /// Where the dog settles when lying in the bed: centered on the cushion.
     private func bedLieSpot() -> CGPoint {
         CGPoint(x: bed.position.x, y: bed.position.y + 6)
-    }
-
-    // MARK: - Bed variants
-
-    /// The imported bed catalog (Resources/sprites/bedvar_N.png), menu order.
-    private static let bedVariants: [(name: String, file: String)] = [
-        ("Classic Bolster", "bedvar_1"),
-        ("Round Cushion", "bedvar_2"),
-        ("Cozy Tub", "bedvar_3"),
-        ("Navy Lounger", "bedvar_4"),
-        ("Fuzzy Donut", "bedvar_5"),
-        ("Speckled Cushion", "bedvar_6"),
-        ("Sherpa Tub", "bedvar_7"),
-        ("Flat Mat", "bedvar_8"),
-        ("Shaggy Donut", "bedvar_9"),
-        ("Car Seat", "bedvar_10"),
-        ("Corduroy Tub", "bedvar_11"),
-        ("Wicker Basket", "bedvar_12"),
-    ]
-    private static let bedVariantKey = "bedVariant"
-    /// nil = the built-in fuzzy bed.
-    private var currentBedVariant: Int?
-
-    private func applyBedVariant(_ index: Int?) {
-        currentBedVariant = index
-        if let index, let anim = SpriteLibrary.shared.singleProp(named: Self.bedVariants[index].file) {
-            bed.texture = anim.textures[0]
-            bed.size = anim.nodeSize
-            UserDefaults.standard.set(index, forKey: Self.bedVariantKey)
-        } else {
-            if let anim = SpriteLibrary.shared.prop(named: "bed", frameWidth: 52, fps: 1) {
-                bed.texture = anim.textures[0]
-                bed.size = anim.nodeSize
-            }
-            UserDefaults.standard.removeObject(forKey: Self.bedVariantKey)
-        }
-    }
-
-    private func bedSelectionMenu() -> NSMenu {
-        let menu = NSMenu()
-        let classic = NSMenuItem(title: "Classic Fuzzy (built-in)", action: #selector(bedChosen(_:)), keyEquivalent: "")
-        classic.target = self
-        classic.representedObject = -1
-        classic.state = currentBedVariant == nil ? .on : .off
-        menu.addItem(classic)
-        menu.addItem(.separator())
-        for (index, variant) in Self.bedVariants.enumerated() {
-            let item = NSMenuItem(title: variant.name, action: #selector(bedChosen(_:)), keyEquivalent: "")
-            item.target = self
-            item.representedObject = index
-            item.state = currentBedVariant == index ? .on : .off
-            if let url = Bundle.assets.url(forResource: variant.file, withExtension: "png", subdirectory: "sprites"),
-               let image = NSImage(contentsOf: url) {
-                let height: CGFloat = 30
-                image.size = NSSize(width: image.size.width / image.size.height * height, height: height)
-                item.image = image
-            }
-            menu.addItem(item)
-        }
-        return menu
-    }
-
-    @objc private func bedChosen(_ sender: NSMenuItem) {
-        guard let index = sender.representedObject as? Int else { return }
-        applyBedVariant(index >= 0 ? index : nil)
     }
 
     // MARK: - Wardrobe  (region owned by the wardrobe work; ends at "Wardrobe end")
