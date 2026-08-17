@@ -245,7 +245,12 @@ final class SpriteLibrary {
 
     /// Generated props from Resources/sprites (horizontal-strip sheets).
     func prop(named name: String, frameWidth: Int, fps: Double) -> Animation? {
-        if let cached = propCache[name] { return cached }
+        // frameWidth and fps are part of the key, not just the name: the same
+        // strip sliced at a different frame width is a different animation,
+        // and keying on the name alone served whichever caller asked first to
+        // everyone after it.
+        let key = "strip:\(name):\(frameWidth):\(fps)"
+        if let cached = propCache[key] { return cached }
         guard
             let url = Bundle.assets.url(forResource: name, withExtension: "png", subdirectory: "sprites"),
             let image = NSImage(contentsOf: url),
@@ -266,14 +271,17 @@ final class SpriteLibrary {
             nodeSize: CGSize(width: CGFloat(frameWidth) * 3, height: CGFloat(cg.height) * 3),
             flipX: false
         )
-        propCache[name] = animation
+        propCache[key] = animation
         return animation
     }
 
     /// Single-frame prop: the whole PNG as one texture at prop scale (×3).
     /// Used by imported furniture whose frame width varies per file.
     func singleProp(named name: String) -> Animation? {
-        if let cached = propCache[name] { return cached }
+        // Namespaced like `prop` and `propSequence`, so the three cannot serve
+        // each other's art for the same base name.
+        let key = "single:\(name)"
+        if let cached = propCache[key] { return cached }
         guard
             let url = Bundle.assets.url(forResource: name, withExtension: "png", subdirectory: "sprites"),
             let image = NSImage(contentsOf: url),
@@ -287,7 +295,7 @@ final class SpriteLibrary {
             nodeSize: CGSize(width: CGFloat(cg.width) * 3, height: CGFloat(cg.height) * 3),
             flipX: false
         )
-        propCache[name] = animation
+        propCache[key] = animation
         return animation
     }
 
