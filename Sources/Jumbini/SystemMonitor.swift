@@ -211,20 +211,23 @@ final class SystemMonitor {
     private let buildQueue = DispatchQueue(label: "com.jumbini.systemmonitor.build")
     /// When the last probe was forked, and when a build tool was last seen.
     /// Together they decide whether the next tick probes at all.
-    private var lastBuildProbe: TimeInterval = 0
-    private var lastBuildSighting: TimeInterval = 0
+    /// Measured against `clock` — monotonic uptime, not wall clock — so a
+    /// backwards NTP correction can never wedge the probe.
+    private let clock = ContinuousClock()
+    private var lastBuildProbeAt: ContinuousClock.Instant?
+    private var lastBuildSightingAt: ContinuousClock.Instant?
 
     // MARK: Lifecycle
 
-    func start() {
+func start() {
         guard !lifecycle.isRunning else { return }
         _ = lifecycle.start()
 
         // Launch counts as a sighting: a fresh start probes at the fast rate
         // for the first few minutes, in case the reason the app just came up
         // is that the machine is busy.
-        lastBuildSighting = Date.timeIntervalSinceReferenceDate
-        lastBuildProbe = 0
+        lastBuildSightingAt = clock.now
+        lastBuildProbeAt = nil
 
         // Thermal is notification-driven; no polling needed.
         NotificationCenter.default.addObserver(
@@ -243,7 +246,7 @@ final class SystemMonitor {
         self.timer = timer
     }
 
-    func stop() {
+func stop() {
         guard lifecycle.isRunning else { return }
         lifecycle.stop()
         timer?.invalidate()
@@ -253,6 +256,28 @@ final class SystemMonitor {
             name: ProcessInfo.thermalStateDidChangeNotification,
             object: nil
         )
+    }
+
+    /// Stop polling without destroying the monitor or its trackers.
+    /// A display sleep or overlay occlusion calls this — the same wake should
+    /// come back to the same IdleTracker and BuildWatcher, not fresh ones.
+    func pausePolling() {
+        guard lifecycle.isRunning else { return }
+        timer?.invalidate()
+        timer = nil
+    }
+
+    func resumePolling() {
+        guard lifecycle.isRunning, timer == nil else { return }
+        // Wake counts as a sighting, so it returns to fast probing.
+        lastBuildSightingAt = clock.now
+        lastBuildProbeAt = nil
+        pollThermal()
+        let timer = Timer(timeInterval: Self.pollInterval, repeats: true) { [weak self] _ in
+            self?.poll()
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer
     }
 
     deinit {
@@ -282,8 +307,8 @@ final class SystemMonitor {
 
     /// The polled sources, each in its own guarded step so a failure in one
     /// cannot skip the others.
-    private func poll() {
-        let now = Date.timeIntervalSinceReferenceDate
+private func poll() {
+        let now = clock.now
         pollIdle()
         pollBattery()
         pollBuild(at: now)
@@ -383,18 +408,27 @@ final class SystemMonitor {
     /// costs nothing: `BuildWatcher.minimumDuration` already ignores anything
     /// that ran for less than 30 seconds, and the clock it measures starts at
     /// the first sighting either way.
-    private func pollBuild(at now: TimeInterval) {
+    private func pollBuild(at clockNow: ContinuousClock.Instant) {
         guard buildAvailable, !buildProbeInFlight else { return }
 
-        let quiet = now - lastBuildSighting >= Self.buildQuietPeriod
-        let interval = quiet ? Self.quietBuildProbeInterval : Self.buildProbeInterval
+        let sinceSighting = lastBuildSightingAt.map { clockNow - $0 } ?? .seconds(999)
+        let quiet = sinceSighting >= .seconds(Self.buildQuietPeriod)
+        let interval: Int = quiet ? Self.quietBuildProbeInterval : Self.buildProbeInterval
         // Half a second of slack: the timer fires on its own schedule and a
         // tick landing at 29.99s must not push the probe out to the next one.
-        guard now - lastBuildProbe >= interval - 0.5 else { return }
+        if let lastProbe = lastBuildProbeAt,
+           clockNow - lastProbe < .seconds(interval) - .milliseconds(500) {
+            return
+        }
 
-        lastBuildProbe = now
+        lastBuildProbeAt = clockNow
         buildProbeInFlight = true
         let token = lifecycle.token
+
+        // Pass uptime (monotonic) rather than wall-clock Date to the
+        // BuildWatcher, so a backwards NTP correction can never make
+        // now - presentSince come out negative.
+        let nowUptime = ProcessInfo.processInfo.systemUptime
         buildQueue.async { [weak self] in
             guard let self else { return }
             let result = Self.probeBuildTools()
@@ -406,8 +440,8 @@ final class SystemMonitor {
                     self.buildAvailable = false
                     return
                 }
-                if running { self.lastBuildSighting = now }
-                self.emit(self.build.update(toolsRunning: running, at: now), token: token)
+                if running { self.lastBuildSightingAt = self.clock.now }
+                self.emit(self.build.update(toolsRunning: running, at: nowUptime), token: token)
             }
         }
     }

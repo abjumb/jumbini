@@ -695,6 +695,9 @@ final class PetScene: SKScene {
         if ball != nil || frisbee != nil || squeaky != nil || rope != nil { return true }
         if treatInHand != nil || groundTreat != nil { return true }
         if zoomiesVelocity != nil || fallVelocity != nil || isSniffing { return true }
+        // Poop piles: steam wisps for 20 s and forever-orbiting flies once
+        // they dry out. A pile being dragged is visibly in motion too.
+        if !piles.isEmpty || draggedPile != nil { return true }
         // A press in progress: the overlay must keep up with the cursor.
         if mouseDownOnDog || isCarryingDog || pressedTreatBox
             || draggedFurniture != nil || draggedPile != nil || draggingRope { return true }
@@ -710,7 +713,7 @@ final class PetScene: SKScene {
     /// window has appeared.
     private var needsFastWindowPolling: Bool {
         switch brain.state {
-        case .headingToSurface, .hoppingUp, .hoppingAcross, .perched, .perchSleeping, .falling:
+        case .headingToSurface, .hoppingUp, .hoppingAcross, .perched, .perchSleeping, .falling, .carried:
             true
         default:
             false
@@ -966,6 +969,9 @@ final class PetScene: SKScene {
         ball.zPosition = 5
         addChild(ball)
         // The dropped ball rests a while, then tidies itself away.
+        // Request full frames for the wait+fade so the fade doesn't render at
+        // the idle rate after the ball ref is nilled below.
+        needsFullFrames(for: 8.6)
         ball.run(.sequence([.wait(forDuration: 8), .fadeOut(withDuration: 0.6), .removeFromParent()]))
         self.ball = nil
     }
@@ -1313,6 +1319,8 @@ final class PetScene: SKScene {
             .fadeOut(withDuration: 0.6),
             .removeFromParent(),
         ]))
+        // Keep full frames through the wait+fade, which outlives the ref.
+        needsFullFrames(for: Self.toyLingerDuration + 0.6)
         forgetToy(kind)
     }
 
@@ -1363,6 +1371,7 @@ final class PetScene: SKScene {
         zoomiesVelocity = nil
         guard let rabbit else { return }
         self.rabbit = nil
+        needsFullFrames(for: 0.15)
         rabbit.run(.sequence([.fadeOut(withDuration: 0.15), .removeFromParent()]))
     }
 
@@ -2139,6 +2148,8 @@ final class PetScene: SKScene {
 
     // MARK: - Click-through
 
+    private var lastIgnoresMouseEvents: Bool = true
+
     /// The window ignores mouse events except while the cursor is over
     /// something interactive (or a drag/throw is in progress), so clicks land
     /// in the user's real apps everywhere else.
@@ -2151,7 +2162,10 @@ final class PetScene: SKScene {
             || draggingRope
         let shouldAcceptClicks = armedForThrow || dragging
             || isOverSomethingInteractive(cursor, hoverFrame: hoverFrame)
-        window.ignoresMouseEvents = !shouldAcceptClicks
+        let ignores = !shouldAcceptClicks
+        guard ignores != lastIgnoresMouseEvents else { return }
+        lastIgnoresMouseEvents = ignores
+        window.ignoresMouseEvents = ignores
     }
 
     /// Is the cursor over something the overlay has to catch the click for?

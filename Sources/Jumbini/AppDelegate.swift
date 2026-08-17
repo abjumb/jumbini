@@ -421,11 +421,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The monitor runs only when the user wants reactions AND there is a dog
     /// awake to react. Both the settings switch and every suspension route
     /// come through here.
+    ///
+    /// A suspension pause does NOT destroy the monitor — it stops polling
+    /// without resetting the trackers, so Battery/DND don't re-fire on every
+    /// wake and a running build isn't lost. The settings toggle still creates
+    /// or tears down the whole monitor.
     private func updateSystemMonitor() {
         if settings.systemReactionsEnabled && !isSuspended {
-            startSystemMonitor()
+            if let monitor = systemMonitor {
+                monitor.resumePolling()
+            } else {
+                startSystemMonitor()
+            }
         } else {
-            stopSystemMonitor()
+            systemMonitor?.pausePolling()
         }
     }
 

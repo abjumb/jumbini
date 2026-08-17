@@ -305,8 +305,12 @@ final class CoatWorkshopPanel: NSPanel {
         }
 
         stagingTask = Task { [weak self] in
+            defer { self?.importButton.isEnabled = true }
             do {
-                let staged = try await Task.detached(priority: .userInitiated) {
+                // A child Task (not detached), so cancellation flows
+                // through from stagingTask.cancel() to stop the fork
+                // and copy inside stageImport from starting new work.
+                let staged = try await Task(priority: .userInitiated) {
                     try CoatValidator.stageImport(
                         from: url, fileManager: fileManager, progress: announceStage
                     )
@@ -319,7 +323,6 @@ final class CoatWorkshopPanel: NSPanel {
                 guard !Task.isCancelled else { return }
                 self?.statusLabel.stringValue = "Import failed: \(error.localizedDescription)"
             }
-            self?.importButton.isEnabled = true
         }
     }
 
@@ -605,6 +608,9 @@ private func updateDirectionButtons() {
                     )
                 }.value
                 guard let self else { return }
+                // A second Import was started and accepted while this install
+                // was running — the fields are now someone else's.
+                guard self.stagingURL == staging, self.report == report else { return }
                 // Before the message, not after: stopPreview writes its own
                 // line into the status label.
                 self.stopPreview()
@@ -615,6 +621,8 @@ private func updateDirectionButtons() {
                 self.isInstalledCoat = true
             } catch {
                 guard let self else { return }
+                // Same guard: a fresh Import swapped the fields under us.
+                guard self.stagingURL == staging, self.report == report else { return }
                 self.statusLabel.stringValue = "Install failed: \(error.localizedDescription)"
                 self.installButton.isEnabled = true
             }
@@ -677,9 +685,10 @@ private func updateDirectionButtons() {
         statusLabel.stringValue = "Checking \(coat.title)…"
 
         stagingTask?.cancel()
+        importButton.isEnabled = true
         let fileManager = self.fileManager
         stagingTask = Task { [weak self] in
-            let result = await Task.detached(priority: .userInitiated) {
+            let result = await Task(priority: .userInitiated) {
                 CoatValidator.validate(folder: root, fileManager: fileManager)
             }.value
             guard !Task.isCancelled, let self else { return }
