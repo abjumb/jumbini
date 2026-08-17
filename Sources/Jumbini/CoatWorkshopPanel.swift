@@ -31,6 +31,9 @@ final class CoatWorkshopPanel: JumbiniPanel {
     private var selectedState: String = "idle"
     private var selectedDirection: Facing = .south
     private var scaleEdits: [String: CGFloat] = [:]
+    /// Findings about the archive itself, which `CoatValidator.validate` never
+    /// sees because it is handed a folder. Shown alongside the report.
+    private var archiveFindings: [ValidationFinding] = []
     private let fileManager: FileManager
 
     // MARK: - UI elements
@@ -52,7 +55,7 @@ final class CoatWorkshopPanel: JumbiniPanel {
     private weak var contentStack: NSStackView?
     private let previewButton = NSButton(title: "Preview", target: nil, action: nil)
     private let statePopup = NSPopUpButton()
-    private var directionSegments: [Facing: NSButton] = [:]
+    private let directionControl = NSSegmentedControl()
     private let scaleStack = NSStackView()
     private let installButton = NSButton(title: "Install", target: nil, action: nil)
     private let exportButton = NSButton(title: "Export…", target: nil, action: nil)
@@ -61,6 +64,8 @@ final class CoatWorkshopPanel: JumbiniPanel {
     private static let panelWidth: CGFloat = 400
     private static let initialHeight: CGFloat = 520
     private static let contentInset: CGFloat = 16
+    private static let scaleFieldPrefix = "scale:"
+    private static let resetButtonPrefix = "reset:"
 
     init(fileManager: FileManager = .default) {
         self.fileManager = fileManager
@@ -133,25 +138,32 @@ final class CoatWorkshopPanel: JumbiniPanel {
         }
         statePopup.isEnabled = false
 
-        let directionRow = NSStackView()
+        // One control rather than eight buttons: a segmented control in
+        // `.selectOne` mode draws the selected segment, which is the whole
+        // point of the row — momentary push buttons never show their state.
+        directionControl.segmentStyle = .rounded
+        directionControl.trackingMode = .selectOne
+        directionControl.controlSize = .small
+        directionControl.font = .systemFont(ofSize: 9)
+        directionControl.segmentCount = Facing.coatDirections.count
+        directionControl.target = self
+        directionControl.action = #selector(directionChosen(_:))
+        directionControl.isEnabled = false
+        // AppKit has no per-segment accessibility label, so the spelled-out
+        // direction rides on the tooltip — which VoiceOver reads as help — and
+        // the control names the row as a whole.
+        directionControl.setAccessibilityLabel("Preview direction")
+        directionControl.setAccessibilityRoleDescription("direction picker")
+        for (index, dir) in Facing.coatDirections.enumerated() {
+            directionControl.setLabel(directionShortLabel(dir), forSegment: index)
+            directionControl.setWidth(32, forSegment: index)
+            directionControl.setToolTip(directionName(dir), forSegment: index)
+        }
+        updateDirectionControl()
+
+        let directionRow = NSStackView(views: [directionControl])
         directionRow.orientation = .horizontal
         directionRow.spacing = 4
-        for dir in Facing.coatDirections {
-            let btn = NSButton(title: directionShortLabel(dir), target: self, action: #selector(directionChosen(_:)))
-            btn.bezelStyle = .rounded
-            btn.controlSize = .small
-            btn.font = .systemFont(ofSize: 9)
-            btn.identifier = NSUserInterfaceItemIdentifier(rawValue: "dir:" + dir.fileSuffix)
-            btn.isEnabled = false
-            btn.translatesAutoresizingMaskIntoConstraints = false
-            NSLayoutConstraint.activate([
-                btn.widthAnchor.constraint(equalToConstant: 32),
-                btn.heightAnchor.constraint(equalToConstant: 22),
-            ])
-            directionRow.addView(btn, in: .center)
-            directionSegments[dir] = btn
-        }
-        updateDirectionButtons()
 
         let previewRow = NSStackView(views: [previewButton, statePopup])
         previewRow.orientation = .horizontal
@@ -277,6 +289,20 @@ final class CoatWorkshopPanel: JumbiniPanel {
         let extractDir = staging.appendingPathComponent("extracted", isDirectory: true)
         try CoatValidator.extractZip(at: url, to: extractDir)
 
+        // Symlinks are invisible in a listing, so this is the first point the
+        // archive can be checked for one. Discard the extraction on an escape
+        // rather than leaving a link into the user's home in the staging dir.
+        let treeFindings = CoatValidator.checkExtractedTree(at: extractDir, fileManager: fileManager)
+        if treeFindings.contains(where: { $0.severity == .error }) {
+            try? fileManager.removeItem(at: extractDir)
+            statusLabel.stringValue = treeFindings
+                .filter { $0.severity == .error }
+                .map(\.message)
+                .joined(separator: "\n")
+            throw ValidationError.unsafeArchive
+        }
+        archiveFindings = treeFindings
+
         guard let coatFolder = CoatValidator.findCoatFolder(in: extractDir) else {
             statusLabel.stringValue = "No coat folder found in archive (needs \(CoatValidator.requiredSprite))."
             throw ValidationError.noCoatFolderFound
@@ -302,9 +328,10 @@ final class CoatWorkshopPanel: JumbiniPanel {
     // MARK: - Report display
 
     private func displayReport(_ report: CoatValidationReport) {
-        let errors = report.findings.filter { $0.severity == .error }
-        let warnings = report.findings.filter { $0.severity == .warning }
-        let infos = report.findings.filter { $0.severity == .info }
+        let findings = archiveFindings + report.findings
+        let errors = findings.filter { $0.severity == .error }
+        let warnings = findings.filter { $0.severity == .warning }
+        let infos = findings.filter { $0.severity == .info }
 
         var text = ""
         text += "Coat: \(report.coatName) (\(report.coatID))\n"
@@ -370,6 +397,7 @@ final class CoatWorkshopPanel: JumbiniPanel {
             field.stringValue = String(format: "%.1f", scaleEdits[state] ?? SpriteLibrary.baseScale)
             field.target = self
             field.action = #selector(scaleEdited(_:))
+            field.identifier = NSUserInterfaceItemIdentifier(rawValue: Self.scaleFieldPrefix + state)
             field.translatesAutoresizingMaskIntoConstraints = false
             field.widthAnchor.constraint(equalToConstant: 60).isActive = true
 
@@ -377,7 +405,7 @@ final class CoatWorkshopPanel: JumbiniPanel {
             resetBtn.bezelStyle = .inline
             resetBtn.controlSize = .small
             resetBtn.font = .systemFont(ofSize: 10)
-            resetBtn.identifier = NSUserInterfaceItemIdentifier(rawValue: "reset:" + state)
+            resetBtn.identifier = NSUserInterfaceItemIdentifier(rawValue: Self.resetButtonPrefix + state)
 
             let defaultLabel = NSTextField(labelWithString: "(default: \(String(format: "%.1f", SpriteLibrary.baseScale)))")
             defaultLabel.font = .systemFont(ofSize: 10)
@@ -391,11 +419,22 @@ final class CoatWorkshopPanel: JumbiniPanel {
         }
     }
 
+    /// Which state a scale row's control belongs to.
+    ///
+    /// Carried on the control itself. Recovering it by trimming the colon off
+    /// the row's label meant any change to how that label reads — a unit, a
+    /// prettier name — silently wrote the wrong key into the manifest.
+    private func state(of control: NSView, prefix: String) -> String? {
+        guard let raw = control.identifier?.rawValue, raw.hasPrefix(prefix) else { return nil }
+        return String(raw.dropFirst(prefix.count))
+    }
+
     @objc private func scaleEdited(_ sender: NSTextField) {
-        guard let row = sender.superview as? NSStackView,
-              let label = row.arrangedSubviews.first as? NSTextField else { return }
-        let state = String(label.stringValue.dropLast())
-        guard let value = Double(sender.stringValue), value > 0 else { return }
+        guard let state = state(of: sender, prefix: Self.scaleFieldPrefix) else { return }
+        guard let value = Double(sender.stringValue), value > 0 else {
+            statusLabel.stringValue = "Scale for \(state) must be a positive number."
+            return
+        }
         scaleEdits[state] = CGFloat(value)
 
         // Write updated scales to the staging coat.json.
@@ -404,24 +443,41 @@ final class CoatWorkshopPanel: JumbiniPanel {
     }
 
     @objc private func resetScale(_ sender: NSButton) {
-        guard let row = sender.superview as? NSStackView,
-              let label = row.arrangedSubviews.first as? NSTextField else { return }
-        let state = String(label.stringValue.dropLast())
+        guard let state = state(of: sender, prefix: Self.resetButtonPrefix),
+              let report else { return }
         scaleEdits.removeValue(forKey: state)
-        rebuildScaleStack(report: report!)
+        rebuildScaleStack(report: report)
         writeScaleEdits()
         if isPreviewing { refreshPreview() }
     }
 
+    /// Persist the scale edits into the staging `coat.json`.
+    ///
+    /// Merged into whatever manifest is already there rather than rebuilt from
+    /// the two fields the workshop knows about: hand-building a dictionary of
+    /// name and scales deleted every other key in the file, so opening a coat
+    /// and nudging one scale quietly stripped anything its author had added.
     private func writeScaleEdits() {
         guard let staging = stagingURL else { return }
-        let filtered = scaleEdits.filter { $0.value != SpriteLibrary.baseScale }
-        var manifest: [String: Any] = ["name": report?.coatName ?? staging.lastPathComponent]
-        if !filtered.isEmpty {
-            manifest["scales"] = filtered.mapValues { Double($0) }
-        }
-        if let data = try? JSONSerialization.data(withJSONObject: manifest, options: .prettyPrinted) {
-            try? data.write(to: staging.appendingPathComponent("coat.json"))
+
+        var manifest = CoatCatalog.manifest(in: staging, fileManager: fileManager) ?? CoatManifest()
+        manifest.name = report?.coatName ?? manifest.name ?? staging.lastPathComponent
+
+        // A scale equal to the default says nothing the app doesn't already
+        // assume, and an empty overrides dictionary is noise in the file.
+        let overrides = scaleEdits.filter { $0.value != SpriteLibrary.baseScale }
+        manifest.scales = overrides.isEmpty ? nil : overrides.mapValues { Double($0) }
+
+        do {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            try encoder.encode(manifest).write(
+                to: staging.appendingPathComponent("coat.json"), options: .atomic
+            )
+        } catch {
+            // Silently failing here left the panel showing an edit that was
+            // never going to survive install.
+            statusLabel.stringValue = "Could not save scales: \(error.localizedDescription)"
         }
     }
 
@@ -449,7 +505,7 @@ final class CoatWorkshopPanel: JumbiniPanel {
         }
         previewButton.title = isPreviewing ? "Stop Preview" : "Preview"
         statePopup.isEnabled = isPreviewing
-        for btn in directionSegments.values { btn.isEnabled = isPreviewing }
+        directionControl.isEnabled = isPreviewing
     }
 
     private func startPreview() {
@@ -480,10 +536,11 @@ final class CoatWorkshopPanel: JumbiniPanel {
     private func clearPreview() {
         if isPreviewing { stopPreview() }
         isPreviewing = false
+        archiveFindings = []
         previewButton.title = "Preview"
         previewButton.isEnabled = false
         statePopup.isEnabled = false
-        for btn in directionSegments.values { btn.isEnabled = false }
+        directionControl.isEnabled = false
         showValidation(false)
         findingsTextView.string = ""
         installButton.isEnabled = false
@@ -495,17 +552,16 @@ final class CoatWorkshopPanel: JumbiniPanel {
         setPreviewPose?(selectedState, selectedDirection)
     }
 
-    @objc private func directionChosen(_ sender: NSButton) {
-        guard let dir = directionSegments.first(where: { $0.value === sender })?.key else { return }
-        selectedDirection = dir
-        updateDirectionButtons()
+    @objc private func directionChosen(_ sender: NSSegmentedControl) {
+        let index = sender.selectedSegment
+        guard Facing.coatDirections.indices.contains(index) else { return }
+        selectedDirection = Facing.coatDirections[index]
         setPreviewPose?(selectedState, selectedDirection)
     }
 
-private func updateDirectionButtons() {
-        for (dir, btn) in directionSegments {
-            btn.state = dir == selectedDirection ? .on : .off
-        }
+    private func updateDirectionControl() {
+        guard let index = Facing.coatDirections.firstIndex(of: selectedDirection) else { return }
+        directionControl.selectedSegment = index
     }
 
     private func directionShortLabel(_ dir: Facing) -> String {
@@ -518,6 +574,21 @@ private func updateDirectionButtons() {
         case .northWest: "NW"
         case .west: "W"
         case .southWest: "SW"
+        }
+    }
+
+    /// Spelled-out direction, for the tooltip and VoiceOver — "SW" is not a
+    /// word, and the abbreviation is all the segment itself can fit.
+    private func directionName(_ dir: Facing) -> String {
+        switch dir {
+        case .south: "South (facing you)"
+        case .southEast: "South-east"
+        case .east: "East"
+        case .northEast: "North-east"
+        case .north: "North (facing away)"
+        case .northWest: "North-west"
+        case .west: "West"
+        case .southWest: "South-west"
         }
     }
 
