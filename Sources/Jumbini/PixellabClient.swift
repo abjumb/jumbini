@@ -343,24 +343,30 @@ final class PixellabClient: PixellabClientProtocol, Sendable {
         return png.base64EncodedString()
     }
 
+    /// `data: nil` on purpose: Core Graphics allocates the backing store and
+    /// owns it, so the CGImage this returns keeps its pixels alive by itself.
+    ///
+    /// The previous version handed CGContext the bytes of a local `[UInt8]`
+    /// through `withUnsafeMutableBytes` and then returned the image out of the
+    /// closure. `makeImage()` does not promise a copy — it can hand back an
+    /// image that references the context's buffer — so the returned image
+    /// could outlive the array it was pointing at. That is undefined
+    /// behaviour, and the kind that reads fine and works fine right up until
+    /// an allocator or an optimiser changes its mind.
     private func scale(_ image: CGImage, toWidth width: Int, height: Int) -> CGImage? {
-        var data = [UInt8](repeating: 0, count: width * height * 4)
-        let scaled = data.withUnsafeMutableBytes { buffer -> CGImage? in
-            guard let context = CGContext(
-                data: buffer.baseAddress,
-                width: width,
-                height: height,
-                bitsPerComponent: 8,
-                bytesPerRow: width * 4,
-                space: CGColorSpaceCreateDeviceRGB(),
-                bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue
-                    | CGImageAlphaInfo.premultipliedLast.rawValue
-            ) else { return nil }
-            context.interpolationQuality = .high
-            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
-            return context.makeImage()
-        }
-        return scaled
+        guard let context = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: width * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue
+                | CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+        context.interpolationQuality = .high
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        return context.makeImage()
     }
 
     /// Flatten a rotation URL dictionary into a stable list of (name, url).
