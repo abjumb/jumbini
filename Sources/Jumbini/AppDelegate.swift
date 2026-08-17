@@ -436,6 +436,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         coordinator.onNotice = { [weak self] notice in
             self?.showTidyNotice(notice)
         }
+        coordinator.onSuccessfulMoves = { [weak self] moves in
+            self?.actOutTidy(moves)
+        }
         tidyCoordinator = coordinator
         observeSessionAvailability()
         refreshTidyMenu()
@@ -652,6 +655,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             try change(coordinator)
         } catch {
             showTidyNotice(.failed(Self.tidyMessage(for: error)))
+        }
+    }
+
+    /// Jumba's share of a finished pass, which is theatre and nothing else.
+    ///
+    /// Called after execution has already returned, with exactly the moves that
+    /// completed. Reduce Motion, a paused dog and a hidden overlay all end here
+    /// with no cues at all — the files are where they are either way, and
+    /// nothing about the pass waited for any of this.
+    private func actOutTidy(_ moves: [TidyCompletedMove]) {
+        guard let scene else { return }
+        let overlayVisible = !isPaused && window?.isVisible == true
+        let cues = TidyAnimationBatcher.cues(
+            for: moves,
+            reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
+            overlayVisible: overlayVisible
+        )
+        for cue in cues {
+            scene.enqueueTidy(cue)
         }
     }
 
