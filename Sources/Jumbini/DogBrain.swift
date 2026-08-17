@@ -194,6 +194,10 @@ struct BrainTuning {
     var runSpeed: CGFloat = 520
     var carrySpeed: CGFloat = 150
     var wanderMargin: CGFloat = 60
+    /// The slice of every idle roll that plain wandering keeps no matter what.
+    /// The autonomy bands are scaled down proportionally if they would eat
+    /// into it — see `AutonomyOdds`.
+    var wanderShare: Double = 0.1
     var zoomiesDuration: TimeInterval = 10
     var zoomiesSpeed: CGFloat = 900
     var zoomiesChance: Double = 0.08
@@ -271,6 +275,59 @@ struct BrainTuning {
     var perchNapDuration: ClosedRange<TimeInterval> = 8...16
     /// A title bar narrower than this (pre-scale) is too skinny to nap on.
     var perchNapMinWidth: CGFloat = 320
+}
+
+/// The cumulative thresholds one idle roll is compared against.
+///
+/// This used to be seven inline sums inside `leaveIdleForAutonomy`, each a term
+/// longer than the last. That was survivable while the numbers were constants
+/// and fatal the moment they could be scaled: several bands multiplied at once
+/// can total past 1.0, and then the LAST band — window climbing, the rarest and
+/// most delightful thing he does — silently never fires again. Nothing in the
+/// code or the tests would say a word about it.
+///
+/// So the arithmetic lives here, where the invariant can be stated and tested:
+/// whatever the tuning and whatever the switches, plain wandering keeps at
+/// least `tuning.wanderShare` of the roll, and every band stays in proportion.
+struct AutonomyOdds {
+    /// Cumulative thresholds, low to high. A roll below `sleepBand` naps; a
+    /// roll below `flourishBand` but not `sleepBand` spins; and so on.
+    let sleepBand: Double
+    let flourishBand: Double
+    let zoomiesBand: Double
+    let sniffBand: Double
+    let hunchBand: Double
+    let barkBand: Double
+    let perchBand: Double
+
+    init(tuning: BrainTuning, poopEnabled: Bool, windowClimbingEnabled: Bool) {
+        // A feature switched off closes its band; the bands around it do not
+        // move, exactly as before.
+        let widths = [
+            tuning.sleepChance,
+            tuning.flourishChance,
+            tuning.zoomiesChance,
+            tuning.sniffChance,
+            poopEnabled ? tuning.hunchChance : 0,
+            tuning.barkAtNothingChance,
+            windowClimbingEnabled ? tuning.perchChance : 0,
+        ]
+        let total = widths.reduce(0, +)
+        let ceiling = max(0, 1 - tuning.wanderShare)
+        // `total > ceiling` is also the divide-by-zero guard: a zero total can
+        // never exceed a non-negative ceiling.
+        let scale = total > ceiling ? ceiling / total : 1
+
+        // Summed left to right, in the same order as the code this replaces,
+        // so the un-clamped case (scale == 1) is bit-for-bit what it was.
+        sleepBand = widths[0] * scale
+        flourishBand = sleepBand + widths[1] * scale
+        zoomiesBand = flourishBand + widths[2] * scale
+        sniffBand = zoomiesBand + widths[3] * scale
+        hunchBand = sniffBand + widths[4] * scale
+        barkBand = hunchBand + widths[5] * scale
+        perchBand = barkBand + widths[6] * scale
+    }
 }
 
 /// Deterministic RNG for tests (SplitMix64).
@@ -1002,9 +1059,12 @@ final class DogBrain {
     /// Idle timer fired: mostly wander, sometimes nap, rarely a spin flourish.
     private func leaveIdleForAutonomy(at now: TimeInterval) -> [DogEffect] {
         let roll = Double.random(in: 0..<1, using: &rng)
-        let activeHunchChance = poopEnabled ? tuning.hunchChance : 0
-        let activePerchChance = windowClimbingEnabled ? tuning.perchChance : 0
-        if roll < tuning.sleepChance {
+        let odds = AutonomyOdds(
+            tuning: tuning,
+            poopEnabled: poopEnabled,
+            windowClimbingEnabled: windowClimbingEnabled
+        )
+        if roll < odds.sleepBand {
             if let bed = bedPosition {
                 // Naps happen in the bed when he has one.
                 state = .goingToBed(.sleep)
@@ -1015,29 +1075,27 @@ final class DogBrain {
             deadline = now + random(in: tuning.sleepDuration)
             return [.play(.sleep)]
         }
-        if roll < tuning.sleepChance + tuning.flourishChance {
+        if roll < odds.flourishBand {
             state = .spinning
             deadline = now + tuning.spinDuration
             return [.play(.spin)]
         }
-        if roll < tuning.sleepChance + tuning.flourishChance + tuning.zoomiesChance {
+        if roll < odds.zoomiesBand {
             state = .zoomies
             deadline = now + tuning.zoomiesDuration
             return [.play(.run), .startZoomies]
         }
-        if roll < tuning.sleepChance + tuning.flourishChance + tuning.zoomiesChance + tuning.sniffChance {
+        if roll < odds.sniffBand {
             state = .sniffingMouse
             deadline = now + random(in: tuning.sniffDuration)
             return [.play(.walk), .startSniffing]
         }
-        if roll < tuning.sleepChance + tuning.flourishChance + tuning.zoomiesChance
-            + tuning.sniffChance + activeHunchChance {
+        if roll < odds.hunchBand {
             state = .hunching
             deadline = now + tuning.hunchDuration
             return [.play(.hunch)]
         }
-        if roll < tuning.sleepChance + tuning.flourishChance + tuning.zoomiesChance
-            + tuning.sniffChance + activeHunchChance + tuning.barkAtNothingChance {
+        if roll < odds.barkBand {
             // Something at the screen edge (the Dock? his reflection?) needs
             // telling off. A small step toward the edge turns him to face it;
             // .arrived from that hop is ignored while barking.
@@ -1053,9 +1111,7 @@ final class DogBrain {
             }
             // Still cooling down: fall through to a wander instead.
         }
-        if roll < tuning.sleepChance + tuning.flourishChance + tuning.zoomiesChance
-            + tuning.sniffChance + activeHunchChance + tuning.barkAtNothingChance
-            + activePerchChance {
+        if roll < odds.perchBand {
             // The rarest idle break: climb onto one of your windows and trot
             // along the title bar. Needs a window to climb — with none in
             // reach the roll quietly becomes an ordinary wander rather than

@@ -10,6 +10,11 @@ private func makeBrain(
 ) -> DogBrain {
     var tuning = BrainTuning()
     tuning.idleDuration = 3...3
+    // A test that says `$0.hunchChance = 1` means CERTAIN. The shipping
+    // wanderShare would quietly make it 90%, and forty tests would start
+    // failing one time in ten for no visible reason. Tests that want to
+    // exercise the clamp build a BrainTuning() directly and get the real 0.1.
+    tuning.wanderShare = 0
     tuning.sleepChance = 0
     tuning.flourishChance = 0
     tuning.zoomiesChance = 0
@@ -2203,13 +2208,37 @@ private func hopTarget(in effects: [DogEffect]) -> CGPoint? {
 }
 
 @Test func thePerchBandSitsBeneathTheOlderAutonomyBands() {
-    // Both bands certain: the one that was there first still wins, so adding
-    // the perch can't quietly steal a nap.
-    let brain = makeBrain { $0.sleepChance = 1; $0.perchChance = 1; $0.sleepDuration = 10...10 }
+    // Both bands maxed. Normalization splits the roll between them, and the
+    // band that was there first takes the LOWER half — so adding the perch
+    // can't quietly steal a nap.
+    var tuning = BrainTuning()
+    tuning.wanderShare = 0
+    tuning.flourishChance = 0
+    tuning.zoomiesChance = 0
+    tuning.sniffChance = 0
+    tuning.hunchChance = 0
+    tuning.barkAtNothingChance = 0
+    tuning.sleepChance = 1
+    tuning.perchChance = 1
+
+    let odds = AutonomyOdds(
+        tuning: tuning, poopEnabled: true, windowClimbingEnabled: true
+    )
+
+    #expect(abs(odds.sleepBand - 0.5) < 0.0001, "sleep owns the lower half")
+    #expect(abs(odds.perchBand - 1) < 0.0001, "the perch owns what's left")
+
+    // And a roll that lands in the lower half really does nap.
+    let brain = makeBrain { tune in
+        tune.sleepChance = 1
+        tune.perchChance = 1
+        tune.sleepDuration = 10...10
+    }
     brain.surfaces = [perchable]
     _ = brain.handle(.tick, at: 0)
     _ = brain.handle(.tick, at: 3.1)
-    #expect(brain.state == .sleeping)
+    #expect(brain.state != .wandering,
+            "whichever half the seed lands in, the roll is spoken for; got \(brain.state)")
 }
 
 @Test func withNoWindowsThePerchRollFallsThroughToWandering() {
@@ -3065,4 +3094,95 @@ private func isSomewhereReal(_ point: CGPoint, _ rects: [CGRect] = lShapedWorld)
     let effects = brain.handle(.tugStarted(at: CGPoint(x: 600, y: 300)), at: 0)
     #expect(brain.state == .tugging)
     #expect(effects.contains(.playSound("grunt")))
+}
+
+// MARK: - Autonomy odds (the seven idle bands)
+
+@Test func theShippingBandsAreOrderedAndUnclamped() {
+    let odds = AutonomyOdds(
+        tuning: BrainTuning(), poopEnabled: true, windowClimbingEnabled: true
+    )
+    let tuning = BrainTuning()
+
+    // The cumulative thresholds are exactly today's inline sums.
+    #expect(odds.sleepBand == tuning.sleepChance)
+    #expect(odds.flourishBand == tuning.sleepChance + tuning.flourishChance)
+    #expect(odds.zoomiesBand
+        == tuning.sleepChance + tuning.flourishChance + tuning.zoomiesChance)
+    #expect(odds.sniffBand == tuning.sleepChance + tuning.flourishChance
+        + tuning.zoomiesChance + tuning.sniffChance)
+    #expect(odds.hunchBand == tuning.sleepChance + tuning.flourishChance
+        + tuning.zoomiesChance + tuning.sniffChance + tuning.hunchChance)
+    #expect(odds.barkBand == tuning.sleepChance + tuning.flourishChance
+        + tuning.zoomiesChance + tuning.sniffChance + tuning.hunchChance
+        + tuning.barkAtNothingChance)
+    #expect(odds.perchBand == tuning.sleepChance + tuning.flourishChance
+        + tuning.zoomiesChance + tuning.sniffChance + tuning.hunchChance
+        + tuning.barkAtNothingChance + tuning.perchChance)
+}
+
+@Test func aDisabledFeatureZeroesItsBandWithoutMovingTheOthers() {
+    let tuning = BrainTuning()
+    let noPoop = AutonomyOdds(
+        tuning: tuning, poopEnabled: false, windowClimbingEnabled: true
+    )
+    #expect(noPoop.hunchBand == noPoop.sniffBand, "the hunch band is closed")
+    #expect(noPoop.sleepBand == tuning.sleepChance, "bands above it are untouched")
+
+    let noClimb = AutonomyOdds(
+        tuning: tuning, poopEnabled: true, windowClimbingEnabled: false
+    )
+    #expect(noClimb.perchBand == noClimb.barkBand, "the climb band is closed")
+}
+
+@Test func wanderingAlwaysKeepsItsShareOfTheRoll() {
+    // Absurd tuning: every band maxed. Without the clamp the total would be
+    // 7.0 and the last band would be unreachable forever.
+    var tuning = BrainTuning()
+    tuning.sleepChance = 1
+    tuning.flourishChance = 1
+    tuning.zoomiesChance = 1
+    tuning.sniffChance = 1
+    tuning.hunchChance = 1
+    tuning.barkAtNothingChance = 1
+    tuning.perchChance = 1
+
+    let odds = AutonomyOdds(
+        tuning: tuning, poopEnabled: true, windowClimbingEnabled: true
+    )
+
+    #expect(odds.perchBand <= 1 - tuning.wanderShare + 0.0001)
+    #expect(odds.perchBand > odds.barkBand, "the climb band is still reachable")
+    #expect(odds.sleepBand > 0)
+}
+
+@Test func theClampKeepsEveryBandInProportion() {
+    var tuning = BrainTuning()
+    tuning.sleepChance = 0.5
+    tuning.zoomiesChance = 1.0 // twice the sleep band
+
+    let odds = AutonomyOdds(
+        tuning: tuning, poopEnabled: false, windowClimbingEnabled: false
+    )
+    let sleep = odds.sleepBand
+    let zoomies = odds.zoomiesBand - odds.flourishBand
+
+    #expect(abs(zoomies / sleep - 2) < 0.0001, "shape survives the scaling")
+}
+
+@Test func zeroedBandsDoNotDivideByZero() {
+    var tuning = BrainTuning()
+    tuning.sleepChance = 0
+    tuning.flourishChance = 0
+    tuning.zoomiesChance = 0
+    tuning.sniffChance = 0
+    tuning.hunchChance = 0
+    tuning.barkAtNothingChance = 0
+    tuning.perchChance = 0
+
+    let odds = AutonomyOdds(
+        tuning: tuning, poopEnabled: true, windowClimbingEnabled: true
+    )
+
+    #expect(odds.perchBand == 0, "a dog with nothing to do just wanders")
 }
