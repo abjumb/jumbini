@@ -40,7 +40,7 @@ final class CoatWorkshopPanel: NSPanel {
     private let findingsTextView = NSTextView()
     private let previewButton = NSButton(title: "Preview", target: nil, action: nil)
     private let statePopup = NSPopUpButton()
-    private var directionSegments: [Facing: NSButton] = [:]
+    private let directionControl = NSSegmentedControl()
     private let scaleStack = NSStackView()
     private let installButton = NSButton(title: "Install", target: nil, action: nil)
     private let exportButton = NSButton(title: "Export…", target: nil, action: nil)
@@ -150,25 +150,32 @@ final class CoatWorkshopPanel: NSPanel {
         }
         statePopup.isEnabled = false
 
-        let directionRow = NSStackView()
+        // One control rather than eight buttons: a segmented control in
+        // `.selectOne` mode draws the selected segment, which is the whole
+        // point of the row — momentary push buttons never show their state.
+        directionControl.segmentStyle = .rounded
+        directionControl.trackingMode = .selectOne
+        directionControl.controlSize = .small
+        directionControl.font = .systemFont(ofSize: 9)
+        directionControl.segmentCount = Facing.coatDirections.count
+        directionControl.target = self
+        directionControl.action = #selector(directionChosen(_:))
+        directionControl.isEnabled = false
+        // AppKit has no per-segment accessibility label, so the spelled-out
+        // direction rides on the tooltip — which VoiceOver reads as help — and
+        // the control names the row as a whole.
+        directionControl.setAccessibilityLabel("Preview direction")
+        directionControl.setAccessibilityRoleDescription("direction picker")
+        for (index, dir) in Facing.coatDirections.enumerated() {
+            directionControl.setLabel(directionShortLabel(dir), forSegment: index)
+            directionControl.setWidth(32, forSegment: index)
+            directionControl.setToolTip(directionName(dir), forSegment: index)
+        }
+        updateDirectionControl()
+
+        let directionRow = NSStackView(views: [directionControl])
         directionRow.orientation = .horizontal
         directionRow.spacing = 4
-        for dir in Facing.coatDirections {
-            let btn = NSButton(title: directionShortLabel(dir), target: self, action: #selector(directionChosen(_:)))
-            btn.bezelStyle = .rounded
-            btn.controlSize = .small
-            btn.font = .systemFont(ofSize: 9)
-            btn.identifier = NSUserInterfaceItemIdentifier(rawValue: "dir:" + dir.fileSuffix)
-            btn.isEnabled = false
-            btn.translatesAutoresizingMaskIntoConstraints = false
-            NSLayoutConstraint.activate([
-                btn.widthAnchor.constraint(equalToConstant: 32),
-                btn.heightAnchor.constraint(equalToConstant: 22),
-            ])
-            directionRow.addView(btn, in: .center)
-            directionSegments[dir] = btn
-        }
-        updateDirectionButtons()
 
         let previewRow = NSStackView(views: [previewButton, statePopup])
         previewRow.orientation = .horizontal
@@ -463,7 +470,7 @@ final class CoatWorkshopPanel: NSPanel {
         }
         previewButton.title = isPreviewing ? "Stop Preview" : "Preview"
         statePopup.isEnabled = isPreviewing
-        for btn in directionSegments.values { btn.isEnabled = isPreviewing }
+        directionControl.isEnabled = isPreviewing
     }
 
     private func startPreview() {
@@ -497,7 +504,7 @@ final class CoatWorkshopPanel: NSPanel {
         previewButton.title = "Preview"
         previewButton.isEnabled = false
         statePopup.isEnabled = false
-        for btn in directionSegments.values { btn.isEnabled = false }
+        directionControl.isEnabled = false
         findingsScroll.isHidden = true
         findingsTextView.string = ""
         installButton.isEnabled = false
@@ -509,17 +516,16 @@ final class CoatWorkshopPanel: NSPanel {
         setPreviewPose?(selectedState, selectedDirection)
     }
 
-    @objc private func directionChosen(_ sender: NSButton) {
-        guard let dir = directionSegments.first(where: { $0.value === sender })?.key else { return }
-        selectedDirection = dir
-        updateDirectionButtons()
+    @objc private func directionChosen(_ sender: NSSegmentedControl) {
+        let index = sender.selectedSegment
+        guard Facing.coatDirections.indices.contains(index) else { return }
+        selectedDirection = Facing.coatDirections[index]
         setPreviewPose?(selectedState, selectedDirection)
     }
 
-private func updateDirectionButtons() {
-        for (dir, btn) in directionSegments {
-            btn.state = dir == selectedDirection ? .on : .off
-        }
+    private func updateDirectionControl() {
+        guard let index = Facing.coatDirections.firstIndex(of: selectedDirection) else { return }
+        directionControl.selectedSegment = index
     }
 
     private func directionShortLabel(_ dir: Facing) -> String {
@@ -532,6 +538,21 @@ private func updateDirectionButtons() {
         case .northWest: "NW"
         case .west: "W"
         case .southWest: "SW"
+        }
+    }
+
+    /// Spelled-out direction, for the tooltip and VoiceOver — "SW" is not a
+    /// word, and the abbreviation is all the segment itself can fit.
+    private func directionName(_ dir: Facing) -> String {
+        switch dir {
+        case .south: "South (facing you)"
+        case .southEast: "South-east"
+        case .east: "East"
+        case .northEast: "North-east"
+        case .north: "North (facing away)"
+        case .northWest: "North-west"
+        case .west: "West"
+        case .southWest: "South-west"
         }
     }
 
