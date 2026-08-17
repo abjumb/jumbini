@@ -75,15 +75,39 @@ final class SpriteLibrary {
     static let shared = SpriteLibrary()
 
     /// The active coat. Every dog animation is resolved through this first and
-    /// falls back to the classic art when the coat can't cover a pose. Nothing
-    /// to invalidate on a change: `textureCache` is keyed by coat id *and*
-    /// filename, so coats simply occupy different keys. The scene still has to
-    /// re-`play` the current animation to put the new textures on screen.
+    /// falls back to the classic art when the coat can't cover a pose. The
+    /// scene still has to re-`play` the current animation to put the new
+    /// textures on screen.
     ///
     /// The id has to be part of the cache key now that coats can bring their
     /// own folders: two installed coats both hold an `idle_south`, and keying
     /// on the filename alone would serve the first one's art to the second.
-    var coat: Coat = .classic
+    /// Distinct keys per coat is also why the outgoing coat's textures have to
+    /// be dropped here — see `evictTextures`.
+    var coat: Coat = .classic {
+        didSet { evictTextures(replacing: oldValue) }
+    }
+
+    /// Drop the textures of the coat we just stopped wearing.
+    ///
+    /// Because every coat occupies its own keys, a cache that is never swept
+    /// grows by up to 56 decoded sprites per coat the user tries — and the
+    /// Coat Workshop's preview installs a coat per import, from a staging
+    /// directory that is then deleted. Left alone, an afternoon of trying
+    /// coats on is an afternoon of accumulating textures for art that no
+    /// longer exists on disk.
+    ///
+    /// Two coats do not get evicted:
+    ///
+    /// - classic, which every other coat falls back to for poses it doesn't
+    ///   draw, so dropping it would mean reloading it on the very next frame;
+    /// - a coat replaced by the same art in the same place, which is what a
+    ///   scale edit during a workshop preview looks like from here.
+    private func evictTextures(replacing old: Coat) {
+        guard old != .classic, old.id != coat.id || old.root != coat.root else { return }
+        let prefix = "\(old.id)/"
+        textureCache = textureCache.filter { !$0.key.hasPrefix(prefix) }
+    }
 
     /// Poses a coat doesn't include, and what it borrows instead, keyed by
     /// coat id. The kit ships one shaggy sprint pose where classic has two, so

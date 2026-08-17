@@ -240,10 +240,35 @@ final class CoatWorkshopPanel: JumbiniPanel {
         return dest
     }
 
+    /// Every staging directory the workshop has ever made is named like this,
+    /// which is what lets a new import find and bin the old ones.
+    private static let stagingPrefix = "jumbini-workshop-"
+
+    /// A fresh, empty directory to unpack an import into — and, first, the end
+    /// of every previous one.
+    ///
+    /// Each import copies a whole coat (up to 56 PNGs, or an entire zip
+    /// expanded) into a uuid-named directory under /tmp, and nothing ever
+    /// removed them: not the import that superseded them, not the install that
+    /// copied them into place, not quitting the app. macOS clears /tmp
+    /// eventually, but "eventually" is a reboot, and a session spent trying
+    /// coats on left every one of them there in the meantime.
+    ///
+    /// Swept here rather than on close or on install, because both of those
+    /// are moments the user may still want to Export from the staged folder.
+    /// By the time they are importing something else, they do not.
     private func createStagingDirectory() throws -> URL {
-        let staging = fileManager.temporaryDirectory
-            .appendingPathComponent("jumbini-workshop-\(UUID().uuidString)", isDirectory: true)
-        try? fileManager.removeItem(at: staging)
+        let temporaryDirectory = fileManager.temporaryDirectory
+        let leftovers = (try? fileManager.contentsOfDirectory(
+            at: temporaryDirectory, includingPropertiesForKeys: nil
+        )) ?? []
+        for leftover in leftovers where leftover.lastPathComponent.hasPrefix(Self.stagingPrefix) {
+            try? fileManager.removeItem(at: leftover)
+        }
+
+        let staging = temporaryDirectory.appending(
+            path: "\(Self.stagingPrefix)\(UUID().uuidString)", directoryHint: .isDirectory
+        )
         try fileManager.createDirectory(at: staging, withIntermediateDirectories: true)
         return staging
     }
