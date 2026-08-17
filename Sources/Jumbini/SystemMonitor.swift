@@ -19,7 +19,7 @@ import IOKit.ps
 /// sample that drops back under it.
 struct IdleTracker {
     /// Quiet seconds that count as "the human has wandered off".
-    var threshold: TimeInterval = 120
+    var threshold: TimeInterval = SystemMonitor.idleSignalThreshold
 
     private(set) var isIdle = false
 
@@ -167,6 +167,11 @@ final class MonitorLifecycle {
 final class SystemMonitor {
     /// Called on the main thread, once per transition.
     var onSignal: ((SystemSignal) -> Void)?
+
+    /// Quiet seconds behind an `idleBegan`. Published because anything counting
+    /// its own idle interval on top of that signal — Tidy does — has to subtract
+    /// the time that had already passed before it arrived.
+    static let idleSignalThreshold: TimeInterval = 120
 
     /// One timer drives the three polled sources. 5s is fine-grained enough
     /// for a 120s idle threshold and a 30s build, and cheap enough to ignore.

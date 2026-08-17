@@ -10,6 +10,13 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      snapshot:
+        description: >-
+          Print the panel renders as base64 so they can be decoded and
+          looked at. Off by default — a few hundred lines of noise.
+        type: boolean
+        default: false
 
 # A new push supersedes the run in flight for the same ref.
 concurrency:
@@ -47,6 +54,14 @@ jobs:
       # those flags are unnecessary and point at a toolchain that isn't the
       # one compiling. Contributors should keep using the script locally.
       - name: Test
+        env:
+          # The panels are the one part of Jumbini whose correctness is "does it
+          # look right", and this is how a picture of them gets off the runner
+          # and in front of someone. It is an input rather than a line someone
+          # edits in for a render and takes back out afterwards, because twice
+          # now the taking-out half was the part that got forgotten and the flag
+          # rode a merge onto main.
+          JUMBINI_SNAPSHOT: ${{ inputs.snapshot && '1' || '0' }}
         run: swift test
 
       # The ship path: a release build, the .app assembled around it, the

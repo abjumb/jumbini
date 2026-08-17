@@ -3,6 +3,10 @@ import Carbon.HIToolbox
 import Sparkle
 import SpriteKit
 
+/// Everything here is menu bar, panels and windows, all of which are main-thread
+/// only — and the Tidy coordinator is `@MainActor` for the same reason, so the
+/// isolation is stated once here rather than method by method.
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var window: OverlayWindow?
     private var skView: SKView?
@@ -35,7 +39,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var settingsPanel: SettingsPanel?
     private(set) var settings: JumbiniSettings
 
-    init(defaults: UserDefaults = .standard) {
+    // Tidy: off until the user picks a folder. The coordinator owns the grant,
+    // the preview gate and every filesystem call; everything here is menu,
+    // panels and the picker.
+    private var tidyCoordinator: TidyCoordinator?
+    private var tidySettingsPanel: TidySettingsPanel?
+    private var tidyPreviewPanel: TidyPreviewPanel?
+    private var tidyRuleEditorPanel: TidyRuleEditorPanel?
+    private var tidyMenuItems: [String: NSMenuItem] = [:]
+    private var tidyNoticePopover: NSPopover?
+    /// Held only while the folder picker is up, so its shortcut buttons can
+    /// point it somewhere without capturing it.
+    private var openPanelForShortcuts: NSOpenPanel?
+
+    /// `nonisolated` because `main.swift` builds the delegate as top-level code,
+    /// which Swift 5 does not consider main-actor isolated. Nothing here touches
+    /// AppKit — the isolated work all starts at `applicationDidFinishLaunching`.
+    nonisolated init(defaults: UserDefaults = .standard) {
         settings = JumbiniSettings(defaults: defaults)
         super.init()
     }
@@ -44,6 +64,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setUpUpdater()
         setUpStatusItem()
         setUpOverlay()
+        // After the overlay, because a recovered pass may want to say so, and
+        // before anything else can touch the ledger.
+        setUpTidy()
         apply(settings: settings)
         NotificationCenter.default.addObserver(
             self,
@@ -71,6 +94,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // System reactions: drop the poll timer and the thermal observer.
         systemMonitor?.stop()
         systemMonitor = nil
+        // Tidy: stop watching for lock and sleep. A pass in flight halts at its
+        // next file boundary; anything already moved stays moved and stays in
+        // the ledger, which is what makes it undoable next launch.
+        NSWorkspace.shared.notificationCenter.removeObserver(self)
+        tidyCoordinator?.requestHalt()
         demoDriver?.stop()
         demoDriver = nil
     }
@@ -174,6 +202,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let workshopItem = NSMenuItem(title: "Coat Workshop…", action: #selector(openCoatWorkshop), keyEquivalent: "")
         workshopItem.target = self
         menu.addItem(workshopItem)
+        menu.addItem(makeTidyMenuItem())
         let settingsItem = NSMenuItem(
             title: "Settings…",
             action: #selector(openSettings),
@@ -258,10 +287,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard systemMonitor == nil else { return }
         let monitor = SystemMonitor()
         monitor.onSignal = { [weak self] signal in
+            guard let self else { return }
+            // Tidy first, and unconditionally: idle tidying is its own setting,
+            // so turning the dog's reactions off — or pausing him — must not
+            // quietly turn off the tidying the user switched on separately.
+            self.tidyCoordinator?.receive(signal)
             // SystemMonitor guarantees main-thread delivery, which is what
             // the scene needs. Paused means the overlay is hidden and the
             // view is frozen — the dog should not be reacting to anything.
-            guard let self, !self.isPaused else { return }
+            guard !self.isPaused else { return }
             self.scene?.receive(signal)
         }
         monitor.start()
@@ -274,14 +308,419 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         systemMonitor = nil
     }
 
-    private func apply(settings: JumbiniSettings) {
-        self.settings = settings
-        scene?.apply(settings: settings)
-        if settings.systemReactionsEnabled {
+    /// The monitor stays alive for whichever feature still needs it. Idle
+    /// tidying rides on the same idle signal the emotes do, so switching off
+    /// Mac-aware reactions must not take the idle clock away with it.
+    private func updateSystemMonitorLifetime() {
+        let tidyNeedsIdle = tidyCoordinator?.state.preferences.idleEnabled ?? false
+        if settings.systemReactionsEnabled || tidyNeedsIdle {
             startSystemMonitor()
         } else {
             stopSystemMonitor()
         }
+    }
+
+    private func apply(settings: JumbiniSettings) {
+        self.settings = settings
+        scene?.apply(settings: settings)
+        updateSystemMonitorLifetime()
+    }
+
+    /// Locking the screen, switching user, or the displays going to sleep all
+    /// mean the same thing to Tidy: nothing may start, and anything running
+    /// stops at the next file boundary.
+    private func observeSessionAvailability() {
+        let center = NSWorkspace.shared.notificationCenter
+        for name in [
+            NSWorkspace.sessionDidResignActiveNotification,
+            NSWorkspace.screensDidSleepNotification,
+        ] {
+            center.addObserver(
+                self, selector: #selector(sessionBecameUnavailable),
+                name: name, object: nil
+            )
+        }
+        for name in [
+            NSWorkspace.sessionDidBecomeActiveNotification,
+            NSWorkspace.screensDidWakeNotification,
+        ] {
+            center.addObserver(
+                self, selector: #selector(sessionBecameAvailable),
+                name: name, object: nil
+            )
+        }
+    }
+
+    @objc private func sessionBecameUnavailable() {
+        tidyCoordinator?.sessionBecameUnavailable()
+    }
+
+    @objc private func sessionBecameAvailable() {
+        tidyCoordinator?.sessionBecameAvailable()
+    }
+
+    // MARK: - Tidy
+
+    /// The submenu, built with the status item so its shape never depends on
+    /// whether Tidy is configured. Titles and enabled states are filled in by
+    /// `refreshTidyMenu()` once the coordinator exists, and again on every state
+    /// change after that.
+    private func makeTidyMenuItem() -> NSMenuItem {
+        let submenu = NSMenu()
+        // Otherwise AppKit decides for us and ignores `isEnabled` — and whether
+        // undo is offered is a safety decision, not a guess.
+        submenu.autoenablesItems = false
+
+        let primary = NSMenuItem(
+            title: "Set Up Tidy…", action: #selector(tidyPrimaryAction), keyEquivalent: ""
+        )
+        let undo = NSMenuItem(
+            title: "Undo Last Tidy", action: #selector(tidyUndoAction), keyEquivalent: ""
+        )
+        let settings = NSMenuItem(
+            title: "Tidy Settings…", action: #selector(openTidySettings), keyEquivalent: ""
+        )
+        let idle = NSMenuItem(
+            title: "Tidy While Idle", action: #selector(toggleTidyIdle), keyEquivalent: ""
+        )
+        let forget = NSMenuItem(
+            title: "Forget Folder…", action: #selector(forgetTidyFolder), keyEquivalent: ""
+        )
+        for item in [primary, undo, settings, idle, forget] {
+            item.target = self
+        }
+        submenu.addItem(primary)
+        submenu.addItem(undo)
+        submenu.addItem(.separator())
+        submenu.addItem(settings)
+        submenu.addItem(idle)
+        submenu.addItem(forget)
+
+        tidyMenuItems = [
+            "primary": primary, "undo": undo,
+            "settings": settings, "idle": idle, "forget": forget,
+        ]
+
+        let item = NSMenuItem(title: "Tidy", action: nil, keyEquivalent: "")
+        item.submenu = submenu
+        return item
+    }
+
+    /// Building the coordinator reads the rules, the preferences and the folder
+    /// bookmark, and nothing else — no folder is opened, nothing is enumerated,
+    /// and a launch with Tidy unconfigured does no work at all.
+    private func setUpTidy() {
+        let store = TidyStore()
+        let ledger = TidyLedger()
+        // An interrupted pass is repaired before anything can plan on top of it.
+        // A journal that cannot be reconciled is reported and leaves Tidy where
+        // it is rather than guessing at half-moved files.
+        do {
+            _ = try ledger.reconcile()
+        } catch {
+            showTidyNotice(.failed(Self.tidyMessage(for: error)))
+        }
+
+        let coordinator = TidyCoordinator(
+            store: store,
+            planner: TidyPlanner(),
+            executor: TidyExecutor(ledger: ledger)
+        )
+        coordinator.onStateChange = { [weak self] state in
+            self?.refreshTidyMenu()
+            self?.tidySettingsPanel?.render(state: state)
+            // Switching idle tidying on may be the only reason the machine
+            // needs watching at all.
+            self?.updateSystemMonitorLifetime()
+        }
+        coordinator.onNotice = { [weak self] notice in
+            self?.showTidyNotice(notice)
+        }
+        coordinator.onSuccessfulMoves = { [weak self] moves in
+            self?.actOutTidy(moves)
+        }
+        tidyCoordinator = coordinator
+        observeSessionAvailability()
+        refreshTidyMenu()
+    }
+
+    private func refreshTidyMenu() {
+        guard let coordinator = tidyCoordinator else { return }
+        let menu = TidyMenuState(state: coordinator.state)
+        tidyMenuItems["primary"]?.title = menu.primaryTitle
+        tidyMenuItems["primary"]?.isEnabled = menu.canTidy
+        tidyMenuItems["undo"]?.title = menu.undoTitle
+        tidyMenuItems["undo"]?.isEnabled = menu.canUndo
+        tidyMenuItems["settings"]?.title = menu.settingsTitle
+        tidyMenuItems["idle"]?.title = menu.idleTitle
+        tidyMenuItems["idle"]?.isEnabled = menu.canToggleIdle
+        tidyMenuItems["idle"]?.state = menu.idleIsChecked ? .on : .off
+        tidyMenuItems["forget"]?.title = menu.forgetTitle
+        tidyMenuItems["forget"]?.isEnabled = menu.canForgetFolder
+    }
+
+    /// Choose a folder, look at the preview, or tidy — in that order, because
+    /// that is the order the safety rules put them in.
+    @objc private func tidyPrimaryAction() {
+        guard let coordinator = tidyCoordinator else { return }
+        guard coordinator.state.folder != nil, coordinator.state.blockingError == nil else {
+            selectTidyFolder()
+            return
+        }
+        guard !coordinator.state.needsPreview else {
+            showTidyPreview()
+            return
+        }
+        Task { @MainActor in
+            do {
+                _ = try await coordinator.runManual()
+            } catch {
+                self.showTidyNotice(.failed(Self.tidyMessage(for: error)))
+            }
+        }
+    }
+
+    /// An explicit `NSOpenPanel`, always. Desktop and Downloads are shortcuts to
+    /// somewhere in the panel, never a grant on their own: nothing is chosen
+    /// until the user presses Choose, and cancelling leaves the app untouched.
+    private func selectTidyFolder() {
+        guard let coordinator = tidyCoordinator else { return }
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Choose"
+        panel.message = "Choose the one folder Jumba may tidy."
+        panel.accessoryView = tidyShortcutAccessory(for: panel)
+        panel.isAccessoryViewDisclosed = true
+        panel.directoryURL = FileManager.default.urls(
+            for: .desktopDirectory, in: .userDomainMask
+        ).first
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try coordinator.setFolder(url)
+            openTidySettings()
+            showTidyPreview()
+        } catch {
+            showTidyNotice(.failed(Self.tidyMessage(for: error)))
+        }
+    }
+
+    private func tidyShortcutAccessory(for panel: NSOpenPanel) -> NSView {
+        let desktop = NSButton(
+            title: "Desktop", target: self, action: #selector(jumpToDesktop(_:))
+        )
+        let downloads = NSButton(
+            title: "Downloads", target: self, action: #selector(jumpToDownloads(_:))
+        )
+        for button in [desktop, downloads] {
+            button.bezelStyle = .rounded
+            // The panel travels through the button so the two jump actions stay
+            // ordinary selectors with nothing captured.
+            button.identifier = NSUserInterfaceItemIdentifier("tidy.shortcut")
+        }
+        openPanelForShortcuts = panel
+
+        let row = NSStackView(views: [desktop, downloads])
+        row.orientation = .horizontal
+        row.spacing = 8
+        row.edgeInsets = NSEdgeInsets(top: 8, left: 12, bottom: 8, right: 12)
+        return row
+    }
+
+    @objc private func jumpToDesktop(_ sender: NSButton) {
+        openPanelForShortcuts?.directoryURL = FileManager.default.urls(
+            for: .desktopDirectory, in: .userDomainMask
+        ).first
+    }
+
+    @objc private func jumpToDownloads(_ sender: NSButton) {
+        openPanelForShortcuts?.directoryURL = FileManager.default.urls(
+            for: .downloadsDirectory, in: .userDomainMask
+        ).first
+    }
+
+    private func showTidyPreview() {
+        guard let coordinator = tidyCoordinator else { return }
+        Task { @MainActor in
+            do {
+                let plan = try await coordinator.makePreview()
+                self.presentTidyPreview(plan)
+            } catch {
+                self.showTidyNotice(.failed(Self.tidyMessage(for: error)))
+            }
+        }
+    }
+
+    private func presentTidyPreview(_ plan: TidyPlan) {
+        let panel = tidyPreviewPanel ?? TidyPreviewPanel()
+        panel.onCancel = { [weak panel] in
+            // Cancelling is write-free by construction: the preview never
+            // created a folder or a ledger entry to undo.
+            panel?.performClose(nil)
+        }
+        panel.onConfirm = { [weak self, weak panel] selection in
+            panel?.performClose(nil)
+            guard let self, let coordinator = self.tidyCoordinator else { return }
+            Task { @MainActor in
+                do {
+                    _ = try await coordinator.executePreview(selection: selection)
+                } catch {
+                    self.showTidyNotice(.failed(Self.tidyMessage(for: error)))
+                }
+            }
+        }
+        panel.present(plan: plan)
+        tidyPreviewPanel = panel
+    }
+
+    @objc private func tidyUndoAction() {
+        guard let coordinator = tidyCoordinator else { return }
+        Task { @MainActor in
+            do {
+                _ = try await coordinator.undo()
+            } catch {
+                self.showTidyNotice(.failed(Self.tidyMessage(for: error)))
+            }
+        }
+    }
+
+    @objc private func openTidySettings() {
+        guard let coordinator = tidyCoordinator else { return }
+        if let panel = tidySettingsPanel {
+            panel.present(state: coordinator.state)
+            return
+        }
+        let panel = TidySettingsPanel()
+        panel.onChooseFolder = { [weak self] in self?.selectTidyFolder() }
+        panel.onForgetFolder = { [weak self] in self?.forgetTidyFolder() }
+        panel.onRulesChanged = { [weak self] rules in
+            self?.applyTidyChange { try $0.updateRules(rules) }
+        }
+        panel.onRecencyChanged = { [weak self] minutes in
+            self?.applyTidyChange { try $0.updateRecency(minutes: minutes) }
+        }
+        panel.onIdleChanged = { [weak self] enabled in
+            self?.applyTidyChange { try $0.updateIdle(enabled: enabled) }
+        }
+        panel.onIdleMinutesChanged = { [weak self] minutes in
+            self?.applyTidyChange { try $0.updateIdle(minutes: minutes) }
+        }
+        panel.onAddRule = { [weak self] in
+            self?.editTidyRule(TidyRuleEditorPanel.newRule())
+        }
+        panel.onEditRule = { [weak self] rule in
+            self?.editTidyRule(rule)
+        }
+        panel.present(state: coordinator.state)
+        tidySettingsPanel = panel
+    }
+
+    private func editTidyRule(_ rule: TidyRule) {
+        let panel = tidyRuleEditorPanel ?? TidyRuleEditorPanel()
+        panel.onCancel = { [weak panel] in panel?.performClose(nil) }
+        panel.onSave = { [weak self, weak panel] saved in
+            panel?.performClose(nil)
+            self?.tidySettingsPanel?.replaceRule(saved)
+        }
+        panel.present(rule)
+        tidyRuleEditorPanel = panel
+    }
+
+    /// Revoking the grant is the one Tidy action that cannot be undone from the
+    /// menu, so it asks first. It moves nothing either way.
+    @objc private func forgetTidyFolder() {
+        guard let coordinator = tidyCoordinator, coordinator.state.folder != nil else { return }
+        let alert = NSAlert()
+        alert.messageText = "Forget this folder?"
+        alert.informativeText =
+            "Jumba will stop tidying it and give up permission to open it. "
+            + "Your files, rules and tidy log are left exactly as they are."
+        alert.addButton(withTitle: "Forget Folder")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        applyTidyChange { try $0.forgetFolder() }
+    }
+
+    @objc private func toggleTidyIdle() {
+        guard let coordinator = tidyCoordinator else { return }
+        let enabled = !coordinator.state.preferences.idleEnabled
+        applyTidyChange { try $0.updateIdle(enabled: enabled) }
+    }
+
+    private func applyTidyChange(_ change: (TidyCoordinator) throws -> Void) {
+        guard let coordinator = tidyCoordinator else { return }
+        do {
+            try change(coordinator)
+        } catch {
+            showTidyNotice(.failed(Self.tidyMessage(for: error)))
+        }
+    }
+
+    /// Jumba's share of a finished pass, which is theatre and nothing else.
+    ///
+    /// Called after execution has already returned, with exactly the moves that
+    /// completed. Reduce Motion, a paused dog and a hidden overlay all end here
+    /// with no cues at all — the files are where they are either way, and
+    /// nothing about the pass waited for any of this.
+    private func actOutTidy(_ moves: [TidyCompletedMove]) {
+        guard let scene else { return }
+        let overlayVisible = !isPaused && window?.isVisible == true
+        let cues = TidyAnimationBatcher.cues(
+            for: moves,
+            reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
+            overlayVisible: overlayVisible
+        )
+        for cue in cues {
+            scene.enqueueTidy(cue)
+        }
+    }
+
+    /// Results arrive in a popover on the status item rather than an alert: an
+    /// idle pass finishing must not take focus from whatever the user came back
+    /// to. The ledger remains the full record either way.
+    private func showTidyNotice(_ notice: TidyNotice) {
+        guard let button = statusItem?.button else { return }
+        let label = NSTextField(wrappingLabelWithString: notice.message)
+        label.font = .systemFont(ofSize: 12)
+        label.preferredMaxLayoutWidth = 260
+        label.translatesAutoresizingMaskIntoConstraints = false
+
+        let content = NSViewController()
+        content.view = NSView(frame: NSRect(x: 0, y: 0, width: 300, height: 80))
+        content.view.addSubview(label)
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: content.view.leadingAnchor, constant: 16),
+            label.trailingAnchor.constraint(equalTo: content.view.trailingAnchor, constant: -16),
+            label.centerYAnchor.constraint(equalTo: content.view.centerYAnchor),
+        ])
+
+        tidyNoticePopover?.performClose(nil)
+        let popover = NSPopover()
+        popover.behavior = .transient
+        popover.contentViewController = content
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        tidyNoticePopover = popover
+    }
+
+    private static func tidyMessage(for error: Error) -> String {
+        if let coordinatorError = error as? TidyCoordinatorError {
+            return coordinatorError.message
+        }
+        if let undoError = error as? TidyUndoError {
+            switch undoError {
+            case .unavailable:
+                return "There is nothing left to undo."
+            case .sourceOccupied(let url):
+                return "Something else is at \(url.lastPathComponent) now, so Jumba put nothing back."
+            case .destinationChanged(let url):
+                return "\(url.lastPathComponent) changed since the tidy, so Jumba put nothing back."
+            case .rollbackFailed(let detail):
+                return detail
+            }
+        }
+        return (error as NSError).localizedDescription
     }
 
     // MARK: - Settings
@@ -294,6 +733,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let panel = SettingsPanel()
         panel.onSettingsChanged = { [weak self] settings in
             self?.apply(settings: settings)
+        }
+        // Settings offers the coat tools but does not own them, so it asks the
+        // delegate to open the same panels the menu opens — one instance each,
+        // however the user got there.
+        panel.onOpenCoatWorkshop = { [weak self] in
+            self?.openCoatWorkshop()
+        }
+        panel.onOpenDogGenerator = { [weak self] in
+            self?.openDogGenerator()
         }
         panel.present()
         settingsPanel = panel

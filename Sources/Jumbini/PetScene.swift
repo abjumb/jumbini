@@ -53,6 +53,10 @@ final class PetScene: SKScene {
     private var piles: [SKSpriteNode] = []
     private var draggedPile: SKSpriteNode?
 
+    // Tidy theatre: cues waiting to be acted out, and whether one is running.
+    private var tidyCues: [TidyAnimationCue] = []
+    private var isPerformingTidy = false
+
     /// Trick progression, persisted under "trick.<name>.reps" / ".unlocked".
     private let trickTrainer = TrickTrainer(store: UserDefaultsTrickStore())
 
@@ -1697,6 +1701,79 @@ final class PetScene: SKScene {
         guard let treat = groundTreat else { return }
         groundTreat = nil
         treat.run(.sequence([.fadeOut(withDuration: 0.2), .removeFromParent()]))
+    }
+
+    // MARK: - Tidy theatre
+
+    /// Its own action key, so a Tidy trip never shares a slot with the brain's
+    /// own movement and either can be cancelled without touching the other.
+    private static let tidyActionKey = "tidy"
+
+    /// Act out a finished Tidy move. Theatre only.
+    ///
+    /// The files moved before this was called and nothing here reports back, so
+    /// a cue that is interrupted, cancelled or never started changes nothing
+    /// about the tidy that happened. He does not send a `DogEvent`, does not
+    /// leave a pile behind, and does not learn anything from it.
+    func enqueueTidy(_ cue: TidyAnimationCue) {
+        // Something else took the action away — petting, a command, a throw.
+        // The queue must not stall waiting for a completion that will never come.
+        if isPerformingTidy, dog.action(forKey: Self.tidyActionKey) == nil {
+            isPerformingTidy = false
+        }
+        tidyCues.append(cue)
+        startNextTidyCue()
+    }
+
+    private func startNextTidyCue() {
+        guard !isPerformingTidy, !tidyCues.isEmpty else { return }
+        let cue = tidyCues.removeFirst()
+        guard let anchor = cue.anchor else {
+            startNextTidyCue()
+            return
+        }
+
+        isPerformingTidy = true
+        let target = layout.clamp(
+            TidyAnimationRegion.point(for: anchor, layout: layout),
+            inset: 0
+        )
+        let travel = cue.duration * 0.6
+        let linger = max(cue.duration - travel, 0.1)
+        let variant = Int(TidyAnimationRegion.fnv1a(anchor.destination.path) % 3)
+
+        dog.stopMoving()
+        dog.face(towards: target)
+        dog.play(.carryWalk)
+        dog.run(.sequence([
+            .move(to: target, duration: travel),
+            .run { [weak self] in self?.showTidyDrop(at: target, variant: variant, for: linger) },
+            .wait(forDuration: linger),
+            .run { [weak self] in
+                guard let self else { return }
+                self.dog.play(.idle)
+                self.isPerformingTidy = false
+                self.startNextTidyCue()
+            },
+        ]), withKey: Self.tidyActionKey)
+    }
+
+    /// A prop that exists for one second and then is gone — not a pile: it is
+    /// never added to `piles`, never ages, and cannot be dragged or binned.
+    private func showTidyDrop(at point: CGPoint, variant: Int, for duration: TimeInterval) {
+        guard let art = SpriteLibrary.shared.tidyDepositProp(variant: variant) else { return }
+        let node = SKSpriteNode(texture: art.textures[0])
+        node.size = art.nodeSize
+        node.position = point
+        node.zPosition = dog.zPosition - 1
+        node.alpha = 0
+        addChild(node)
+        node.run(.sequence([
+            .fadeAlpha(to: 1, duration: 0.15),
+            .wait(forDuration: duration),
+            .fadeOut(withDuration: 0.25),
+            .removeFromParent(),
+        ]))
     }
 
     // MARK: - Deposits
