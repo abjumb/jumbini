@@ -316,6 +316,86 @@ jobs:
 
           SPARKLE_ED25519_KEY="$SPARKLE_ED25519_KEY" ./Scripts/appcast.sh "$PAGES"
 
+          # Retention and the feed have to agree in BOTH directions.
+          #
+          # This direction — an entry that outlived its archive — is the one
+          # that was missing. generate_appcast carries forward every item in the
+          # appcast it finds, including versions whose DMG was pruned releases
+          # ago, and Scripts/appcast.sh deliberately leaves an entry whose
+          # archive it cannot see alone (that script also serves one-off
+          # publishes, where the archive really may live elsewhere). Here it
+          # cannot: $PAGES *is* everything that will be hosted, so an enclosure
+          # with no file beside it is a 404 waiting to be published. v4.10 went
+          # out advertising Jumbini-4.7.dmg, which had been pruned two releases
+          # earlier.
+          #
+          # Deltas get the same treatment inside surviving items: a delta whose
+          # file is gone would fail an update for exactly the users it was meant
+          # to make cheaper.
+          python3 - "$PAGES" <<'DANGLING'
+          import os, re, sys
+          import xml.etree.ElementTree as ET
+
+          pages = sys.argv[1]
+          appcast = os.path.join(pages, "appcast.xml")
+          with open(appcast, encoding="utf-8") as fh:
+              xml = fh.read()
+
+          def hosted(url):
+              return os.path.exists(os.path.join(pages, url.rsplit("/", 1)[-1]))
+
+          def prune_deltas(item):
+              def drop(match):
+                  block = match.group(0)
+                  kept = [e for e in re.findall(r"<enclosure\b[^>]*/>", block)
+                          if hosted(re.search(r'url="([^"]+)"', e).group(1))]
+                  dropped = len(re.findall(r"<enclosure\b[^>]*/>", block)) - len(kept)
+                  if dropped:
+                      print("    dropped %d delta enclosure(s) with no file" % dropped)
+                  if not kept:
+                      return ""
+                  return re.sub(r"<enclosure\b[^>]*/>\s*", "",
+                                block).replace("</sparkle:deltas>",
+                                               "".join(kept) + "</sparkle:deltas>")
+              return re.sub(r"<sparkle:deltas>.*?</sparkle:deltas>", drop, item,
+                            flags=re.DOTALL)
+
+          kept_items, dropped_items = [], []
+          for item in re.findall(r"<item>.*?</item>", xml, flags=re.DOTALL):
+              # The item's own enclosure, not the deltas nested inside it.
+              main = re.sub(r"<sparkle:deltas>.*?</sparkle:deltas>", "", item,
+                            flags=re.DOTALL)
+              url = re.search(r'<enclosure\b[^>]*\burl="([^"]+)"', main)
+              if url and not hosted(url.group(1)):
+                  dropped_items.append((item, url.group(1)))
+              else:
+                  kept_items.append((item, prune_deltas(item)))
+
+          if dropped_items and not kept_items:
+              sys.stderr.write("::error::every appcast item names a DMG that is not "
+                               "in the payload; refusing to publish an empty feed\n")
+              sys.exit(1)
+
+          patched = xml
+          for item, url in dropped_items:
+              print("  dropping appcast entry for %s (no longer hosted)"
+                    % url.rsplit("/", 1)[-1])
+              patched = patched.replace(item, "", 1)
+          for item, rewritten in kept_items:
+              if rewritten != item:
+                  patched = patched.replace(item, rewritten, 1)
+
+          if patched != xml:
+              # A feed that no longer parses would be published just as happily
+              # as one that does, and only break on a user's machine. The input
+              # is the appcast generate_appcast wrote on this runner a moment
+              # ago, not anything fetched, so plain ElementTree is enough here.
+              ET.fromstring(patched)
+              with open(appcast, "w", encoding="utf-8") as fh:
+                  fh.write(patched)
+              print("  appcast now advertises %d version(s)" % len(kept_items))
+          DANGLING
+
           # generate_appcast has just rewritten appcast.xml from the DMGs that
           # remain, so anything it does not name is dead weight — the deltas
           # belonging to a pruned version, and any archive orphaned by an
