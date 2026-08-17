@@ -30,24 +30,26 @@ final class PetScene: SKScene {
     // The toy box: one node per toy, nil when that toy isn't out.
     private var frisbee: Frisbee?
     private var squeaky: SKSpriteNode?
-    private var rope: TugRope?
+    var rope: TugRope?
 
-    // Tug-of-war drag state.
+    // Tug-of-war drag state, driven from TugController.swift — see the note on
+    // the class above.
     /// The user has hold of the free end.
-    private var draggingRope = false
+    var draggingRope = false
     /// He won and is trotting off with the rope trailing from his mouth.
-    private var carryingRope = false
+    var carryingRope = false
     /// Where the cursor last was during the drag (scene coords).
-    private var ropePull: CGPoint = .zero
+    var ropePull: CGPoint = .zero
     /// The RENDERED free end, which lags the cursor — that lag is the drag.
-    private var ropeEnd: CGPoint = .zero
-    /// Throttle clock for `.tugMoved` (~10/s).
-    private var lastTugSent: TimeInterval = 0
+    var ropeEnd: CGPoint = .zero
+    /// Throttle clock for `.tugMoved`.
+    var lastTugSent: TimeInterval = 0
     /// When the next yank fires, and how far through the current one we are.
-    private var nextYank: TimeInterval = 0
-    private var yankPhase: CGFloat = 0
+    var nextYank: TimeInterval = 0
+    var yankPhase: CGFloat = 0
     private var brain: DogBrain!
-    private var lastTime: TimeInterval = 0
+    /// Timestamp of the current frame; the brain stamps every event with it.
+    var lastTime: TimeInterval = 0
 
     // Furniture. `bed` is internal for BedCatalog.swift — see the note on the
     // class above.
@@ -404,7 +406,7 @@ final class PetScene: SKScene {
     }
 
     /// Route an event to the brain and apply what comes back.
-    private func send(_ event: DogEvent) {
+    func send(_ event: DogEvent) {
         apply(effects: brain.handle(event, at: lastTime))
     }
 
@@ -652,7 +654,7 @@ final class PetScene: SKScene {
     /// catch to count. Generous: the disc is 36pt wide and he is not subtle.
     private static let frisbeeCatchRadius: CGFloat = 40
     /// How long a dropped toy lies around before it tidies itself away.
-    private static let toyLingerDuration: TimeInterval = 4
+    static let toyLingerDuration: TimeInterval = 4
 
     private func throwFrisbee(to landing: CGPoint) {
         armedForThrow = false
@@ -759,159 +761,6 @@ final class PetScene: SKScene {
                 y: start.y + (end.y - start.y) * u + height * 4 * u * (1 - u)
             )
         }
-    }
-
-    // MARK: - Tug of war
-
-    /// How much of the user's pull the rope actually gives up. Under 1 means
-    /// the free end never reaches the cursor: the gap IS the resistance, and
-    /// the harder you pull the further behind your cursor the rope sits.
-    private static let tugResistGain: CGFloat = 0.55
-    /// Spring rate of the free end chasing its resisted target (per second).
-    /// Low enough to feel elastic, high enough not to feel broken.
-    private static let tugSpringRate: CGFloat = 11
-    /// Rope length at rest, and how much further you can stretch it before
-    /// `force` reads as a maximum-effort pull.
-    private static let ropeRestLength: CGFloat = 140
-    private static let ropePullSpan: CGFloat = 220
-    /// Yanks: a hard pull back toward him, roughly this often, this far.
-    private static let yankInterval: ClosedRange<TimeInterval> = 0.9...1.7
-    private static let yankDuration: TimeInterval = 0.26
-    private static let yankDistance: CGFloat = 34
-    /// Past this much of a pull (0...1) the rope is drawn strained.
-    private static let tugTautForce: CGFloat = 0.5
-
-    /// The dog's end of the rope — his mouth, in scene coordinates.
-    private func ropeAnchor() -> CGPoint {
-        CGPoint(x: dog.position.x + dog.mouthOffset.x, y: dog.position.y + dog.mouthOffset.y)
-    }
-
-    /// Toys > Tug Rope: the rope lands in front of him, free end out. No
-    /// brain event yet — the game starts when the user grabs that end.
-    private func dropTugRope() {
-        rope?.removeFromParent()
-        draggingRope = false
-        carryingRope = false
-        let rope = TugRope()
-        addChild(rope)
-        self.rope = rope
-
-        let anchor = ropeAnchor()
-        let v = dog.facing.unitVector
-        let margin: CGFloat = 30
-        ropeEnd = layout.clamp(CGPoint(
-            x: min(max(anchor.x + v.x * Self.ropeRestLength, margin), size.width - margin),
-            y: min(max(anchor.y + v.y * Self.ropeRestLength, margin), size.height - margin)
-        ), inset: margin)
-        ropePull = ropeEnd
-        rope.layout(from: anchor, to: ropeEnd)
-        settleRope()
-    }
-
-    /// A rope nobody is holding lies there a while, then tidies itself away.
-    /// Grabbing it again cancels the countdown (see `mouseDown`).
-    private func settleRope() {
-        guard let rope else { return }
-        rope.removeAction(forKey: "linger")
-        rope.alpha = 1
-        rope.run(.sequence([
-            .wait(forDuration: Self.toyLingerDuration * 2),
-            .fadeOut(withDuration: 0.6),
-            .run { [weak self] in self?.rope = nil },
-            .removeFromParent(),
-        ]), withKey: "linger")
-    }
-
-    /// Per-frame rope work: resist the pull, throw the occasional yank, keep
-    /// him facing whoever is pulling, and feed the brain a throttled force.
-    private func stepTug(dt: TimeInterval) {
-        guard let rope else { return }
-        let anchor = ropeAnchor()
-
-        if carryingRope {
-            // Victory lap: it trails behind him as he swaggers off. Nobody is
-            // pulling any more, so it hangs slack.
-            rope.setTaut(false)
-            let v = dog.facing.unitVector
-            ropeEnd = CGPoint(
-                x: anchor.x - v.x * Self.ropeRestLength * 0.8,
-                y: anchor.y - v.y * Self.ropeRestLength * 0.8
-            )
-            rope.layout(from: anchor, to: ropeEnd)
-            return
-        }
-        guard draggingRope, dt > 0 else { return }
-
-        // Resisted target: only a fraction of the pull is conceded.
-        var target = CGPoint(
-            x: anchor.x + (ropePull.x - anchor.x) * Self.tugResistGain,
-            y: anchor.y + (ropePull.y - anchor.y) * Self.tugResistGain
-        )
-
-        // A yank drags the end back toward him for a fraction of a second.
-        if lastTime >= nextYank {
-            yankPhase = 1
-            nextYank = lastTime + TimeInterval.random(in: Self.yankInterval)
-        }
-        if yankPhase > 0 {
-            yankPhase = max(0, yankPhase - CGFloat(dt / Self.yankDuration))
-            let pulse = sin(.pi * (1 - yankPhase)) * Self.yankDistance
-            let dx = target.x - anchor.x
-            let dy = target.y - anchor.y
-            let length = max(hypot(dx, dy), 1)
-            target = CGPoint(x: target.x - dx / length * pulse, y: target.y - dy / length * pulse)
-        }
-
-        // Springy follow, so the rope arrives at the target with some give.
-        let ease = min(1, CGFloat(dt) * Self.tugSpringRate)
-        ropeEnd = CGPoint(
-            x: ropeEnd.x + (target.x - ropeEnd.x) * ease,
-            y: ropeEnd.y + (target.y - ropeEnd.y) * ease
-        )
-        rope.layout(from: anchor, to: ropeEnd)
-        dog.face(towards: ropeEnd) // brace against the pull
-
-        // Every frame, not on the throttled send: the strain is what the user
-        // is watching while they haul, and it should track their arm.
-        let force = tugForce()
-        rope.setTaut(force >= Self.tugTautForce)
-        if lastTime - lastTugSent >= 0.1 { // ~10/s
-            lastTugSent = lastTime
-            send(.tugMoved(to: ropeEnd, force: force))
-        }
-    }
-
-    /// How hard they're pulling, 0...1: slack rope reads 0, an arm's-length
-    /// haul reads 1.
-    private func tugForce() -> CGFloat {
-        let anchor = ropeAnchor()
-        let stretch = hypot(ropePull.x - anchor.x, ropePull.y - anchor.y) - Self.ropeRestLength
-        return min(1, max(0, stretch / (Self.ropePullSpan - Self.ropeRestLength)))
-    }
-
-    /// `.startTug`: the brain accepted the grab.
-    private func beginTug() {
-        nextYank = lastTime + TimeInterval.random(in: Self.yankInterval)
-        yankPhase = 0
-        lastTugSent = lastTime
-        rope?.removeAction(forKey: "linger")
-        rope?.alpha = 1
-    }
-
-    /// `.stopTug`: the game is over however it ended. The user's drag is
-    /// dropped on the spot — a won rope is his now, and there's nothing left
-    /// to waggle.
-    private func endTug() {
-        draggingRope = false
-        yankPhase = 0
-        rope?.setTaut(false)
-    }
-
-    private func removeRope() {
-        carryingRope = false
-        draggingRope = false
-        rope?.fadeOutAndRemove()
-        rope = nil
     }
 
     private func toyNode(_ kind: ToyKind) -> SKSpriteNode? {
