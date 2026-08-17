@@ -225,39 +225,83 @@ final class DogGeneratorPanel: NSPanel {
 
     // MARK: - Photo picking
 
-    private func choosePhoto() -> Data? {
+    /// Which of the three references a pick is filling.
+    private enum PhotoSlot {
+        case front, side, back
+
+        var chosenTitle: String {
+            switch self {
+            case .front: "Front ✓"
+            case .side: "Side ✓"
+            case .back: "Back ✓"
+            }
+        }
+    }
+
+    /// The dialog has to clear this panel, which floats at `.statusBar`, and
+    /// window levels are absolute — see the same note in `CoatWorkshopPanel`.
+    private static let dialogLevel = NSWindow.Level(
+        rawValue: NSWindow.Level.statusBar.rawValue + 1
+    )
+
+    /// Pick one reference photo and read it, without stopping the dog.
+    ///
+    /// Both halves used to block the main thread: `runModal` for as long as
+    /// the user browsed, then `Data(contentsOf:)` on a full-resolution photo —
+    /// three times over, once per slot. `begin` replaces the modal loop and
+    /// the read happens on a detached task.
+    ///
+    /// The read failure is reported now rather than swallowed by a `try?`. A
+    /// photo the app silently declined to load left the button unticked with
+    /// no explanation at all.
+    private func choosePhoto(for slot: PhotoSlot) {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = false
         panel.canChooseFiles = true
         panel.allowsMultipleSelection = false
         panel.allowedContentTypes = [.image]
-        guard panel.runModal() == .OK, let url = panel.url else { return nil }
-        return try? Data(contentsOf: url)
+        panel.level = Self.dialogLevel
+        NSApp.activate()
+        panel.begin { [weak self] response in
+            guard response == .OK, let url = panel.url else { return }
+            self?.readPhoto(at: url, into: slot)
+        }
     }
 
-    @objc private func chooseFront() {
-        if let data = choosePhoto() {
+    private func readPhoto(at url: URL, into slot: PhotoSlot) {
+        Task { [weak self] in
+            do {
+                let data = try await Task.detached(priority: .userInitiated) {
+                    try Data(contentsOf: url)
+                }.value
+                self?.accept(data, for: slot)
+            } catch {
+                self?.statusLabel.stringValue =
+                    "Could not read \(url.lastPathComponent): \(error.localizedDescription)"
+            }
+        }
+    }
+
+    private func accept(_ data: Data, for slot: PhotoSlot) {
+        switch slot {
+        case .front:
             frontData = data
-            frontButton.title = "Front ✓"
-            updateGenerateState()
-        }
-    }
-
-    @objc private func chooseSide() {
-        if let data = choosePhoto() {
+            frontButton.title = slot.chosenTitle
+        case .side:
             sideData = data
-            sideButton.title = "Side ✓"
-            updateGenerateState()
+            sideButton.title = slot.chosenTitle
+        case .back:
+            backData = data
+            backButton.title = slot.chosenTitle
         }
+        updateGenerateState()
     }
 
-    @objc private func chooseBack() {
-        if let data = choosePhoto() {
-            backData = data
-            backButton.title = "Back ✓"
-            updateGenerateState()
-        }
-    }
+    @objc private func chooseFront() { choosePhoto(for: .front) }
+
+    @objc private func chooseSide() { choosePhoto(for: .side) }
+
+    @objc private func chooseBack() { choosePhoto(for: .back) }
 
     private func updateGenerateState() {
         generateButton.isEnabled = frontData != nil && sideData != nil && backData != nil && !isBusy

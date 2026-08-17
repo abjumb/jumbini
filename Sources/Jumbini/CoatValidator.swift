@@ -3,7 +3,7 @@ import CoreGraphics
 import ImageIO
 
 /// The 17 coat states from COATS.md, in the order they should be previewed.
-enum FullCoatState: String, CaseIterable {
+enum FullCoatState: String, CaseIterable, Sendable {
     case idle, run1, run2, sit, sleep, bark, sniff
     case hunch, stalk, pounce, paw, highfive, playdead
     case brace, fall, land, peek
@@ -16,20 +16,22 @@ extension Facing {
 }
 
 /// A single validation finding.
-enum ValidationSeverity: Equatable {
+enum ValidationSeverity: Equatable, Sendable {
     case error
     case warning
     case info
 }
 
-struct ValidationFinding: Identifiable, Equatable {
+struct ValidationFinding: Identifiable, Equatable, Sendable {
     let id = UUID()
     let severity: ValidationSeverity
     let message: String
 }
 
-/// The result of validating a coat folder. Pure data, no AppKit.
-struct CoatValidationReport {
+/// The result of validating a coat folder. Pure data, no AppKit — and
+/// `Sendable`, because validation runs off the main thread and the whole
+/// report is handed back across that boundary in one piece.
+struct CoatValidationReport: Sendable {
     let coatID: String
     let coatName: String
     let findings: [ValidationFinding]
@@ -51,6 +53,33 @@ struct CoatValidationReport {
     }
 
     var canInstall: Bool { !findings.contains { $0.severity == .error } }
+}
+
+/// A coat copied or extracted into a temporary folder, together with the
+/// report from validating it there. One value, so the whole outcome of an
+/// import crosses back to the main thread in a single hop.
+struct StagedCoat: Sendable {
+    let folder: URL
+    let report: CoatValidationReport
+}
+
+/// The stages of an import, in the order they happen. Each one is a step the
+/// user waits on, which is the only reason they have names — the panel puts
+/// the message in its status line as the work moves through them.
+enum CoatImportStage: Sendable {
+    case checkingArchive
+    case extracting
+    case copying
+    case validating
+
+    var message: String {
+        switch self {
+        case .checkingArchive: "Checking archive…"
+        case .extracting: "Extracting…"
+        case .copying: "Copying coat folder…"
+        case .validating: "Validating sprites…"
+        }
+    }
 }
 
 /// Pure validation of a coat folder against COATS.md. No AppKit, no SpriteKit,
@@ -189,6 +218,70 @@ enum CoatValidator {
             stateDirections: stateDirections,
             scales: (manifest?.scales ?? [:]).mapValues { CGFloat($0) }
         )
+    }
+
+    // MARK: - Staging an import
+
+    /// Everything that happens between "the user picked a file" and "there is
+    /// a validated coat to preview": stage it somewhere temporary, find the
+    /// coat folder inside it, and validate what's there.
+    ///
+    /// This is one function on purpose. Every step is either file I/O, a
+    /// forked `unzip`, or a CGImageSource decode of up to 136 PNGs, and none
+    /// of it belongs on the main thread — so the caller runs the whole thing
+    /// on a detached task and gets one `StagedCoat` back. Nothing here touches
+    /// AppKit; `progress` is called on whatever thread the work is running on,
+    /// and it is the caller's job to hop before it draws anything.
+    static func stageImport(
+        from url: URL,
+        fileManager: FileManager = .default,
+        progress: (CoatImportStage) -> Void = { _ in }
+    ) throws -> StagedCoat {
+        let staging = try makeStagingDirectory(fileManager: fileManager)
+        let folder: URL
+
+        if url.pathExtension.lowercased() == "zip" {
+            progress(.checkingArchive)
+            let entries = try listZipContents(at: url, fileManager: fileManager)
+            let refusals = checkZipSafety(entries).filter { $0.severity == .error }
+            guard refusals.isEmpty else {
+                throw ValidationError.unsafeArchive(refusals.map(\.message))
+            }
+
+            progress(.extracting)
+            let extracted = staging.appendingPathComponent("extracted", isDirectory: true)
+            try extractZip(at: url, to: extracted, fileManager: fileManager)
+            guard let found = findCoatFolder(in: extracted, fileManager: fileManager) else {
+                throw ValidationError.noCoatFolderFound
+            }
+            folder = found
+        } else {
+            progress(.copying)
+            let destination = staging.appendingPathComponent(
+                url.lastPathComponent, isDirectory: true
+            )
+            try fileManager.copyItem(at: url, to: destination)
+            folder = destination
+        }
+
+        progress(.validating)
+        return StagedCoat(
+            folder: folder,
+            report: validate(folder: folder, fileManager: fileManager)
+        )
+    }
+
+    /// A fresh, uniquely named folder under the temporary directory. Imports
+    /// are staged here so a coat that fails validation never touches
+    /// Application Support.
+    static func makeStagingDirectory(fileManager: FileManager = .default) throws -> URL {
+        let staging = fileManager.temporaryDirectory
+            .appendingPathComponent("jumbini-workshop-\(UUID().uuidString)", isDirectory: true)
+        // A UUID collision isn't a real case; this is just so a leftover
+        // directory can never make the create below fail.
+        try? fileManager.removeItem(at: staging)
+        try fileManager.createDirectory(at: staging, withIntermediateDirectories: true)
+        return staging
     }
 
     // MARK: - Zip safety
@@ -537,10 +630,36 @@ enum CoatValidator {
     }
 }
 
-enum ValidationError: Error, Equatable {
+/// Why an import, install or export could not go ahead.
+///
+/// `LocalizedError`, because every one of these ends up in the workshop's
+/// status line through `error.localizedDescription` — and a bare Swift error
+/// renders there as "The operation couldn't be completed. (Jumbini.
+/// ValidationError error 0.)", which tells the user nothing at all.
+enum ValidationError: Error, Equatable, LocalizedError {
     case zipListingFailed
     case zipExtractionFailed
     case zipCreationFailed
     case noCoatFolderFound
     case stagingFailed
+    /// The archive was refused before extraction. Carries the safety findings
+    /// so the reason survives all the way to the user.
+    case unsafeArchive([String])
+
+    var errorDescription: String? {
+        switch self {
+        case .zipListingFailed:
+            "Could not read the archive's contents."
+        case .zipExtractionFailed:
+            "Could not extract the archive."
+        case .zipCreationFailed:
+            "Could not write the zip archive."
+        case .noCoatFolderFound:
+            "No coat folder in the archive — it needs \(CoatValidator.requiredSprite)."
+        case .stagingFailed:
+            "Could not create a staging folder."
+        case .unsafeArchive(let reasons):
+            reasons.joined(separator: "\n")
+        }
+    }
 }

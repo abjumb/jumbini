@@ -31,6 +31,9 @@ final class CoatWorkshopPanel: NSPanel {
     private var selectedDirection: Facing = .south
     private var scaleEdits: [String: CGFloat] = [:]
     private let fileManager: FileManager
+    /// The import or re-validation in flight. Held so a second Import cancels
+    /// the first rather than letting two stagings race to the same fields.
+    private var stagingTask: Task<Void, Never>?
 
     // MARK: - UI elements
 
@@ -235,6 +238,35 @@ final class CoatWorkshopPanel: NSPanel {
         return backdrop
     }
 
+    // MARK: - File dialogs
+
+    /// A file dialog opened by this panel has to sit above it, and the app has
+    /// to be frontmost for the keyboard to reach it.
+    ///
+    /// The workshop floats at `.statusBar` so it stays over the user's other
+    /// windows; window levels are absolute, so an ordinary dialog would open
+    /// *underneath* the panel that asked for it. One level up puts it back on
+    /// top without disturbing anything else.
+    private static let dialogLevel = NSWindow.Level(
+        rawValue: NSWindow.Level.statusBar.rawValue + 1
+    )
+
+    /// Run an open or save dialog WITHOUT blocking the main thread.
+    ///
+    /// `runModal` spins its own event loop, which stops the dog dead for as
+    /// long as the user is browsing for a file — on a borderless overlay that
+    /// reads as the app having hung. `begin` puts up the same dialog and hands
+    /// the answer back through a completion instead. Nothing is called when
+    /// the user cancels.
+    private func present(_ dialog: NSSavePanel, then handle: @escaping (URL) -> Void) {
+        dialog.level = Self.dialogLevel
+        NSApp.activate()
+        dialog.begin { response in
+            guard response == .OK, let url = dialog.url else { return }
+            handle(url)
+        }
+    }
+
     // MARK: - Import
 
     @objc private func doImport() {
@@ -244,73 +276,58 @@ final class CoatWorkshopPanel: NSPanel {
         panel.allowsMultipleSelection = false
         panel.allowedContentTypes = [.zip, .folder]
         panel.message = "Choose a coat folder or zip archive."
-        guard panel.runModal() == .OK, let url = panel.url else { return }
+        present(panel) { [weak self] url in self?.beginImport(from: url) }
+    }
 
+    /// Stage and validate the chosen coat off the main thread.
+    ///
+    /// What used to run here inline was a forked `unzip -l`, a forked `unzip`,
+    /// a recursive folder copy and a CGImageSource decode of up to 136 PNGs —
+    /// seconds of frozen dog. All of it now happens on a detached task, with
+    /// the status line updated from the stages as they pass.
+    private func beginImport(from url: URL) {
         clearPreview()
+        stagingTask?.cancel()
+        importButton.isEnabled = false
+        statusLabel.stringValue = "Reading \(url.lastPathComponent)…"
 
-        do {
-            let staging = try createStagingDirectory()
-            let coatFolder: URL
+        let fileManager = self.fileManager
+        // Called from the staging thread, so it hops before it draws.
+        let announceStage: @Sendable (CoatImportStage) -> Void = { [weak self] stage in
+            Task { @MainActor in self?.statusLabel.stringValue = stage.message }
+        }
 
-            if url.pathExtension.lowercased() == "zip" {
-                coatFolder = try importZip(from: url, to: staging)
-            } else {
-                coatFolder = try importFolder(from: url, to: staging)
+        stagingTask = Task { [weak self] in
+            do {
+                let staged = try await Task.detached(priority: .userInitiated) {
+                    try CoatValidator.stageImport(
+                        from: url, fileManager: fileManager, progress: announceStage
+                    )
+                }.value
+                // Superseded by a second Import: the newer one owns the fields
+                // and the button now, so leave both alone.
+                guard !Task.isCancelled else { return }
+                self?.accept(staged)
+            } catch {
+                guard !Task.isCancelled else { return }
+                self?.statusLabel.stringValue = "Import failed: \(error.localizedDescription)"
             }
-
-            stagingURL = coatFolder
-            let result = CoatValidator.validate(folder: coatFolder, fileManager: fileManager)
-            report = result
-            scaleEdits = result.scales
-
-            displayReport(result)
-            exportButton.isEnabled = true
-            exportSource = coatFolder
-            isInstalledCoat = false
-            installButton.isEnabled = result.canInstall
-            previewButton.isEnabled = true
-            installButton.title = "Install"
-        } catch {
-            statusLabel.stringValue = "Import failed: \(error.localizedDescription)"
+            self?.importButton.isEnabled = true
         }
     }
 
-    private func importZip(from url: URL, to staging: URL) throws -> URL {
-        statusLabel.stringValue = "Checking archive…"
+    private func accept(_ staged: StagedCoat) {
+        stagingURL = staged.folder
+        report = staged.report
+        scaleEdits = staged.report.scales
 
-        let entries = try CoatValidator.listZipContents(at: url)
-        let safetyFindings = CoatValidator.checkZipSafety(entries)
-
-        if safetyFindings.contains(where: { $0.severity == .error }) {
-            let msgs = safetyFindings.filter { $0.severity == .error }.map(\.message).joined(separator: "\n")
-            statusLabel.stringValue = msgs
-            throw ValidationError.zipListingFailed
-        }
-
-        statusLabel.stringValue = "Extracting…"
-        let extractDir = staging.appendingPathComponent("extracted", isDirectory: true)
-        try CoatValidator.extractZip(at: url, to: extractDir)
-
-        guard let coatFolder = CoatValidator.findCoatFolder(in: extractDir) else {
-            statusLabel.stringValue = "No coat folder found in archive (needs \(CoatValidator.requiredSprite))."
-            throw ValidationError.noCoatFolderFound
-        }
-
-        return coatFolder
-    }
-
-    private func importFolder(from url: URL, to staging: URL) throws -> URL {
-        let dest = staging.appendingPathComponent(url.lastPathComponent, isDirectory: true)
-        try fileManager.copyItem(at: url, to: dest)
-        return dest
-    }
-
-    private func createStagingDirectory() throws -> URL {
-        let staging = fileManager.temporaryDirectory
-            .appendingPathComponent("jumbini-workshop-\(UUID().uuidString)", isDirectory: true)
-        try? fileManager.removeItem(at: staging)
-        try fileManager.createDirectory(at: staging, withIntermediateDirectories: true)
-        return staging
+        displayReport(staged.report)
+        exportButton.isEnabled = true
+        exportSource = staged.folder
+        isInstalledCoat = false
+        installButton.isEnabled = staged.report.canInstall
+        previewButton.isEnabled = true
+        installButton.title = "Install"
     }
 
     // MARK: - Report display
@@ -419,14 +436,19 @@ final class CoatWorkshopPanel: NSPanel {
 
     @objc private func resetScale(_ sender: NSButton) {
         guard let row = sender.superview as? NSStackView,
-              let label = row.arrangedSubviews.first as? NSTextField else { return }
+              let label = row.arrangedSubviews.first as? NSTextField,
+              let report else { return }
         let state = String(label.stringValue.dropLast())
         scaleEdits.removeValue(forKey: state)
-        rebuildScaleStack(report: report!)
+        rebuildScaleStack(report: report)
         writeScaleEdits()
         if isPreviewing { refreshPreview() }
     }
 
+    /// One small JSON file, so this stays on the main thread — but it is not
+    /// allowed to fail silently. A scale override the user typed and the
+    /// workshop then dropped on the floor is the kind of thing they only find
+    /// out about the next time they open the coat.
     private func writeScaleEdits() {
         guard let staging = stagingURL else { return }
         let filtered = scaleEdits.filter { $0.value != SpriteLibrary.baseScale }
@@ -434,8 +456,11 @@ final class CoatWorkshopPanel: NSPanel {
         if !filtered.isEmpty {
             manifest["scales"] = filtered.mapValues { Double($0) }
         }
-        if let data = try? JSONSerialization.data(withJSONObject: manifest, options: .prettyPrinted) {
-            try? data.write(to: staging.appendingPathComponent("coat.json"))
+        do {
+            let data = try JSONSerialization.data(withJSONObject: manifest, options: .prettyPrinted)
+            try data.write(to: staging.appendingPathComponent("coat.json"))
+        } catch {
+            statusLabel.stringValue = "Could not save the scale override: \(error.localizedDescription)"
         }
     }
 
@@ -537,6 +562,8 @@ private func updateDirectionButtons() {
 
     // MARK: - Install
 
+    /// Installing copies the whole coat — up to 136 files — into Application
+    /// Support, so it goes off the main thread like the import does.
     @objc private func doInstall() {
         guard let staging = stagingURL, let report, report.canInstall else { return }
 
@@ -545,19 +572,31 @@ private func updateDirectionButtons() {
             return
         }
 
-        do {
-            let installedURL = try CoatValidator.installCoat(
-                from: staging, coatsDirectory: coatsDirectory, fileManager: fileManager
-            )
-            statusLabel.stringValue = "Installed as \"\(installedURL.lastPathComponent)\"."
+        installButton.isEnabled = false
+        statusLabel.stringValue = "Installing…"
+        let fileManager = self.fileManager
 
-            stopPreview()
-            onInstall?(installedURL.lastPathComponent)
-            installButton.title = "Installed ✓"
-            installButton.isEnabled = false
-            isInstalledCoat = true
-        } catch {
-            statusLabel.stringValue = "Install failed: \(error.localizedDescription)"
+        Task { [weak self] in
+            do {
+                let installedURL = try await Task.detached(priority: .userInitiated) {
+                    try CoatValidator.installCoat(
+                        from: staging, coatsDirectory: coatsDirectory, fileManager: fileManager
+                    )
+                }.value
+                guard let self else { return }
+                // Before the message, not after: stopPreview writes its own
+                // line into the status label.
+                self.stopPreview()
+                self.statusLabel.stringValue = "Installed as \"\(installedURL.lastPathComponent)\"."
+                self.onInstall?(installedURL.lastPathComponent)
+                self.installButton.title = "Installed ✓"
+                self.installButton.isEnabled = false
+                self.isInstalledCoat = true
+            } catch {
+                guard let self else { return }
+                self.statusLabel.stringValue = "Install failed: \(error.localizedDescription)"
+                self.installButton.isEnabled = true
+            }
         }
     }
 
@@ -571,34 +610,42 @@ private func updateDirectionButtons() {
         panel.nameFieldStringValue = "\(name).zip"
         panel.allowedContentTypes = [.zip]
         panel.message = "Export coat as a portable zip."
-        guard panel.runModal() == .OK, let destination = panel.url else { return }
+        present(panel) { [weak self] destination in
+            self?.beginExport(from: source, to: destination)
+        }
+    }
 
-        do {
-            try CoatValidator.exportCoat(from: source, to: destination)
-            statusLabel.stringValue = "Exported to \(destination.lastPathComponent)."
-        } catch {
-            statusLabel.stringValue = "Export failed: \(error.localizedDescription)"
+    /// `zip -r` over a coat folder is another fork plus a full read of every
+    /// sprite; the dog keeps running while it happens.
+    private func beginExport(from source: URL, to destination: URL) {
+        exportButton.isEnabled = false
+        statusLabel.stringValue = "Exporting…"
+        Task { [weak self] in
+            defer { self?.exportButton.isEnabled = true }
+            do {
+                try await Task.detached(priority: .userInitiated) {
+                    try CoatValidator.exportCoat(from: source, to: destination)
+                }.value
+                self?.statusLabel.stringValue = "Exported to \(destination.lastPathComponent)."
+            } catch {
+                self?.statusLabel.stringValue = "Export failed: \(error.localizedDescription)"
+            }
         }
     }
 
     // MARK: - Open for an installed coat (export-only mode)
 
     /// Open the workshop in export-only mode for an already-installed coat.
+    ///
+    /// Re-validating decodes every sprite the coat has, exactly as an import
+    /// does, so it takes the same detour off the main thread.
     func openForInstalledCoat(_ coat: Coat) {
         clearPreview()
         stagingURL = coat.root
         exportSource = coat.root
         isInstalledCoat = true
 
-        if let root = coat.root {
-            let result = CoatValidator.validate(folder: root, fileManager: fileManager)
-            report = result
-            scaleEdits = result.scales
-            displayReport(result)
-            previewButton.isEnabled = true
-            installButton.title = "Installed"
-            installButton.isEnabled = false
-        } else {
+        guard let root = coat.root else {
             statusLabel.stringValue = "\(coat.title) is a built-in coat — export not available."
             exportButton.isEnabled = false
             findingsScroll.isHidden = true
@@ -606,7 +653,23 @@ private func updateDirectionButtons() {
         }
 
         exportButton.isEnabled = true
-        statusLabel.stringValue = "\(coat.title) — export or preview."
+        statusLabel.stringValue = "Checking \(coat.title)…"
+
+        stagingTask?.cancel()
+        let fileManager = self.fileManager
+        stagingTask = Task { [weak self] in
+            let result = await Task.detached(priority: .userInitiated) {
+                CoatValidator.validate(folder: root, fileManager: fileManager)
+            }.value
+            guard !Task.isCancelled, let self else { return }
+            self.report = result
+            self.scaleEdits = result.scales
+            self.displayReport(result)
+            self.previewButton.isEnabled = true
+            self.installButton.title = "Installed"
+            self.installButton.isEnabled = false
+            self.statusLabel.stringValue = "\(coat.title) — export or preview."
+        }
     }
 
     // MARK: - Dismiss
