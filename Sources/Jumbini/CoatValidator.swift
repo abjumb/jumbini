@@ -22,8 +22,12 @@ enum ValidationSeverity: Equatable {
     case info
 }
 
-struct ValidationFinding: Identifiable, Equatable {
-    let id = UUID()
+/// A finding is its severity and its message and nothing else. It carried a
+/// `let id = UUID()` for `Identifiable`, which — being freshly random per
+/// instance — made `==` false for every pair, including two findings with
+/// identical text. Nothing consumed the id; a test asserting on findings, or
+/// any future dedupe, needs the equality more than the identity.
+struct ValidationFinding: Equatable {
     let severity: ValidationSeverity
     let message: String
 }
