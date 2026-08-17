@@ -75,7 +75,7 @@ enum CoatValidator {
         var findings: [ValidationFinding] = []
         let folderName = folder.lastPathComponent
 
-        let manifest = readManifest(in: folder, fileManager: fileManager)
+        let manifest = CoatCatalog.manifest(in: folder, fileManager: fileManager)
         let trimmed = manifest?.name?.trimmingCharacters(in: .whitespacesAndNewlines)
         let coatName = trimmed.flatMap { $0.isEmpty ? nil : $0 } ?? folderName
 
@@ -485,17 +485,6 @@ enum CoatValidator {
     }
 
     // MARK: - Internals
-
-    private static func readManifest(
-        in folder: URL,
-        fileManager: FileManager
-    ) -> CoatManifest? {
-        let url = folder.appendingPathComponent("coat.json")
-        guard fileManager.fileExists(atPath: url.path),
-              let data = try? Data(contentsOf: url)
-        else { return nil }
-        return try? JSONDecoder().decode(CoatManifest.self, from: data)
-    }
 
     private static func spriteFileNames(
         in folder: URL,

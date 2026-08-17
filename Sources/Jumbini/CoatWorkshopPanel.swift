@@ -54,6 +54,8 @@ final class CoatWorkshopPanel: NSPanel {
     private static let initialHeight: CGFloat = 520
     private static let contentInset: CGFloat = 16
     private static let cornerRadius: CGFloat = 22
+    private static let scaleFieldPrefix = "scale:"
+    private static let resetButtonPrefix = "reset:"
 
     init(fileManager: FileManager = .default) {
         self.fileManager = fileManager
@@ -409,6 +411,7 @@ final class CoatWorkshopPanel: NSPanel {
             field.stringValue = String(format: "%.1f", scaleEdits[state] ?? SpriteLibrary.baseScale)
             field.target = self
             field.action = #selector(scaleEdited(_:))
+            field.identifier = NSUserInterfaceItemIdentifier(rawValue: Self.scaleFieldPrefix + state)
             field.translatesAutoresizingMaskIntoConstraints = false
             field.widthAnchor.constraint(equalToConstant: 60).isActive = true
 
@@ -416,7 +419,7 @@ final class CoatWorkshopPanel: NSPanel {
             resetBtn.bezelStyle = .inline
             resetBtn.controlSize = .small
             resetBtn.font = .systemFont(ofSize: 10)
-            resetBtn.identifier = NSUserInterfaceItemIdentifier(rawValue: "reset:" + state)
+            resetBtn.identifier = NSUserInterfaceItemIdentifier(rawValue: Self.resetButtonPrefix + state)
 
             let defaultLabel = NSTextField(labelWithString: "(default: \(String(format: "%.1f", SpriteLibrary.baseScale)))")
             defaultLabel.font = .systemFont(ofSize: 10)
@@ -430,11 +433,22 @@ final class CoatWorkshopPanel: NSPanel {
         }
     }
 
+    /// Which state a scale row's control belongs to.
+    ///
+    /// Carried on the control itself. Recovering it by trimming the colon off
+    /// the row's label meant any change to how that label reads — a unit, a
+    /// prettier name — silently wrote the wrong key into the manifest.
+    private func state(of control: NSView, prefix: String) -> String? {
+        guard let raw = control.identifier?.rawValue, raw.hasPrefix(prefix) else { return nil }
+        return String(raw.dropFirst(prefix.count))
+    }
+
     @objc private func scaleEdited(_ sender: NSTextField) {
-        guard let row = sender.superview as? NSStackView,
-              let label = row.arrangedSubviews.first as? NSTextField else { return }
-        let state = String(label.stringValue.dropLast())
-        guard let value = Double(sender.stringValue), value > 0 else { return }
+        guard let state = state(of: sender, prefix: Self.scaleFieldPrefix) else { return }
+        guard let value = Double(sender.stringValue), value > 0 else {
+            statusLabel.stringValue = "Scale for \(state) must be a positive number."
+            return
+        }
         scaleEdits[state] = CGFloat(value)
 
         // Write updated scales to the staging coat.json.
@@ -443,24 +457,41 @@ final class CoatWorkshopPanel: NSPanel {
     }
 
     @objc private func resetScale(_ sender: NSButton) {
-        guard let row = sender.superview as? NSStackView,
-              let label = row.arrangedSubviews.first as? NSTextField else { return }
-        let state = String(label.stringValue.dropLast())
+        guard let state = state(of: sender, prefix: Self.resetButtonPrefix),
+              let report else { return }
         scaleEdits.removeValue(forKey: state)
-        rebuildScaleStack(report: report!)
+        rebuildScaleStack(report: report)
         writeScaleEdits()
         if isPreviewing { refreshPreview() }
     }
 
+    /// Persist the scale edits into the staging `coat.json`.
+    ///
+    /// Merged into whatever manifest is already there rather than rebuilt from
+    /// the two fields the workshop knows about: hand-building a dictionary of
+    /// name and scales deleted every other key in the file, so opening a coat
+    /// and nudging one scale quietly stripped anything its author had added.
     private func writeScaleEdits() {
         guard let staging = stagingURL else { return }
-        let filtered = scaleEdits.filter { $0.value != SpriteLibrary.baseScale }
-        var manifest: [String: Any] = ["name": report?.coatName ?? staging.lastPathComponent]
-        if !filtered.isEmpty {
-            manifest["scales"] = filtered.mapValues { Double($0) }
-        }
-        if let data = try? JSONSerialization.data(withJSONObject: manifest, options: .prettyPrinted) {
-            try? data.write(to: staging.appendingPathComponent("coat.json"))
+
+        var manifest = CoatCatalog.manifest(in: staging, fileManager: fileManager) ?? CoatManifest()
+        manifest.name = report?.coatName ?? manifest.name ?? staging.lastPathComponent
+
+        // A scale equal to the default says nothing the app doesn't already
+        // assume, and an empty overrides dictionary is noise in the file.
+        let overrides = scaleEdits.filter { $0.value != SpriteLibrary.baseScale }
+        manifest.scales = overrides.isEmpty ? nil : overrides.mapValues { Double($0) }
+
+        do {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            try encoder.encode(manifest).write(
+                to: staging.appendingPathComponent("coat.json"), options: .atomic
+            )
+        } catch {
+            // Silently failing here left the panel showing an edit that was
+            // never going to survive install.
+            statusLabel.stringValue = "Could not save scales: \(error.localizedDescription)"
         }
     }
 
