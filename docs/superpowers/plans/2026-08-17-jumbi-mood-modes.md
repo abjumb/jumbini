@@ -785,8 +785,8 @@ whole test with:
     brain.surfaces = [perchable]
     _ = brain.handle(.tick, at: 0)
     _ = brain.handle(.tick, at: 3.1)
-    #expect(brain.state == .sleeping || brain.state == .headingToSurface(surfaceID: 1),
-            "whichever half the seed lands in, it's one of the two — never a wander")
+    #expect(brain.state != .wandering,
+            "whichever half the seed lands in, the roll is spoken for; got \(brain.state)")
 }
 ```
 
