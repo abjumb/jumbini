@@ -193,8 +193,8 @@ enum CoatValidator {
 
     // MARK: - Zip safety
 
-    /// List zip contents and check for dangerous entries before extraction.
-    /// Returns nil if the archive is unsafe; otherwise returns the entry paths.
+    /// List the entry paths in an archive, for `checkZipSafety` to judge
+    /// before anything is written to disk.
     static func listZipContents(
         at archiveURL: URL,
         fileManager: FileManager = .default
@@ -223,7 +223,11 @@ enum CoatValidator {
         return parseZipList(output)
     }
 
-    /// Check a list of zip entry paths for traversal, symlinks, and other dangers.
+    /// Check a list of zip entry paths for traversal and other dangers.
+    ///
+    /// A listing names entries but does not say what they are, so symlinks are
+    /// invisible here — they are caught after extraction by
+    /// `checkExtractedTree(at:fileManager:)`.
     static func checkZipSafety(
         _ entries: [String],
         maxFiles: Int = 500,
@@ -310,6 +314,64 @@ enum CoatValidator {
         guard process.terminationStatus == 0 else {
             throw ValidationError.zipExtractionFailed
         }
+    }
+
+    /// Walk an extracted archive and report its symlinks.
+    ///
+    /// This is the half of zip safety that a listing cannot do. `unzip -l`
+    /// prints a symlink as an ordinary row, so a link is only distinguishable
+    /// once it is on disk — and a link is how an archive reaches outside the
+    /// staging directory without any entry path containing "..": install
+    /// copies the coat folder, and a link pointing at `~/.ssh` would be copied
+    /// along with it, or followed by anything later reading the coat.
+    ///
+    /// A link that stays inside the extracted tree is merely unexpected in a
+    /// folder of PNGs; one that resolves outside it is an error.
+    static func checkExtractedTree(
+        at root: URL,
+        fileManager: FileManager = .default
+    ) -> [ValidationFinding] {
+        // The staging root normally lives under /var/folders, itself a symlink
+        // to /private/var, so containment has to be judged against the
+        // resolved path or every entry looks like an escape.
+        let resolvedRoot = root.resolvingSymlinksInPath().standardizedFileURL.path
+        let displayRoot = root.standardizedFileURL.path
+
+        guard let enumerator = fileManager.enumerator(
+            at: root,
+            includingPropertiesForKeys: [.isSymbolicLinkKey],
+            options: []
+        ) else {
+            return [ValidationFinding(
+                severity: .error,
+                message: "Could not read the extracted archive."
+            )]
+        }
+
+        var findings: [ValidationFinding] = []
+        for case let url as URL in enumerator {
+            let isLink = (try? url.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) ?? false
+            guard isLink else { continue }
+
+            let path = url.standardizedFileURL.path
+            let name = path.hasPrefix(displayRoot + "/")
+                ? String(path.dropFirst(displayRoot.count + 1))
+                : url.lastPathComponent
+            let target = url.resolvingSymlinksInPath().standardizedFileURL.path
+
+            if target == resolvedRoot || target.hasPrefix(resolvedRoot + "/") {
+                findings.append(ValidationFinding(
+                    severity: .warning,
+                    message: "Symlink: \(name) — points inside the coat folder; installing copies the link, not the file."
+                ))
+            } else {
+                findings.append(ValidationFinding(
+                    severity: .error,
+                    message: "Symlink escapes the archive: \"\(name)\" points to \(target)."
+                ))
+            }
+        }
+        return findings
     }
 
     /// Find the coat folder inside an extracted zip. The user may have zipped the
@@ -519,30 +581,71 @@ enum CoatValidator {
         return findings
     }
 
+    /// Where `parseZipList` is in `unzip -l`'s output.
+    private enum ZipListPosition {
+        /// Before the `  Length      Date    Time    Name` header.
+        case beforeHeader
+        /// On the rule directly under the header.
+        case onHeaderRule
+        /// On the entry rows themselves.
+        case inListing
+    }
+
     private static func parseZipList(_ output: String) -> [String] {
         var entries: [String] = []
-        let lines = output.components(separatedBy: "\n")
-        var inListing = false
-        for line in lines {
-            if inListing {
-                if line.hasPrefix("---") { break }
-                // unzip -l output format: "  Length   Date   Time   Name"
-                // The name starts at column 30.
+        var nameColumn = 0
+        var position = ZipListPosition.beforeHeader
+
+        for line in output.components(separatedBy: "\n") {
+            switch position {
+            case .beforeHeader:
+                guard line.hasPrefix("  Length"),
+                      let nameHeading = line.range(of: "Name")
+                else { continue }
+                nameColumn = line.distance(from: line.startIndex, to: nameHeading.lowerBound)
+                position = .onHeaderRule
+
+            case .onHeaderRule:
+                // The rule under the header and the one that closes the
+                // listing both begin "---------", so this one is consumed by
+                // position rather than matched — matching it as a terminator
+                // is what used to end the parse before a single entry was read.
+                position = .inListing
+
+            case .inListing:
                 let trimmed = line.trimmingCharacters(in: .whitespaces)
                 if trimmed.isEmpty { continue }
-                // Skip the total line count before the separator.
-                if trimmed.allSatisfy({ $0 == "-" }) { break }
-                // Extract filename: skip length/date/time columns.
-                let parts = trimmed.split(separator: " ", omittingEmptySubsequences: true)
-                if parts.count >= 4 {
-                    let name = parts.dropFirst(3).joined(separator: " ")
-                    entries.append(name)
+                if trimmed.hasPrefix("---") { return entries }
+                if let entry = zipEntryName(in: line, nameColumn: nameColumn) {
+                    entries.append(entry)
                 }
-            } else if line.hasPrefix("  Length") {
-                inListing = true
             }
         }
         return entries
+    }
+
+    /// Take the entry name out of one `unzip -l` row.
+    ///
+    /// Names may contain spaces, so the Name column recorded from the header
+    /// is authoritative — rejoining whitespace-split fields collapses runs of
+    /// spaces and yields a path that does not match what was extracted, which
+    /// matters when the result is fed to a safety check. A row whose size
+    /// field is wide enough to push past that column falls back to splitting,
+    /// which loses interior spaces but is better than dropping the entry.
+    private static func zipEntryName(in line: String, nameColumn: Int) -> String? {
+        if nameColumn > 0,
+           let start = line.index(line.startIndex, offsetBy: nameColumn, limitedBy: line.endIndex),
+           start < line.endIndex,
+           line[line.index(before: start)].isWhitespace {
+            let name = String(line[start...]).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !name.isEmpty { return name }
+        }
+
+        let parts = line
+            .trimmingCharacters(in: .whitespaces)
+            .split(separator: " ", omittingEmptySubsequences: true)
+        guard parts.count >= 4 else { return nil }
+        return parts.dropFirst(3).joined(separator: " ")
     }
 }
 
@@ -550,6 +653,7 @@ enum ValidationError: Error, Equatable {
     case zipListingFailed
     case zipExtractionFailed
     case zipCreationFailed
+    case unsafeArchive
     case noCoatFolderFound
     case stagingFailed
 }

@@ -30,6 +30,9 @@ final class CoatWorkshopPanel: NSPanel {
     private var selectedState: String = "idle"
     private var selectedDirection: Facing = .south
     private var scaleEdits: [String: CGFloat] = [:]
+    /// Findings about the archive itself, which `CoatValidator.validate` never
+    /// sees because it is handed a folder. Shown alongside the report.
+    private var archiveFindings: [ValidationFinding] = []
     private let fileManager: FileManager
 
     // MARK: - UI elements
@@ -298,6 +301,20 @@ final class CoatWorkshopPanel: NSPanel {
         let extractDir = staging.appendingPathComponent("extracted", isDirectory: true)
         try CoatValidator.extractZip(at: url, to: extractDir)
 
+        // Symlinks are invisible in a listing, so this is the first point the
+        // archive can be checked for one. Discard the extraction on an escape
+        // rather than leaving a link into the user's home in the staging dir.
+        let treeFindings = CoatValidator.checkExtractedTree(at: extractDir, fileManager: fileManager)
+        if treeFindings.contains(where: { $0.severity == .error }) {
+            try? fileManager.removeItem(at: extractDir)
+            statusLabel.stringValue = treeFindings
+                .filter { $0.severity == .error }
+                .map(\.message)
+                .joined(separator: "\n")
+            throw ValidationError.unsafeArchive
+        }
+        archiveFindings = treeFindings
+
         guard let coatFolder = CoatValidator.findCoatFolder(in: extractDir) else {
             statusLabel.stringValue = "No coat folder found in archive (needs \(CoatValidator.requiredSprite))."
             throw ValidationError.noCoatFolderFound
@@ -323,9 +340,10 @@ final class CoatWorkshopPanel: NSPanel {
     // MARK: - Report display
 
     private func displayReport(_ report: CoatValidationReport) {
-        let errors = report.findings.filter { $0.severity == .error }
-        let warnings = report.findings.filter { $0.severity == .warning }
-        let infos = report.findings.filter { $0.severity == .info }
+        let findings = archiveFindings + report.findings
+        let errors = findings.filter { $0.severity == .error }
+        let warnings = findings.filter { $0.severity == .warning }
+        let infos = findings.filter { $0.severity == .info }
 
         var text = ""
         text += "Coat: \(report.coatName) (\(report.coatID))\n"
@@ -501,6 +519,7 @@ final class CoatWorkshopPanel: NSPanel {
     private func clearPreview() {
         if isPreviewing { stopPreview() }
         isPreviewing = false
+        archiveFindings = []
         previewButton.title = "Preview"
         previewButton.isEnabled = false
         statePopup.isEnabled = false
