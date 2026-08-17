@@ -93,6 +93,31 @@ import Testing
         }
     }
 
+    @Test @MainActor func idleCannotBeEnabledBeforeAReviewedManualPass() async throws {
+        let fixture = CoordinatorFixture(needsPreview: true, completedManualPass: false)
+
+        do {
+            try fixture.coordinator.updateIdle(enabled: true)
+            Issue.record("Idle tidying must stay locked until one manual pass succeeds")
+        } catch {
+            #expect(error as? TidyCoordinatorError == .previewRequired)
+        }
+        #expect(fixture.coordinator.state.preferences.idleEnabled == false)
+        #expect(fixture.backend.savedPreferences.isEmpty)
+    }
+
+    @Test @MainActor func idleTurnsOnAfterAManualPassWithoutReopeningThePreviewGate() async throws {
+        let fixture = CoordinatorFixture.readyForLiveRun()
+        _ = try await fixture.coordinator.runManual()
+
+        try fixture.coordinator.updateIdle(enabled: true)
+        try fixture.coordinator.updateIdle(minutes: 0)
+
+        #expect(fixture.coordinator.state.preferences.idleEnabled)
+        #expect(fixture.coordinator.state.preferences.idleMinutes == 1)
+        #expect(fixture.coordinator.state.needsPreview == false)
+    }
+
     @Test @MainActor func confirmedPreviewPropagatesSelectionAndUnlocksIdleWithoutEnablingIt() async throws {
         let fixture = CoordinatorFixture(needsPreview: true, completedManualPass: false)
         let preview = try await fixture.coordinator.makePreview()

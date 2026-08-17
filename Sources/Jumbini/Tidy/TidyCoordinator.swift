@@ -6,6 +6,22 @@ enum TidyCoordinatorError: Error, Equatable {
     case previewRequired
     case staleBookmark
     case recoveryBlocked(String)
+
+    /// What to put in front of the user. Every one of these is something they
+    /// can act on, so none of them is worth an alert — they go in the same
+    /// popover the results do.
+    var message: String {
+        switch self {
+        case .folderRequired:
+            return "Choose a folder for Jumba to tidy first."
+        case .previewRequired:
+            return "Take a look at the preview before Jumba moves anything."
+        case .staleBookmark:
+            return "macOS withdrew access to that folder. Choose it again."
+        case .recoveryBlocked(let detail):
+            return detail
+        }
+    }
 }
 
 enum TidyNotice: Equatable {
@@ -13,6 +29,79 @@ enum TidyNotice: Equatable {
     case halted(moved: Int)
     case failed(String)
     case undone(Int)
+
+    /// One line for the status-item popover. Idle passes must not interrupt, so
+    /// results are reported as text rather than as an alert.
+    var message: String {
+        switch self {
+        case .completed(let moved, let skipped, let capped):
+            let moves = "Jumba moved \(moved) file\(moved == 1 ? "" : "s")"
+            let skips = skipped == 0 ? "" : ", left \(skipped) alone"
+            let cap = capped ? " He stopped at \(TidySafety.maximumMoves) for safety." : ""
+            return moves + skips + "." + cap
+        case .halted(let moved):
+            return "You came back — Jumba stopped after \(moved) file\(moved == 1 ? "" : "s")."
+        case .failed(let message):
+            return "Jumba stopped: \(message)"
+        case .undone(let count):
+            return "Jumba put \(count) file\(count == 1 ? "" : "s") back."
+        }
+    }
+}
+
+/// What the Tidy submenu offers, as data.
+///
+/// The menu decides real things — whether a pass can start, whether the last one
+/// can still be undone, whether the folder grant can be revoked — and none of
+/// that needs AppKit to be decided or to be checked.
+struct TidyMenuState: Equatable {
+    var folderConfigured: Bool
+    var undoCount: Int
+    var idleEnabled: Bool
+    var idleAvailable: Bool
+    var isRunning: Bool
+
+    init(
+        folderConfigured: Bool,
+        undoCount: Int,
+        idleEnabled: Bool,
+        idleAvailable: Bool,
+        isRunning: Bool = false
+    ) {
+        self.folderConfigured = folderConfigured
+        self.undoCount = undoCount
+        self.idleEnabled = idleEnabled
+        self.idleAvailable = idleAvailable
+        self.isRunning = isRunning
+    }
+
+    /// A folder Tidy cannot currently reach is not a configured folder: a stale
+    /// or revoked grant sends the menu back to offering setup rather than
+    /// offering to tidy something it would only fail on.
+    init(state: TidyCoordinator.State) {
+        self.init(
+            folderConfigured: state.folder != nil && state.blockingError == nil,
+            undoCount: state.undoCount,
+            idleEnabled: state.preferences.idleEnabled,
+            idleAvailable: state.idleAvailable,
+            isRunning: state.isRunning
+        )
+    }
+
+    var primaryTitle: String { folderConfigured ? "Tidy Up…" : "Set Up Tidy…" }
+    var undoTitle: String {
+        undoCount > 0 ? "Undo Last Tidy (\(undoCount))" : "Undo Last Tidy"
+    }
+    var settingsTitle: String { "Tidy Settings…" }
+    var idleTitle: String { "Tidy While Idle" }
+    var forgetTitle: String { "Forget Folder…" }
+
+    /// Always available: without a folder the primary item opens the picker.
+    var canTidy: Bool { !isRunning }
+    var canUndo: Bool { folderConfigured && undoCount > 0 && !isRunning }
+    var canForgetFolder: Bool { folderConfigured && !isRunning }
+    var canToggleIdle: Bool { idleAvailable && !isRunning }
+    var idleIsChecked: Bool { idleEnabled && idleAvailable }
 }
 
 @MainActor
@@ -233,6 +322,28 @@ final class TidyCoordinator {
         preferences.needsPreview = true
         try dependencies.savePreferences(preferences)
         preview = nil
+        updateState { $0.preferences = preferences }
+    }
+
+    /// Idle tidying is a trigger, not a rule, so switching it on does not
+    /// reinstate the preview gate — but it cannot be switched on at all until a
+    /// reviewed manual pass has succeeded, which is what `idleAvailable` means.
+    func updateIdle(enabled: Bool) throws {
+        try requireNoOperationInFlight()
+        guard !enabled || state.idleAvailable else {
+            throw TidyCoordinatorError.previewRequired
+        }
+        var preferences = state.preferences
+        preferences.idleEnabled = enabled
+        try dependencies.savePreferences(preferences)
+        updateState { $0.preferences = preferences }
+    }
+
+    func updateIdle(minutes: Int) throws {
+        try requireNoOperationInFlight()
+        var preferences = state.preferences
+        preferences.idleMinutes = max(minutes, 1)
+        try dependencies.savePreferences(preferences)
         updateState { $0.preferences = preferences }
     }
 

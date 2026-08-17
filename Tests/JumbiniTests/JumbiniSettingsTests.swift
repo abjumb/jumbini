@@ -28,7 +28,9 @@ private func isolatedDefaults() -> (UserDefaults, String) {
     #expect(JumbiniSettings(defaults: defaults) == expected)
 }
 
-@Test func appDelegateLoadsPersistedSettingsForLaunch() {
+// `@MainActor` because the delegate is: it owns the status item, the panels and
+// the Tidy coordinator, all of which are main-thread only.
+@Test @MainActor func appDelegateLoadsPersistedSettingsForLaunch() {
     let (defaults, name) = isolatedDefaults()
     defer { defaults.removePersistentDomain(forName: name) }
     let expected = JumbiniSettings(
