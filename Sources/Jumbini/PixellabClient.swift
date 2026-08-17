@@ -6,7 +6,7 @@ import Security
 /// Pixellab v2 API; tests substitute a mock that returns canned sprites, so
 /// the whole pipeline (photos -> sprites -> coat folder) is exercised without
 /// a network call.
-protocol PixellabClientProtocol {
+protocol PixellabClientProtocol: Sendable {
     /// Create an 8-direction character from a south-facing reference photo.
     /// Returns the character id plus its eight idle rotation sprites (raw PNG).
     func createCharacter(referenceImage: Data) async throws -> GeneratedCharacter
@@ -25,7 +25,11 @@ struct GeneratedCharacter {
 /// The live Pixellab client (Foundation + URLSession only — no AppKit — so the
 /// HTTP layer stays out of the way of the SpriteKit/AppKit app code and can be
 /// swapped for a mock in tests).
-final class PixellabClient: PixellabClientProtocol {
+///
+/// `Sendable`: it is stateless (every stored thing is a `static let` or
+/// derived per call), so a generation kicked off from a panel can hand it to
+/// whatever task the pipeline runs on.
+final class PixellabClient: PixellabClientProtocol, Sendable {
     private static let baseURL = URL(string: "https://api.pixellab.ai/v2")!
 
     private static let keychainService = "ai.pixellab.api"

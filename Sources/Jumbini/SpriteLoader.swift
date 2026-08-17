@@ -68,6 +68,13 @@ struct AnimationSpec: Equatable {
 
 /// Loads Jumba's hand-made 8-directional sprites (imported by Tools/import_jumba.py)
 /// plus the generated props (ball, heart). Nearest-neighbor keeps pixels crisp.
+///
+/// `@MainActor` because of the shared instance: it is a mutable texture cache,
+/// and everything that reads it (the scene, the panels) is on the main actor
+/// already. The parts that describe art rather than load it stay `nonisolated`
+/// — `heroSpec` is a pure table, and spritefilm's drift guard reads it from a
+/// plain test function.
+@MainActor
 final class SpriteLibrary {
     static let shared = SpriteLibrary()
 
@@ -105,17 +112,17 @@ final class SpriteLibrary {
     /// Base pixel scale: 48px art renders at ×2.4. Not private: `Dog` sizes
     /// wardrobe overlays against it, so a piece stays the same size on him
     /// whichever pose's art is on screen.
-    static let baseScale: CGFloat = 2.4
+    nonisolated static let baseScale: CGFloat = 2.4
     /// The sit set was exported at a smaller pixel density than idle — upscale
     /// it so Jumba doesn't shrink when he sits (idle content 46px vs sit 38px).
     /// Not private: `heroSpec` and its test need to read it too.
-    static let sitScale: CGFloat = 2.9
+    nonisolated static let sitScale: CGFloat = 2.9
 
     private var textureCache: [String: SKTexture] = [:]
 
     /// The fallback-free poses, described rather than rendered. nil for every
     /// pose whose art resolves against what's on disk.
-    static func heroSpec(for dogAnimation: DogAnimation, facing: Facing) -> AnimationSpec? {
+    nonisolated static func heroSpec(for dogAnimation: DogAnimation, facing: Facing) -> AnimationSpec? {
         let d = facing.fileSuffix
         switch dogAnimation {
         case .idle:

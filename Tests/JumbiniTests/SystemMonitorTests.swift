@@ -10,11 +10,16 @@ import Foundation
 
 @Test func aSourceSurvivesTwoFailuresAndLatchesOffOnTheThird() {
     var budget = RetryBudget()
-    #expect(!budget.recordFailure())
+    // Bound to locals rather than inlined: #expect can't call a mutating
+    // method on a var.
+    let first = budget.recordFailure()
+    #expect(!first)
     #expect(budget.isAvailable)
-    #expect(!budget.recordFailure())
+    let second = budget.recordFailure()
+    #expect(!second)
     #expect(budget.isAvailable)
-    #expect(budget.recordFailure(), "the third strike is the one that latches it off")
+    let third = budget.recordFailure()
+    #expect(third, "the third strike is the one that latches it off")
     #expect(!budget.isAvailable)
 }
 
@@ -31,7 +36,8 @@ import Foundation
 @Test func latchingOffIsPermanentAndReportedOnlyOnce() {
     var budget = RetryBudget()
     for _ in 0..<3 { budget.recordFailure() }
-    #expect(!budget.recordFailure(), "already off; only the transition reports true")
+    let afterLatching = budget.recordFailure()
+    #expect(!afterLatching, "already off; only the transition reports true")
     budget.recordSuccess()
     #expect(!budget.isAvailable, "a late success cannot bring a dead source back")
 }

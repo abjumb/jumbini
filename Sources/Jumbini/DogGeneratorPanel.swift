@@ -7,6 +7,7 @@ import UniformTypeIdentifiers
 /// steals focus from whatever the user is doing. It owns none of the pipeline
 /// itself — it calls the `generate` closure (wired by the app delegate to the
 /// real generator) and reports the result back to `onApply`.
+@MainActor
 final class DogGeneratorPanel: NSPanel {
     /// Run the generation and return the `idle_south` sprite as preview data.
     /// The closure is expected to have already written the coat to disk.

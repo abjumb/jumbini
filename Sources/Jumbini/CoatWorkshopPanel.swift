@@ -8,6 +8,7 @@ import SpriteKit
 /// A borderless, non-activating NSPanel like the DogGeneratorPanel. It owns
 /// none of the rendering — it sends pose/direction commands to the scene so
 /// the preview happens on the real dog in the overlay.
+@MainActor
 final class CoatWorkshopPanel: NSPanel {
     // MARK: - Closures (wired by the scene)
 
