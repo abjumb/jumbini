@@ -200,6 +200,15 @@ final class TidyLedger {
         )
     }
 
+    func recordUndoFailure(_ message: String, in passID: UUID) throws {
+        _ = try requirePass(passID)
+        try append(
+            passID: passID,
+            action: "UNDO_FAILED",
+            result: message
+        )
+    }
+
     func finish(_ passID: UUID, status: TidyPassStatus) throws {
         var pass = try requirePass(passID)
         pass.status = status

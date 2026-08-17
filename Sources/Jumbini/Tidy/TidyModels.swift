@@ -151,3 +151,28 @@ enum TidyPlanError: Error, Equatable {
     case duplicateRuleID(UUID)
     case enumerationFailed(String)
 }
+
+struct TidyPassResult: Equatable {
+    let passID: UUID
+    let moves: [TidyCompletedMove]
+    let skipped: [TidySkippedItem]
+    let failures: [String]
+    let didHitCap: Bool
+    let wasHalted: Bool
+}
+
+struct TidyUndoResult: Equatable {
+    let restoredCount: Int
+}
+
+enum TidyUndoError: Error, Equatable {
+    case unavailable
+    case sourceOccupied(URL)
+    case destinationChanged(URL)
+    case rollbackFailed(String)
+}
+
+enum TidyExecutionError: Error, Equatable {
+    case unsafeRoot(URL)
+    case pathOutsideRoot(URL)
+}
