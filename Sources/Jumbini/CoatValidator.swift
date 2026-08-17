@@ -469,10 +469,16 @@ enum CoatValidator {
         // former file is gone. Make that true.
         try? fileManager.removeItem(at: destination)
 
+        // The coat folder itself, not its contents. A coat's id is its folder
+        // name, and an archive of loose sprites has nowhere to keep it — so
+        // exporting "nova" and importing it back installed a coat called
+        // "extracted", after the staging directory it happened to land in.
+        // (The former shape also risked zipping the archive into itself when
+        // the save panel pointed inside the folder being exported.)
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/zip")
-        process.arguments = ["-r", destination.path, "."]
-        process.currentDirectoryURL = folder
+        process.arguments = ["-r", destination.path, folder.lastPathComponent]
+        process.currentDirectoryURL = folder.deletingLastPathComponent()
 
         // Per-file "adding: …" output is unused; a Pipe nobody drains would deadlock.
         process.standardOutput = FileHandle.nullDevice

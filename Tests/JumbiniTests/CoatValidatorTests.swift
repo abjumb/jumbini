@@ -340,8 +340,10 @@ import UniformTypeIdentifiers
             return // unzip unavailable in this environment
         }
 
-        #expect(entries.contains("idle_south.png"))
-        #expect(entries.contains("two  words.png"))
+        // Entries are prefixed with the coat folder: an export archives the
+        // folder, so its name survives the round trip.
+        #expect(entries.contains("nova/idle_south.png"))
+        #expect(entries.contains("nova/two  words.png"))
     }
 
     // MARK: - Install / atomicity
