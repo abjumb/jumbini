@@ -392,15 +392,62 @@ jobs:
           echo "Download page stamped v$V. Pages payload:"
           ls -1 "$PAGES" | sed 's/^/  /'
 
+      # Published with git rather than a third-party action, because every
+      # action a workflow names is downloaded during "Set up job" — before any
+      # step runs — and a download that fails takes the whole release with it.
+      # v4.9 died exactly there: codeload answered 429, then 503, then 429 for
+      # peaceiris/actions-gh-pages, three attempts, job over. Nothing had been
+      # built, nobody was told, and the tag sat there looking released.
+      #
+      # Retries would not have helped; the action's own retry is what ran out.
+      # The fix is to stop needing the download. gh-pages is a branch, this
+      # runner already has git and a token, and build/pages is the complete
+      # site by construction — the steps above rebuild it from the existing
+      # branch every run — so publishing it is a commit and a push.
       - name: Deploy appcast to GitHub Pages
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./build/pages
-          publish_branch: gh-pages
-          force_orphan: false
-          commit_message: "Publish appcast for ${{ github.ref_name }}"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          PAYLOAD="$PWD/build/pages"
+          WORK="$RUNNER_TEMP/gh-pages-publish"
+          REMOTE="https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+
+          [ -d "$PAYLOAD" ] || { echo "::error::$PAYLOAD is missing; the appcast step must run first."; exit 1; }
+          [ -f "$PAYLOAD/appcast.xml" ] || { echo "::error::$PAYLOAD holds no appcast.xml; refusing to publish."; exit 1; }
+
+          rm -rf "$WORK"
+          if git ls-remote --exit-code --heads "$REMOTE" gh-pages >/dev/null 2>&1; then
+            # Shallow: the history is not the record — every release rebuilds
+            # the whole payload — and a push from it still fast-forwards.
+            git clone --branch gh-pages --single-branch --depth 1 "$REMOTE" "$WORK"
+            # The payload is the complete site, so anything still here that it
+            # does not name has been pruned on purpose and must not survive.
+            find "$WORK" -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          else
+            echo "No gh-pages branch yet — starting one."
+            git init -q -b gh-pages "$WORK"
+            git -C "$WORK" remote add origin "$REMOTE"
+          fi
+
+          # The /. form matters: it copies the dotfiles too, and .nojekyll is
+          # what stops Pages running the site through Jekyll.
+          cp -R "$PAYLOAD"/. "$WORK"/
+          cd "$WORK"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+
+          if git diff --cached --quiet; then
+            echo "gh-pages already matches this payload; nothing to publish."
+            exit 0
+          fi
+
+          git commit -q -m "Publish appcast for ${GITHUB_REF_NAME}"
+          git push origin HEAD:gh-pages
+          echo "Published $(git rev-parse --short HEAD) to gh-pages:"
+          git show --stat --oneline HEAD | sed 's/^/  /'
 
       # A broken update feed is invisible from inside the build: the appcast is
       # generated, signed and published exactly as instructed, and only fails on
