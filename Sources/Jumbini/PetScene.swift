@@ -4,6 +4,7 @@ import SpriteKit
 /// The transparent scene the dog lives in. Owns per-frame mouse polling and
 /// the click-through toggle, routes interactions to the brain, and applies
 /// the brain's effects to the sprites.
+@MainActor
 final class PetScene: SKScene {
     weak var overlayWindow: NSWindow?
 
@@ -1591,8 +1592,11 @@ final class PetScene: SKScene {
             CGVector(dx: 4, dy: -3), CGVector(dx: -4, dy: 3),
             CGVector(dx: 3, dy: 4), CGVector(dx: 0, dy: 0),
         ]
-        for (index, offset) in offsets.enumerated() {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.075 * Double(index + 1)) {
+        Task { @MainActor in
+            for offset in offsets {
+                // One sleep per hop, so the whole wriggle is a single task
+                // rather than four independently scheduled blocks.
+                try? await Task.sleep(for: .milliseconds(75))
                 // The user yanked the mouse away mid-jitter: let go of it.
                 guard let current = CGEvent(source: nil)?.location,
                       hypot(current.x - origin.x, current.y - origin.y) < 24 else { return }
@@ -1840,9 +1844,14 @@ final class PetScene: SKScene {
     /// (and its flies, which are children) with it.
     private func startAging(_ pile: SKSpriteNode) {
         guard let dry = SpriteLibrary.shared.singleProp(named: "deposit_dry") else { return }
+        // [weak pile], like the steam above: the action is run BY the pile, so
+        // capturing it strongly would be the node holding a reference to
+        // itself — a cycle that survives removeFromParent() and leaks every
+        // pile the dog ever leaves.
         pile.run(.sequence([
             .wait(forDuration: Self.pileDryAge),
-            .run { [weak self] in
+            .run { [weak self, weak pile] in
+                guard let pile else { return }
                 pile.texture = dry.textures[0]
                 pile.size = dry.nodeSize
                 self?.addFlies(to: pile)

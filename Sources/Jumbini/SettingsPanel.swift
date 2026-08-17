@@ -11,6 +11,7 @@ import AppKit
 /// Behavior switches save immediately. The Pixellab key is deliberately a
 /// separate, explicit action: secrets go to Keychain, never UserDefaults, and
 /// a half-entered key must not replace a working one as the user types.
+@MainActor
 final class SettingsPanel: JumbiniPanel {
     var onSettingsChanged: ((JumbiniSettings) -> Void)?
     /// Settings is where people go looking for the coat tools, so it offers

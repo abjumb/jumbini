@@ -68,6 +68,13 @@ struct AnimationSpec: Equatable {
 
 /// Loads Jumba's hand-made 8-directional sprites (imported by Tools/import_jumba.py)
 /// plus the generated props (ball, heart). Nearest-neighbor keeps pixels crisp.
+///
+/// `@MainActor` because of the shared instance: it is a mutable texture cache,
+/// and everything that reads it (the scene, the panels) is on the main actor
+/// already. The parts that describe art rather than load it stay `nonisolated`
+/// — `heroSpec` is a pure table, and spritefilm's drift guard reads it from a
+/// plain test function.
+@MainActor
 final class SpriteLibrary {
     static let shared = SpriteLibrary()
 
@@ -105,17 +112,17 @@ final class SpriteLibrary {
     /// Base pixel scale: 48px art renders at ×2.4. Not private: `Dog` sizes
     /// wardrobe overlays against it, so a piece stays the same size on him
     /// whichever pose's art is on screen.
-    static let baseScale: CGFloat = 2.4
+    nonisolated static let baseScale: CGFloat = 2.4
     /// The sit set was exported at a smaller pixel density than idle — upscale
     /// it so Jumba doesn't shrink when he sits (idle content 46px vs sit 38px).
     /// Not private: `heroSpec` and its test need to read it too.
-    static let sitScale: CGFloat = 2.9
+    nonisolated static let sitScale: CGFloat = 2.9
 
     private var textureCache: [String: SKTexture] = [:]
 
     /// The fallback-free poses, described rather than rendered. nil for every
     /// pose whose art resolves against what's on disk.
-    static func heroSpec(for dogAnimation: DogAnimation, facing: Facing) -> AnimationSpec? {
+    nonisolated static func heroSpec(for dogAnimation: DogAnimation, facing: Facing) -> AnimationSpec? {
         let d = facing.fileSuffix
         switch dogAnimation {
         case .idle:
@@ -238,7 +245,12 @@ final class SpriteLibrary {
 
     /// Generated props from Resources/sprites (horizontal-strip sheets).
     func prop(named name: String, frameWidth: Int, fps: Double) -> Animation? {
-        if let cached = propCache[name] { return cached }
+        // frameWidth and fps are part of the key, not just the name: the same
+        // strip sliced at a different frame width is a different animation,
+        // and keying on the name alone served whichever caller asked first to
+        // everyone after it.
+        let key = "strip:\(name):\(frameWidth):\(fps)"
+        if let cached = propCache[key] { return cached }
         guard
             let url = Bundle.assets.url(forResource: name, withExtension: "png", subdirectory: "sprites"),
             let image = NSImage(contentsOf: url),
@@ -259,7 +271,7 @@ final class SpriteLibrary {
             nodeSize: CGSize(width: CGFloat(frameWidth) * 3, height: CGFloat(cg.height) * 3),
             flipX: false
         )
-        propCache[name] = animation
+        propCache[key] = animation
         return animation
     }
 
@@ -277,7 +289,10 @@ final class SpriteLibrary {
     /// Single-frame prop: the whole PNG as one texture at prop scale (×3).
     /// Used by imported furniture whose frame width varies per file.
     func singleProp(named name: String) -> Animation? {
-        if let cached = propCache[name] { return cached }
+        // Namespaced like `prop` and `propSequence`, so the three cannot serve
+        // each other's art for the same base name.
+        let key = "single:\(name)"
+        if let cached = propCache[key] { return cached }
         guard
             let url = Bundle.assets.url(forResource: name, withExtension: "png", subdirectory: "sprites"),
             let image = NSImage(contentsOf: url),
@@ -291,7 +306,7 @@ final class SpriteLibrary {
             nodeSize: CGSize(width: CGFloat(cg.width) * 3, height: CGFloat(cg.height) * 3),
             flipX: false
         )
-        propCache[name] = animation
+        propCache[key] = animation
         return animation
     }
 

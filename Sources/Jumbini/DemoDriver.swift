@@ -182,8 +182,13 @@ struct DemoTimeline {
 /// beat it plays goes through the same entry point as a menu click or a
 /// SystemMonitor signal, so what gets filmed is the shipping behaviour and
 /// not a special demo mode of the dog.
+///
+/// `@MainActor` for the driving half — it plays beats straight into the scene
+/// — while construction stays `nonisolated`, so the environment gate can be
+/// decided (and tested) without touching the main actor.
+@MainActor
 final class DemoDriver {
-    let script: DemoScript
+    nonisolated let script: DemoScript
     /// Wall-clock instant the timeline's t=0 lands on, or nil for "whenever
     /// `start()` happens to be called".
     ///
@@ -195,21 +200,22 @@ final class DemoDriver {
     /// sub-second resolution — so the app is told when to start instead of the
     /// shell guessing. Beats due before this instant are simply not due yet,
     /// which is what makes the pre-roll a plain static desktop.
-    let startInstant: Date?
-    /// Delivered on the main thread, like SystemMonitor.onSignal.
+    nonisolated let startInstant: Date?
+    /// Delivered on the main actor, like SystemMonitor.onSignal.
     var onBeat: ((DemoBeat) -> Void)?
     /// Called once when the script's duration is up.
     var onFinish: (() -> Void)?
 
     private var timeline: DemoTimeline
-    private var timer: Timer?
+    /// The beat loop. Cancelling it is what `stop()` does.
+    private var driveTask: Task<Void, Never>?
     private var startedAt: Date?
 
     /// Beats are checked 30 times a second — fine enough that a beat lands
     /// within a frame or two of its mark at 60fps capture.
-    private static let tick: TimeInterval = 1.0 / 30.0
+    private static let tick: Duration = .milliseconds(1000 / 30)
 
-    init(script: DemoScript, startInstant: Date? = nil) {
+    nonisolated init(script: DemoScript, startInstant: Date? = nil) {
         self.script = script
         self.startInstant = startInstant
         self.timeline = DemoTimeline(script: script)
@@ -219,7 +225,7 @@ final class DemoDriver {
     /// doesn't parse all mean the same thing: no driver, app behaves normally.
     /// JUMBINI_DEMO is checked first and alone, so JUMBINI_DEMO_START on its
     /// own constructs nothing.
-    static func fromEnvironment(
+    nonisolated static func fromEnvironment(
         _ environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> DemoDriver? {
         guard let path = environment["JUMBINI_DEMO"] else { return nil }
@@ -236,7 +242,7 @@ final class DemoDriver {
     /// either makes every later comparison false — the driver would sit there
     /// firing nothing and never finishing, which is a worse outcome than
     /// ignoring the variable. So non-finite values are rejected here.
-    private static func startInstant(from environment: [String: String]) -> Date? {
+    private nonisolated static func startInstant(from environment: [String: String]) -> Date? {
         guard let raw = environment["JUMBINI_DEMO_START"],
               let epoch = Double(raw),
               epoch.isFinite else {
@@ -246,19 +252,26 @@ final class DemoDriver {
     }
 
     func start() {
-        guard timer == nil else { return }
+        guard driveTask == nil else { return }
         startedAt = startInstant ?? Date()
-        let timer = Timer(timeInterval: Self.tick, repeats: true) { [weak self] _ in
-            self?.fire()
+        // A sleep loop rather than a run-loop timer: no mode to get wrong, so
+        // the beats keep landing while a menu is tracking.
+        driveTask = Task { [weak self] in
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(for: Self.tick)
+                } catch {
+                    return // cancelled mid-sleep
+                }
+                guard let self else { return }
+                self.fire()
+            }
         }
-        // .common so the beats keep landing while a menu is tracking.
-        RunLoop.main.add(timer, forMode: .common)
-        self.timer = timer
     }
 
     func stop() {
-        timer?.invalidate()
-        timer = nil
+        driveTask?.cancel()
+        driveTask = nil
     }
 
     private func fire() {

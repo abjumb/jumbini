@@ -6,20 +6,40 @@ import Foundation
 // it can't be exercised in a test process. Its decisions can: every source
 // funnels through a small pure tracker, and those are what these cover.
 
-// MARK: - Lifecycle
+// MARK: - Retry budget
 
-@Test func stoppingMonitorInvalidatesQueuedDeliveriesAcrossRestart() {
-    let lifecycle = MonitorLifecycle()
-    let firstRun = lifecycle.start()
-    #expect(lifecycle.accepts(firstRun))
+@Test func aSourceSurvivesTwoFailuresAndLatchesOffOnTheThird() {
+    var budget = RetryBudget()
+    // Bound to locals rather than inlined: #expect can't call a mutating
+    // method on a var.
+    let first = budget.recordFailure()
+    #expect(!first)
+    #expect(budget.isAvailable)
+    let second = budget.recordFailure()
+    #expect(!second)
+    #expect(budget.isAvailable)
+    let third = budget.recordFailure()
+    #expect(third, "the third strike is the one that latches it off")
+    #expect(!budget.isAvailable)
+}
 
-    lifecycle.stop()
-    #expect(!lifecycle.accepts(firstRun))
+@Test func aSuccessForgivesEarlierFailures() {
+    var budget = RetryBudget()
+    budget.recordFailure()
+    budget.recordFailure()
+    budget.recordSuccess()
+    budget.recordFailure()
+    budget.recordFailure()
+    #expect(budget.isAvailable, "an intermittent source never accumulates its way off")
+}
 
-    let secondRun = lifecycle.start()
-    #expect(secondRun != firstRun)
-    #expect(!lifecycle.accepts(firstRun), "queued work from the old run stays invalid")
-    #expect(lifecycle.accepts(secondRun))
+@Test func latchingOffIsPermanentAndReportedOnlyOnce() {
+    var budget = RetryBudget()
+    for _ in 0..<3 { budget.recordFailure() }
+    let afterLatching = budget.recordFailure()
+    #expect(!afterLatching, "already off; only the transition reports true")
+    budget.recordSuccess()
+    #expect(!budget.isAvailable, "a late success cannot bring a dead source back")
 }
 
 // MARK: - Idle

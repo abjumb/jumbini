@@ -796,9 +796,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return OSStatus(eventNotHandledErr)
             }
             let delegate = Unmanaged<AppDelegate>.fromOpaque(userData).takeUnretainedValue()
-            // Carbon dispatches on the main thread already; the async hop is
-            // cheap insurance that the SpriteKit render happens on main.
-            DispatchQueue.main.async { delegate.captureJumbiniCam() }
+            // Carbon dispatches on the main thread already; the hop onto the
+            // main actor is cheap insurance that the SpriteKit render happens
+            // there, and it satisfies the compiler from a C callback.
+            Task { @MainActor in delegate.captureJumbiniCam() }
             return noErr
         }
         InstallEventHandler(
@@ -836,18 +837,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         copyCamImageToPasteboard(image)
     }
 
-    /// PNG first (what most apps want from a "screenshot"), then the NSImage
-    /// object so anything reading via NSImage(pasteboard:)/TIFF works too.
+    /// ONE pasteboard item carrying both representations: PNG first (what most
+    /// apps want from a "screenshot"), TIFF behind it so anything reading via
+    /// NSImage(pasteboard:) works too.
+    ///
+    /// It used to be two items — `declareTypes` created the first, and the
+    /// `writeObjects([image])` after it appended a second. A pasteboard with
+    /// two items is a pasteboard with two pictures on it: paste into anything
+    /// that honours multiple items (Mail, Notes, Finder) and the dog arrives
+    /// twice. One item with two flavours of the same picture is what a
+    /// screenshot on this platform looks like.
     private func copyCamImageToPasteboard(_ image: NSImage) {
+        guard let tiff = image.tiffRepresentation else { return }
+        let item = NSPasteboardItem()
+        if let rep = NSBitmapImageRep(data: tiff),
+           let png = rep.representation(using: .png, properties: [:]) {
+            item.setData(png, forType: .png)
+        }
+        item.setData(tiff, forType: .tiff)
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
-        if let tiff = image.tiffRepresentation,
-           let rep = NSBitmapImageRep(data: tiff),
-           let png = rep.representation(using: .png, properties: [:]) {
-            pasteboard.declareTypes([.png], owner: nil)
-            pasteboard.setData(png, forType: .png)
-        }
-        pasteboard.writeObjects([image])
+        pasteboard.writeObjects([item])
     }
 
     // MARK: - Make Your Own Dog

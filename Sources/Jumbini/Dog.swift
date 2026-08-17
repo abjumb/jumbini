@@ -183,7 +183,15 @@ final class Dog: SKSpriteNode {
             // Already there — make sure no stale in-flight move keeps driving
             // the node after we report arrival.
             removeAction(forKey: "move")
-            onArrived?()
+            // Deferred by one frame rather than called here. `move(to:)` is
+            // itself called from inside the brain's effect loop, and
+            // `onArrived` re-enters the brain: firing it synchronously means
+            // the brain is processing a new arrival while it is still
+            // applying the effects of the last decision. One frame's delay
+            // costs nothing visible and makes the re-entry impossible —
+            // it is also exactly what the normal (distance > 1) path does,
+            // which runs `onArrived` from an action.
+            run(.run { [weak self] in self?.onArrived?() }, withKey: "move")
             return
         }
         let move = SKAction.move(to: point, duration: TimeInterval(distance / speed))

@@ -248,24 +248,27 @@ enum WindowSurfaceParser {
 
 /// Watches the windows on screen and reports the ones the dog could stand on.
 ///
-/// Same shape as `SystemMonitor`: a modest poll on a background queue with an
-/// in-flight guard, results delivered on the main thread, and a source that
-/// switches itself off for good rather than ever becoming a problem. If the
-/// window server won't answer, every update is an empty list and the dog
-/// simply stays on the desktop floor.
+/// Same shape as `SystemMonitor`: a modest poll loop that awaits its own work
+/// (so it can never stack up behind itself), results delivered on the main
+/// actor, and a source that spends a `RetryBudget` and then switches itself
+/// off for good rather than ever becoming a problem. If the window server
+/// won't answer at all, every update is an empty list and the dog simply stays
+/// on the desktop floor.
 ///
 /// No special permission is required for what this reads. `CGWindowList`
 /// geometry is public information; only window *contents* (and, on modern
 /// macOS, `kCGWindowName`) sit behind Screen Recording — which is exactly why
 /// `Surface.title` is optional and nothing depends on it.
 ///
-/// Main-thread class: `start()`, `stop()` and every `onUpdate` call happen
-/// there. Only the CGWindowList copy and the parse leave the main thread.
+/// `@MainActor`: `start()`, `stop()` and every `onUpdate` call live there.
+/// Only the CGWindowList copy and the parse leave the main actor, in one
+/// `nonisolated async` function.
+@MainActor
 final class WindowSurfaces {
-    /// Called on the main thread after every poll, front-most window first.
+    /// Called on the main actor after every poll, front-most window first.
     var onUpdate: (([Surface]) -> Void)?
 
-    /// Where the scene is right now, evaluated on the main thread before each
+    /// Where the scene is right now, evaluated on the main actor before each
     /// poll. A closure rather than a stored value because the overlay can be
     /// resized (or moved to another display) at any time.
     var geometry: () -> SurfaceGeometry
@@ -273,16 +276,14 @@ final class WindowSurfaces {
     /// 3 Hz. Fast enough that dragging a window keeps the dog aboard, slow
     /// enough that the copy (a few hundred microseconds for a dozen windows)
     /// never shows up in a profile.
-    private static let pollInterval: TimeInterval = 1.0 / 3.0
+    private static let pollInterval: Duration = .milliseconds(1000 / 3)
 
-    private var timer: Timer?
+    /// The poll loop. Cancelling it is what "stopping" means.
+    private var pollTask: Task<Void, Never>?
     private var isRunning = false
-    /// Stops a slow copy from stacking up behind itself.
-    private var probeInFlight = false
-    /// Flips false the first time the window server refuses to answer, and
-    /// never flips back — from then on the dog lives on the desktop.
-    private var available = true
-    private let queue = DispatchQueue(label: "com.jumbini.windowsurfaces")
+    /// Three refusals from the window server and the dog lives on the desktop
+    /// for the rest of the run. One refusal is just a skipped frame.
+    private var budget = RetryBudget()
 
     init(geometry: @escaping () -> SurfaceGeometry) {
         self.geometry = geometry
@@ -293,57 +294,66 @@ final class WindowSurfaces {
     func start() {
         guard !isRunning else { return }
         isRunning = true
-        poll() // don't make the dog wait a third of a second for his world
-        // .common mode: an open menu or a window drag must not stall polling —
-        // a window drag is precisely when we most need fresh numbers.
-        let timer = Timer(timeInterval: Self.pollInterval, repeats: true) { [weak self] _ in
-            self?.poll()
+        // Polls straight away — the dog shouldn't wait a third of a second for
+        // his world — and the loop awaits each poll, so a slow copy delays the
+        // next one instead of stacking up behind it. No run-loop mode to get
+        // wrong either: a window drag is precisely when we need fresh numbers.
+        pollTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self else { return }
+                await self.poll()
+                do {
+                    try await Task.sleep(for: Self.pollInterval)
+                } catch {
+                    return // cancelled mid-sleep
+                }
+            }
         }
-        RunLoop.main.add(timer, forMode: .common)
-        self.timer = timer
     }
 
     func stop() {
         guard isRunning else { return }
         isRunning = false
-        timer?.invalidate()
-        timer = nil
+        pollTask?.cancel()
+        pollTask = nil
     }
 
-    deinit { timer?.invalidate() }
+    deinit { pollTask?.cancel() }
 
     // MARK: Polling
 
-    private func poll() {
-        guard available, !probeInFlight else { return }
-        // AppKit is main-thread-only, so the display layout is captured here
-        // and the background queue only ever sees plain numbers.
+    private func poll() async {
+        guard budget.isAvailable else { return }
+        // AppKit is main-actor-only, so the display layout is captured here
+        // and the parse off the main actor only ever sees plain numbers.
         let geometry = self.geometry()
         let ownPID = ProcessInfo.processInfo.processIdentifier
-        probeInFlight = true
-        queue.async { [weak self] in
-            guard let self else { return }
-            let raw = Self.copyWindowInfo()
-            let surfaces = raw.map {
-                WindowSurfaceParser.surfaces(from: $0, ownPID: ownPID, geometry: geometry)
-            }
-            DispatchQueue.main.async {
-                self.probeInFlight = false
-                guard let surfaces else {
-                    // The window server won't talk to us: no surfaces, forever.
-                    self.available = false
-                    self.onUpdate?([])
-                    return
-                }
-                self.onUpdate?(surfaces)
-            }
+        let surfaces = await Self.readSurfaces(ownPID: ownPID, geometry: geometry)
+        guard isRunning, !Task.isCancelled else { return }
+        guard let surfaces else {
+            // The window server won't talk to us. A single refusal just skips
+            // this frame — the dog keeps the perch he's already on; only a
+            // budget spent in full means no surfaces, forever.
+            if budget.recordFailure() { onUpdate?([]) }
+            return
         }
+        budget.recordSuccess()
+        onUpdate?(surfaces)
+    }
+
+    /// The copy and the parse, off the main actor. nil if the window server
+    /// wouldn't answer.
+    private nonisolated static func readSurfaces(
+        ownPID: pid_t, geometry: SurfaceGeometry
+    ) async -> [Surface]? {
+        guard let raw = copyWindowInfo() else { return nil }
+        return WindowSurfaceParser.surfaces(from: raw, ownPID: ownPID, geometry: geometry)
     }
 
     /// The raw list, or nil if the API is unavailable in this context.
     /// No private APIs and no `.optionIncludingWindow` tricks: on-screen
     /// windows only, which is all a perch could ever be.
-    private static func copyWindowInfo() -> [[String: Any]]? {
+    private nonisolated static func copyWindowInfo() -> [[String: Any]]? {
         CGWindowListCopyWindowInfo(.optionOnScreenOnly, kCGNullWindowID) as? [[String: Any]]
     }
 }

@@ -106,47 +106,41 @@ struct DoNotDisturbTracker {
     }
 }
 
-/// Identifies one continuous start/stop lifetime. Asynchronous work keeps the
-/// token it began with, so stopping or restarting the monitor invalidates
-/// every completion and notification already queued for the previous run.
-final class MonitorLifecycle {
-    private let lock = NSLock()
-    private var running = false
-    private var currentToken: UInt = 0
+/// How many times a source may fail before it is switched off for good.
+///
+/// A source can fail for two very different reasons, and the old
+/// one-strike-and-you-are-out rule could not tell them apart: this Mac simply
+/// hasn't got the thing (a Mac mini has no battery, Focus is behind TCC), or
+/// the read hiccupped once (IOKit busy, a window-server stutter, `pgrep`
+/// losing a race with a fork bomb of a build). The first deserves permanent
+/// silence; the second deserves another go.
+///
+/// Three consecutive failures is the compromise. A genuinely missing source
+/// costs two extra reads before it latches off — a rounding error at a 5s poll
+/// — and a transient one is forgiven. Any success resets the count, so an
+/// intermittently flaky source never accumulates its way to being disabled.
+struct RetryBudget {
+    /// Consecutive failures that latch the source off.
+    var strikes = 3
 
-    var isRunning: Bool {
-        withLock { running }
+    private(set) var failures = 0
+    /// Once true, never false again: the source is gone for this run.
+    private(set) var isLatchedOff = false
+
+    var isAvailable: Bool { !isLatchedOff }
+
+    /// - Returns: true if this failure was the one that latched the source off.
+    @discardableResult
+    mutating func recordFailure() -> Bool {
+        guard !isLatchedOff else { return false }
+        failures += 1
+        guard failures >= strikes else { return false }
+        isLatchedOff = true
+        return true
     }
 
-    var token: UInt {
-        withLock { currentToken }
-    }
-
-    func start() -> UInt {
-        withLock {
-            guard !running else { return currentToken }
-            currentToken &+= 1
-            running = true
-            return currentToken
-        }
-    }
-
-    func stop() {
-        withLock {
-            guard running else { return }
-            running = false
-            currentToken &+= 1
-        }
-    }
-
-    func accepts(_ candidate: UInt) -> Bool {
-        withLock { running && candidate == currentToken }
-    }
-
-    private func withLock<T>(_ operation: () -> T) -> T {
-        lock.lock()
-        defer { lock.unlock() }
-        return operation()
+    mutating func recordSuccess() {
+        failures = 0
     }
 }
 
@@ -158,33 +152,42 @@ final class MonitorLifecycle {
 ///
 /// Each source is independent and individually failable. A source that can't
 /// work on this machine (no battery, a sandboxed Focus database, a missing
-/// `pgrep`) latches itself off and degrades to permanent silence — it can
-/// never crash the app or stop its neighbours from reporting.
+/// `pgrep`) spends its `RetryBudget` and then degrades to permanent silence —
+/// it can never crash the app or stop its neighbours from reporting. A source
+/// that merely stumbles once gets its next poll as usual.
 ///
-/// Main-thread class: `start()`, `stop()`, and every `onSignal` call happen
-/// there. The only work that leaves the main thread is the `pgrep` probe,
-/// which hops its answer back before touching any state.
+/// `@MainActor`: `start()`, `stop()`, every tracker and every `onSignal` call
+/// live on the main actor, so none of the state below needs a lock. The only
+/// work that leaves the main actor is the `pgrep` probe, a `nonisolated async`
+/// function whose answer lands back here at the `await`.
+@MainActor
 final class SystemMonitor {
-    /// Called on the main thread, once per transition.
+    /// Called on the main actor, once per transition.
     var onSignal: ((SystemSignal) -> Void)?
 
     /// Quiet seconds behind an `idleBegan`. Published because anything counting
     /// its own idle interval on top of that signal — Tidy does — has to subtract
-    /// the time that had already passed before it arrived.
-    static let idleSignalThreshold: TimeInterval = 120
+    /// the time that had already passed before it arrived. `nonisolated`
+    /// because `IdleTracker`, which is a plain struct off the main actor,
+    /// defaults its own threshold to it.
+    nonisolated static let idleSignalThreshold: TimeInterval = 120
 
-    /// One timer drives the three polled sources. 5s is fine-grained enough
+    /// One loop drives the three polled sources. 5s is fine-grained enough
     /// for a 120s idle threshold and a 30s build, and cheap enough to ignore.
-    private static let pollInterval: TimeInterval = 5
+    private static let pollInterval: Duration = .seconds(5)
 
     /// Build tools worth watching. One `pgrep -x` handles all of them: the
     /// pattern is an extended regex and `-x` anchors it to the whole name.
-    private static let buildTools = [
+    private nonisolated static let buildTools = [
         "xcodebuild", "swift-build", "swift-frontend", "cargo", "ninja", "make",
     ]
 
-    private var timer: Timer?
-    private let lifecycle = MonitorLifecycle()
+    /// The one poll loop. Cancelling it is what "stopping" means: work already
+    /// in flight sees `Task.isCancelled` at its next suspension point, so a
+    /// probe that was mid-flight when the user switched the feature off can no
+    /// longer deliver into the next run.
+    private var pollTask: Task<Void, Never>?
+    private var isRunning = false
 
     private var idle = IdleTracker()
     private var battery = BatteryTracker()
@@ -192,23 +195,18 @@ final class SystemMonitor {
     private var build = BuildWatcher()
     private var dnd = DoNotDisturbTracker()
 
-    // Per-source kill switches. Each flips false the first time its source
-    // proves unavailable, and never flips back.
-    private var idleAvailable = true
-    private var batteryAvailable = true
-    private var buildAvailable = true
-    private var dndAvailable = true
-
-    /// `pgrep` runs off the main thread; this stops a slow probe from
-    /// stacking up behind itself.
-    private var buildProbeInFlight = false
-    private let buildQueue = DispatchQueue(label: "com.jumbini.systemmonitor.build")
+    // Per-source retry budgets. Each latches its source off after three
+    // consecutive failures, and never re-arms it for this run.
+    private var idleBudget = RetryBudget()
+    private var batteryBudget = RetryBudget()
+    private var buildBudget = RetryBudget()
+    private var dndBudget = RetryBudget()
 
     // MARK: Lifecycle
 
     func start() {
-        guard !lifecycle.isRunning else { return }
-        _ = lifecycle.start()
+        guard !isRunning else { return }
+        isRunning = true
 
         // Thermal is notification-driven; no polling needed.
         NotificationCenter.default.addObserver(
@@ -219,19 +217,27 @@ final class SystemMonitor {
         )
         pollThermal()
 
-        // .common mode: an open menu or a window drag must not stall polling.
-        let timer = Timer(timeInterval: Self.pollInterval, repeats: true) { [weak self] _ in
-            self?.poll()
+        // The loop replaces the old Timer: no run-loop mode to get wrong, and
+        // an open menu or a window drag can't stall it either. It waits first,
+        // exactly like a repeating timer's first fire.
+        pollTask = Task { [weak self] in
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(for: Self.pollInterval)
+                } catch {
+                    return // cancelled mid-sleep
+                }
+                guard let self else { return }
+                await self.poll()
+            }
         }
-        RunLoop.main.add(timer, forMode: .common)
-        self.timer = timer
     }
 
     func stop() {
-        guard lifecycle.isRunning else { return }
-        lifecycle.stop()
-        timer?.invalidate()
-        timer = nil
+        guard isRunning else { return }
+        isRunning = false
+        pollTask?.cancel()
+        pollTask = nil
         NotificationCenter.default.removeObserver(
             self,
             name: ProcessInfo.thermalStateDidChangeNotification,
@@ -240,44 +246,45 @@ final class SystemMonitor {
     }
 
     deinit {
-        timer?.invalidate()
+        pollTask?.cancel()
         NotificationCenter.default.removeObserver(self)
     }
 
     // MARK: Emission
 
-    /// Always delivers on the main thread; the background build probe is the
-    /// one caller that needs the hop.
-    private func emit(_ signal: SystemSignal?, token: UInt? = nil) {
-        guard let signal else { return }
-        let deliveryToken = token ?? lifecycle.token
-        if Thread.isMainThread {
-            guard lifecycle.accepts(deliveryToken) else { return }
-            onSignal?(signal)
-        } else {
-            DispatchQueue.main.async { [weak self] in
-                guard let self, self.lifecycle.accepts(deliveryToken) else { return }
-                self.onSignal?(signal)
-            }
-        }
+    /// Everything here is already on the main actor, so this is only the
+    /// "are we still running?" gate — a probe that finished after `stop()`
+    /// must not deliver.
+    private func emit(_ signal: SystemSignal?) {
+        guard let signal, isRunning else { return }
+        onSignal?(signal)
     }
 
     // MARK: Polling
 
     /// The polled sources, each in its own guarded step so a failure in one
     /// cannot skip the others.
-    private func poll() {
+    ///
+    /// The build probe is awaited rather than fired and forgotten, which is
+    /// what retired the old in-flight flag: a slow `pgrep` delays the next
+    /// iteration instead of stacking up behind itself.
+    private func poll() async {
         let now = Date.timeIntervalSinceReferenceDate
         pollIdle()
         pollBattery()
-        pollBuild(at: now)
+        await pollBuild(at: now)
         pollDoNotDisturb()
     }
 
     // MARK: User idle
 
     private func pollIdle() {
-        guard idleAvailable, let seconds = Self.secondsSinceLastUserEvent() else { return }
+        guard idleBudget.isAvailable else { return }
+        guard let seconds = Self.secondsSinceLastUserEvent() else {
+            idleBudget.recordFailure()
+            return
+        }
+        idleBudget.recordSuccess()
         emit(idle.update(idleSeconds: seconds))
     }
 
@@ -297,13 +304,14 @@ final class SystemMonitor {
     // MARK: Battery
 
     private func pollBattery() {
-        guard batteryAvailable else { return }
+        guard batteryBudget.isAvailable else { return }
         guard let reading = Self.readBattery() else {
-            // No internal battery (a Mac mini, a Studio): stay quiet forever
-            // rather than re-asking IOKit every five seconds.
-            batteryAvailable = false
+            // No internal battery (a Mac mini, a Studio): after three tries,
+            // stay quiet forever rather than re-asking IOKit every five seconds.
+            batteryBudget.recordFailure()
             return
         }
+        batteryBudget.recordSuccess()
         emit(battery.update(percent: reading.percent, isPlugged: reading.isPlugged))
     }
 
@@ -332,71 +340,69 @@ final class SystemMonitor {
 
     // MARK: Thermal
 
-    @objc private func thermalStateChanged() {
-        // The notification can arrive on any thread; the tracker lives on main.
-        let token = lifecycle.token
-        if Thread.isMainThread {
-            guard lifecycle.accepts(token) else { return }
-            pollThermal(token: token)
-        } else {
-            DispatchQueue.main.async { [weak self] in
-                guard let self, self.lifecycle.accepts(token) else { return }
-                self.pollThermal(token: token)
-            }
+    /// The notification can arrive on any thread, so this is `nonisolated` and
+    /// hops onto the main actor before touching the tracker.
+    @objc private nonisolated func thermalStateChanged() {
+        Task { @MainActor [weak self] in
+            guard let self, self.isRunning else { return }
+            self.pollThermal()
         }
     }
 
     /// The closest thing to a fan tachometer that a sandboxed app can read.
     /// Real RPM needs private SMC calls, so "the machine is thermally
     /// stressed" stands in for "the fans spun up".
-    private func pollThermal(token: UInt? = nil) {
+    private func pollThermal() {
         let state = ProcessInfo.processInfo.thermalState
         let hot = state == .serious || state == .critical
-        emit(thermal.update(isHot: hot), token: token)
+        emit(thermal.update(isHot: hot))
     }
 
     // MARK: Build finished
 
-    private func pollBuild(at now: TimeInterval) {
-        guard buildAvailable, !buildProbeInFlight else { return }
-        buildProbeInFlight = true
-        let token = lifecycle.token
-        buildQueue.async { [weak self] in
-            guard let self else { return }
-            let result = Self.probeBuildTools()
-            DispatchQueue.main.async {
-                self.buildProbeInFlight = false
-                guard self.lifecycle.accepts(token) else { return }
-                guard let running = result else {
-                    // pgrep is missing or unrunnable: give up on this source.
-                    self.buildAvailable = false
-                    return
-                }
-                self.emit(self.build.update(toolsRunning: running, at: now), token: token)
-            }
+    private func pollBuild(at now: TimeInterval) async {
+        guard buildBudget.isAvailable else { return }
+        let result = await Self.probeBuildTools()
+        // Back on the main actor, but time has passed: the monitor may have
+        // been stopped (and even restarted) while pgrep was running.
+        guard isRunning, !Task.isCancelled else { return }
+        guard let running = result else {
+            // pgrep is missing or unrunnable three times over: give up on it.
+            buildBudget.recordFailure()
+            return
         }
+        buildBudget.recordSuccess()
+        emit(build.update(toolsRunning: running, at: now))
     }
 
     /// true/false if `pgrep` answered, nil if it couldn't be run at all.
     /// Exit status 0 means at least one match, 1 means none; anything else
     /// (or a throw) is a broken source.
-    private static func probeBuildTools() -> Bool? {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
-        process.arguments = ["-x", buildTools.joined(separator: "|")]
-        // Discard the pid list; the exit status is the whole answer.
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
-        do {
-            try process.run()
-            process.waitUntilExit()
-        } catch {
-            return nil
-        }
-        switch process.terminationStatus {
-        case 0: return true
-        case 1: return false
-        default: return nil
+    ///
+    /// `nonisolated async`, so it runs off the main actor, and it waits on the
+    /// termination handler rather than blocking a thread in `waitUntilExit()`.
+    private nonisolated static func probeBuildTools() async -> Bool? {
+        await withCheckedContinuation { continuation in
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
+            process.arguments = ["-x", buildTools.joined(separator: "|")]
+            // Discard the pid list; the exit status is the whole answer.
+            process.standardOutput = FileHandle.nullDevice
+            process.standardError = FileHandle.nullDevice
+            process.terminationHandler = { finished in
+                switch finished.terminationStatus {
+                case 0: continuation.resume(returning: true)
+                case 1: continuation.resume(returning: false)
+                default: continuation.resume(returning: nil)
+                }
+            }
+            do {
+                try process.run()
+            } catch {
+                // run() threw, so the termination handler will never fire.
+                process.terminationHandler = nil
+                continuation.resume(returning: nil)
+            }
         }
     }
 
@@ -404,17 +410,18 @@ final class SystemMonitor {
 
     /// Focus has no public API. This is a best-effort peek at the private
     /// assertions database, which is TCC-protected on modern macOS — without
-    /// Full Disk Access the very first read fails and the source switches
-    /// itself off for good. That is the expected outcome, not a bug.
+    /// Full Disk Access the reads fail, the budget runs out and the source
+    /// switches itself off for good. That is the expected outcome, not a bug.
     private static let dndAssertionsPath = NSHomeDirectory()
         + "/Library/DoNotDisturb/DB/Assertions.json"
 
     private func pollDoNotDisturb() {
-        guard dndAvailable else { return }
+        guard dndBudget.isAvailable else { return }
         guard let active = Self.readDoNotDisturbAssertion() else {
-            dndAvailable = false
+            dndBudget.recordFailure()
             return
         }
+        dndBudget.recordSuccess()
         emit(dnd.update(isActive: active))
     }
 

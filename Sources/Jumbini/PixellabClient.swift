@@ -6,7 +6,7 @@ import Security
 /// Pixellab v2 API; tests substitute a mock that returns canned sprites, so
 /// the whole pipeline (photos -> sprites -> coat folder) is exercised without
 /// a network call.
-protocol PixellabClientProtocol {
+protocol PixellabClientProtocol: Sendable {
     /// Create an 8-direction character from a south-facing reference photo.
     /// Returns the character id plus its eight idle rotation sprites (raw PNG).
     func createCharacter(referenceImage: Data) async throws -> GeneratedCharacter
@@ -25,7 +25,11 @@ struct GeneratedCharacter {
 /// The live Pixellab client (Foundation + URLSession only — no AppKit — so the
 /// HTTP layer stays out of the way of the SpriteKit/AppKit app code and can be
 /// swapped for a mock in tests).
-final class PixellabClient: PixellabClientProtocol {
+///
+/// `Sendable`: it is stateless (every stored thing is a `static let` or
+/// derived per call), so a generation kicked off from a panel can hand it to
+/// whatever task the pipeline runs on.
+final class PixellabClient: PixellabClientProtocol, Sendable {
     private static let baseURL = URL(string: "https://api.pixellab.ai/v2")!
 
     private static let keychainService = "ai.pixellab.api"
@@ -156,6 +160,7 @@ final class PixellabClient: PixellabClientProtocol {
         case invalidResponse
         case httpStatus(Int)
         case jobFailed(String)
+        case jobTimedOut(String)
 
         var errorDescription: String? {
             switch self {
@@ -167,6 +172,8 @@ final class PixellabClient: PixellabClientProtocol {
                 return "Pixellab request failed (HTTP \(code))."
             case .jobFailed(let jobID):
                 return "Pixellab generation job failed (\(jobID))."
+            case .jobTimedOut(let jobID):
+                return "Pixellab generation job never finished (\(jobID)). Try again."
             }
         }
     }
@@ -174,15 +181,22 @@ final class PixellabClient: PixellabClientProtocol {
     private let apiKey: String?
     private let session: URLSession
     private let pollInterval: TimeInterval
+    /// How long a single background job may stay unfinished before we give up
+    /// on it. Ten minutes is well past any real generation; what it catches is
+    /// a job that is never going to move — the API reporting a status this
+    /// client doesn't know, or one stuck "in progress" forever.
+    private let jobTimeout: Duration
 
     init(
         apiKey: String? = PixellabClient.resolveAPIKey(),
         session: URLSession = .shared,
-        pollInterval: TimeInterval = 5
+        pollInterval: TimeInterval = 5,
+        jobTimeout: Duration = .seconds(600)
     ) {
         self.apiKey = apiKey
         self.session = session
         self.pollInterval = pollInterval
+        self.jobTimeout = jobTimeout
     }
 
     // MARK: - createCharacter
@@ -309,7 +323,19 @@ final class PixellabClient: PixellabClientProtocol {
         }
     }
 
+    /// Poll a background job until it completes, fails, or runs out of time.
+    ///
+    /// The deadline is the point: "completed" and "failed" are the only two
+    /// statuses this client recognises, and anything else means keep waiting.
+    /// Without a deadline, an unknown status — a renamed state, a job wedged
+    /// in progress — meant polling every five seconds until the user quit the
+    /// app, with the panel's spinner turning the whole time and no way for the
+    /// caller to find out.
+    ///
+    /// `ContinuousClock` rather than `Date`: it keeps counting across sleep
+    /// and cannot be moved by an NTP correction mid-generation.
     private func waitForJob(_ jobID: String) async throws {
+        let deadline = ContinuousClock.now + jobTimeout
         while true {
             let job: BackgroundJobResponse = try await get("/background-jobs/\(jobID)")
             switch job.status {
@@ -318,7 +344,10 @@ final class PixellabClient: PixellabClientProtocol {
             case "failed":
                 throw PixellabError.jobFailed(jobID)
             default:
-                try await Task.sleep(nanoseconds: UInt64(pollInterval * 1_000_000_000))
+                guard ContinuousClock.now < deadline else {
+                    throw PixellabError.jobTimedOut(jobID)
+                }
+                try await Task.sleep(for: .seconds(pollInterval))
             }
         }
     }
@@ -339,24 +368,30 @@ final class PixellabClient: PixellabClientProtocol {
         return png.base64EncodedString()
     }
 
+    /// `data: nil` on purpose: Core Graphics allocates the backing store and
+    /// owns it, so the CGImage this returns keeps its pixels alive by itself.
+    ///
+    /// The previous version handed CGContext the bytes of a local `[UInt8]`
+    /// through `withUnsafeMutableBytes` and then returned the image out of the
+    /// closure. `makeImage()` does not promise a copy — it can hand back an
+    /// image that references the context's buffer — so the returned image
+    /// could outlive the array it was pointing at. That is undefined
+    /// behaviour, and the kind that reads fine and works fine right up until
+    /// an allocator or an optimiser changes its mind.
     private func scale(_ image: CGImage, toWidth width: Int, height: Int) -> CGImage? {
-        var data = [UInt8](repeating: 0, count: width * height * 4)
-        let scaled = data.withUnsafeMutableBytes { buffer -> CGImage? in
-            guard let context = CGContext(
-                data: buffer.baseAddress,
-                width: width,
-                height: height,
-                bitsPerComponent: 8,
-                bytesPerRow: width * 4,
-                space: CGColorSpaceCreateDeviceRGB(),
-                bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue
-                    | CGImageAlphaInfo.premultipliedLast.rawValue
-            ) else { return nil }
-            context.interpolationQuality = .high
-            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
-            return context.makeImage()
-        }
-        return scaled
+        guard let context = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: width * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue
+                | CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+        context.interpolationQuality = .high
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        return context.makeImage()
     }
 
     /// Flatten a rotation URL dictionary into a stable list of (name, url).

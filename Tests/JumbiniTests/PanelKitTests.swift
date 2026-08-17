@@ -8,13 +8,15 @@ import AppKit
 // that jumps somewhere unexpected is the kind of bug nobody reports because it
 // just looks like they mistyped.
 
-@Test func everySettingsSectionHasItsOwnIdentifier() {
+// `@MainActor` because the catalog is a static on SettingsPanel, which owns
+// AppKit views and is isolated to the main actor with them.
+@Test @MainActor func everySettingsSectionHasItsOwnIdentifier() {
     let identifiers = SettingsPanel.catalog.sections.map(\.identifier)
     #expect(identifiers.count == Set(identifiers).count)
     #expect(identifiers.allSatisfy { !$0.isEmpty })
 }
 
-@Test func everySettingsSectionHasATitleAndASymbol() {
+@Test @MainActor func everySettingsSectionHasATitleAndASymbol() {
     for section in SettingsPanel.catalog.sections {
         #expect(!section.title.isEmpty)
         // A missing SF Symbol renders as nothing at all, so the row would come
@@ -23,35 +25,35 @@ import AppKit
     }
 }
 
-@Test func searchJumpsToASectionByName() {
+@Test @MainActor func searchJumpsToASectionByName() {
     let match = SettingsPanel.catalog.firstMatch(for: "coats")
     #expect(match?.title == "Coats")
 }
 
-@Test func searchIgnoresCaseAndSurroundingSpace() {
+@Test @MainActor func searchIgnoresCaseAndSurroundingSpace() {
     #expect(SettingsPanel.catalog.firstMatch(for: "  BEHAVIOR ")?.title == "Behavior")
 }
 
-@Test func searchPrefersAPrefixOverAMerelyContainingMatch() {
+@Test @MainActor func searchPrefersAPrefixOverAMerelyContainingMatch() {
     // "Window Climbing" starts with it; nothing should beat that to it.
     #expect(SettingsPanel.catalog.firstMatch(for: "win")?.title == "Window Climbing")
 }
 
-@Test func aPartialWordStillFindsTheSection() {
+@Test @MainActor func aPartialWordStillFindsTheSection() {
     #expect(SettingsPanel.catalog.firstMatch(for: "pixel")?.title == "Pixellab API")
 }
 
-@Test func anEmptyQueryMatchesNothingRatherThanTheFirstRow() {
+@Test @MainActor func anEmptyQueryMatchesNothingRatherThanTheFirstRow() {
     // Clearing the field must not yank the user to General mid-read.
     #expect(SettingsPanel.catalog.firstMatch(for: "") == nil)
     #expect(SettingsPanel.catalog.firstMatch(for: "   ") == nil)
 }
 
-@Test func nonsenseMatchesNothing() {
+@Test @MainActor func nonsenseMatchesNothing() {
     #expect(SettingsPanel.catalog.firstMatch(for: "zzzz") == nil)
 }
 
-@Test func groupsCoverEverySectionExactlyOnce() {
+@Test @MainActor func groupsCoverEverySectionExactlyOnce() {
     let grouped = SettingsPanel.catalog.groups.flatMap(\.sections).count
     #expect(grouped == SettingsPanel.catalog.sections.count)
 }
