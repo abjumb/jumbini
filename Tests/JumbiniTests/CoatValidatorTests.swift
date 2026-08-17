@@ -270,6 +270,82 @@ import UniformTypeIdentifiers
         #expect(findings.filter { $0.severity == .error }.isEmpty)
     }
 
+    // MARK: - Symlink safety
+
+    @Test("a symlink out of the extracted tree is an error")
+    func extractedTreeRejectsEscapingSymlink() throws {
+        let tmp = TempCoat()
+        let root = tmp.url.appendingPathComponent("extracted/nova", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try CoatValidatorTests.makeSpritePNG().write(to: root.appendingPathComponent("idle_south.png"))
+        try FileManager.default.createSymbolicLink(
+            at: root.appendingPathComponent("escape.png"),
+            withDestinationURL: URL(fileURLWithPath: "/etc/passwd")
+        )
+
+        let findings = CoatValidator.checkExtractedTree(
+            at: tmp.url.appendingPathComponent("extracted", isDirectory: true)
+        )
+        #expect(findings.contains { $0.severity == .error && $0.message.contains("escapes the archive") })
+    }
+
+    @Test("a symlink within the extracted tree is only a warning")
+    func extractedTreeWarnsOnInternalSymlink() throws {
+        let tmp = TempCoat()
+        let root = tmp.url.appendingPathComponent("extracted", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try CoatValidatorTests.makeSpritePNG().write(to: root.appendingPathComponent("idle_south.png"))
+        try FileManager.default.createSymbolicLink(
+            at: root.appendingPathComponent("idle_north.png"),
+            withDestinationURL: root.appendingPathComponent("idle_south.png")
+        )
+
+        let findings = CoatValidator.checkExtractedTree(at: root)
+        #expect(findings.contains { $0.severity == .warning && $0.message.contains("Symlink") })
+        #expect(findings.filter { $0.severity == .error }.isEmpty)
+    }
+
+    @Test("an ordinary coat folder has nothing to report")
+    func extractedTreeWithoutSymlinksIsClean() {
+        let tmp = TempCoat()
+        tmp.installFullCoat("nova")
+        #expect(CoatValidator.checkExtractedTree(at: tmp.url).isEmpty)
+    }
+
+    // MARK: - Zip listing
+
+    @Test("listing an archive yields its entries, spaces and all")
+    func listZipContentsParsesEntryNames() throws {
+        let tmp = TempCoat()
+        tmp.installFullCoat("nova")
+        let folder = tmp.url.appendingPathComponent("nova", isDirectory: true)
+        // A name with interior spaces: rejoining whitespace-split columns used
+        // to be able to change it, and the header/rule confusion used to drop
+        // every entry on the floor.
+        try CoatValidatorTests.makeSpritePNG().write(
+            to: folder.appendingPathComponent("two  words.png")
+        )
+
+        let archive = tmp.url.appendingPathComponent("nova.zip")
+        do {
+            try CoatValidator.exportCoat(from: folder, to: archive)
+        } catch {
+            return // zip unavailable in this environment
+        }
+
+        let entries: [String]
+        do {
+            entries = try CoatValidator.listZipContents(at: archive)
+        } catch {
+            return // unzip unavailable in this environment
+        }
+
+        // Entries are prefixed with the coat folder: an export archives the
+        // folder, so its name survives the round trip.
+        #expect(entries.contains("nova/idle_south.png"))
+        #expect(entries.contains("nova/two  words.png"))
+    }
+
     // MARK: - Install / atomicity
 
     @Test func atomicInstallCreatesCoat() throws {

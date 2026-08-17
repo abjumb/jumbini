@@ -188,3 +188,39 @@ private final class TempCoats {
     #expect(Set([a, b]).count == 1)
     #expect(a != Coat.classic)
 }
+
+// MARK: - Manifest round trip
+
+// The Coat Workshop writes `coat.json` back when the user edits a scale, so
+// what the app cannot interpret still has to survive the trip.
+
+@Test("a rewritten manifest keeps the keys the app does not know about")
+func manifestPreservesUnrecognisedKeys() throws {
+    let json = """
+    {"name": "Nova", "author": "someone", "licence": {"kind": "CC-BY", "year": 2026},
+     "tags": ["pixel", "dog"], "retired": null, "beta": true, "scales": {"sit": 3.2}}
+    """
+    var manifest = try JSONDecoder().decode(CoatManifest.self, from: Data(json.utf8))
+    #expect(manifest.unrecognised.keys.sorted() == ["author", "beta", "licence", "retired", "tags"])
+
+    manifest.scales = ["sit": 4.0]
+    let encoded = try JSONEncoder().encode(manifest)
+    let reread = try JSONDecoder().decode(CoatManifest.self, from: encoded)
+
+    #expect(reread.name == "Nova")
+    #expect(reread.scales == ["sit": 4.0])
+    #expect(reread.unrecognised == manifest.unrecognised)
+    #expect(reread.unrecognised["author"] == .string("someone"))
+    #expect(reread.unrecognised["beta"] == .bool(true))
+    #expect(reread.unrecognised["retired"] == .null)
+    #expect(reread.unrecognised["tags"] == .array([.string("pixel"), .string("dog")]))
+    #expect(reread.unrecognised["licence"] == .object(["kind": .string("CC-BY"), "year": .number(2026)]))
+}
+
+@Test("dropping every override drops the scales key rather than writing an empty one")
+func manifestOmitsAbsentFields() throws {
+    let manifest = CoatManifest(name: "Nova", scales: nil)
+    let json = String(data: try JSONEncoder().encode(manifest), encoding: .utf8) ?? ""
+    #expect(json.contains("\"name\""))
+    #expect(!json.contains("scales"))
+}
