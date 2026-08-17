@@ -175,4 +175,6 @@ enum TidyUndoError: Error, Equatable {
 enum TidyExecutionError: Error, Equatable {
     case unsafeRoot(URL)
     case pathOutsideRoot(URL)
+    case identityUnavailable(URL)
+    case deviceMismatch(source: URL, destinationParent: URL)
 }

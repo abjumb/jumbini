@@ -164,6 +164,29 @@ import Testing
         ))
     }
 
+    @Test func undoCompletionAuditFailureLeavesEligibilityUnconsumed() throws {
+        let support = try TemporaryDirectory.make()
+        let fileManager = LedgerFinalUndoAuditFailingFileManager(
+            auditURL: support.url.appendingPathComponent("tidy.log")
+        )
+        let ledger = TidyLedger(directory: support.url, fileManager: fileManager)
+        let pass = TidyPassRecord.started(trigger: .manual, at: .now)
+        let move = TidyCompletedMove.fixture(index: 0)
+        try ledger.begin(pass)
+        try ledger.recordIntent(move, in: pass.id)
+        try ledger.recordCompletion(move, in: pass.id)
+        try ledger.finish(pass.id, status: .completed)
+        fileManager.failAuditCheck(number: 2)
+
+        do {
+            try ledger.completeUndo([move], in: pass.id)
+            Issue.record("Expected final undo audit append to fail")
+        } catch {}
+
+        #expect(try ledger.loadLatestPass()?.status == .completed)
+        #expect(try ledger.loadLatestPass()?.undoAvailable == true)
+    }
+
     @Test func destinationOnlyIntentIsRecoveredAsCompletedMove() throws {
         let support = try TemporaryDirectory.make()
         let items = try TemporaryDirectory.make()
@@ -402,6 +425,22 @@ import Testing
         #expect(completed.moves == [move])
     }
 
+    @Test func knownUnperformedIntentCanBeClearedWithoutACompletedMove() throws {
+        let support = try TemporaryDirectory.make()
+        let ledger = TidyLedger(directory: support.url)
+        let pass = TidyPassRecord.started(trigger: .manual, at: .now)
+        let move = TidyCompletedMove.fixture(index: 1)
+        try ledger.begin(pass)
+        try ledger.recordIntent(move, in: pass.id)
+
+        try ledger.clearIntent(passID: pass.id)
+
+        let cleared = try #require(try ledger.loadLatestPass())
+        #expect(cleared.intendedMove == nil)
+        #expect(cleared.moves.isEmpty)
+        #expect(cleared.status == .running)
+    }
+
     @Test func beginningNewPassReplacesUndoEligibilityButNotAuditHistory() throws {
         let support = try TemporaryDirectory.make()
         let ledger = TidyLedger(directory: support.url)
@@ -497,5 +536,41 @@ private struct StubTidyFileIdentityProbe: TidyFileIdentityProbing {
 
     func probe(at url: URL) -> TidyFileIdentityProbeResult {
         results[url.path] ?? .absent
+    }
+}
+
+private final class LedgerFinalUndoAuditFailingFileManager: FileManager {
+    private let auditPath: String
+    private var currentAuditCheck = 0
+    private var failingAuditCheck: Int?
+
+    init(auditURL: URL) {
+        auditPath = auditURL.path
+        super.init()
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func failAuditCheck(number: Int) {
+        currentAuditCheck = 0
+        failingAuditCheck = number
+    }
+
+    override func fileExists(atPath path: String) -> Bool {
+        if path == auditPath, failingAuditCheck != nil {
+            currentAuditCheck += 1
+            if currentAuditCheck == failingAuditCheck {
+                try? super.removeItem(atPath: auditPath)
+                try? super.createDirectory(
+                    atPath: auditPath,
+                    withIntermediateDirectories: false
+                )
+                failingAuditCheck = nil
+                return true
+            }
+        }
+        return super.fileExists(atPath: path)
     }
 }

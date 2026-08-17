@@ -98,6 +98,125 @@ import Testing
         ])
     }
 
+    @Test func collisionAtAtomicRenameBoundaryRetriesWithNewIntent() throws {
+        let fixture = try ExecutorFixture(fileCount: 1)
+        fixture.fileOperator.collidingMoveNumbers = [1]
+
+        let result = try fixture.runAll()
+
+        let move = try #require(result.moves.first)
+        let originalDestination = fixture.destinationDirectory
+            .appendingPathComponent("file-0001.png")
+        #expect(move.destination.lastPathComponent == "file-0001 2.png")
+        #expect(try String(contentsOf: originalDestination, encoding: .utf8) == "racer")
+        #expect(!FileManager.default.fileExists(atPath: fixture.sourceURLs[0].path))
+        #expect(try fixture.ledger.loadLatestPass()?.intendedMove == nil)
+        #expect(try fixture.ledger.loadLatestPass()?.moves == [move])
+        #expect(fixture.fileOperator.moveAttempts.map(\.destination) == [
+            originalDestination,
+            move.destination,
+        ])
+    }
+
+    @Test func intentClearFailureStopsWithSourceUntouched() throws {
+        let fixture = try ExecutorFixture(fileCount: 1)
+        let fileManager = TemporaryJournalCreateFailingFileManager(
+            temporaryJournalURL: fixture.support.url
+                .appendingPathComponent("tidy-last-pass.json.tmp")
+        )
+        let ledger = TidyLedger(
+            directory: fixture.support.url,
+            fileManager: fileManager,
+            now: { fixture.now }
+        )
+        let executor = TidyExecutor(
+            ledger: ledger,
+            openFiles: fixture.openFiles,
+            fileOperator: fixture.fileOperator
+        )
+        fixture.fileOperator.collidingMoveNumbers = [1]
+        fixture.fileOperator.onCollision = {
+            fileManager.failNextTemporaryJournalCreate = true
+        }
+
+        #expect(throws: TidyLedgerError.unableToCreateJournal) {
+            try executor.execute(
+                plan: fixture.plan,
+                selectedIDs: Set(fixture.plan.movable.map(\.id)),
+                trigger: .manual,
+                now: fixture.now,
+                shouldHalt: { false },
+                didMove: { _ in }
+            )
+        }
+
+        let originalDestination = fixture.destinationDirectory
+            .appendingPathComponent("file-0001.png")
+        let retryDestination = fixture.destinationDirectory
+            .appendingPathComponent("file-0001 2.png")
+        #expect(FileManager.default.fileExists(atPath: fixture.sourceURLs[0].path))
+        #expect(try String(contentsOf: originalDestination, encoding: .utf8) == "racer")
+        #expect(!FileManager.default.fileExists(atPath: retryDestination.path))
+        #expect(fixture.fileOperator.moveAttempts.count == 1)
+        #expect(try ledger.loadLatestPass()?.intendedMove?.destination == originalDestination)
+    }
+
+    @Test func systemOperatorNeverReplacesExistingDestination() throws {
+        let directory = try TemporaryDirectory.make()
+        let source = directory.url.appendingPathComponent("source.txt")
+        let destination = directory.url.appendingPathComponent("destination.txt")
+        try writeFixture("source", to: source)
+        try writeFixture("destination", to: destination)
+
+        #expect(throws: POSIXError(.EEXIST)) {
+            try SystemTidyFileOperator().moveItem(at: source, to: destination)
+        }
+
+        #expect(try String(contentsOf: source, encoding: .utf8) == "source")
+        #expect(try String(contentsOf: destination, encoding: .utf8) == "destination")
+    }
+
+    @Test func systemOperatorRenamePreservesFileIdentity() throws {
+        let directory = try TemporaryDirectory.make()
+        let source = directory.url.appendingPathComponent("source.txt")
+        let destination = directory.url.appendingPathComponent("destination.txt")
+        try writeFixture("source", to: source)
+        let sourceID = try fileID(at: source)
+
+        try SystemTidyFileOperator().moveItem(at: source, to: destination)
+
+        #expect(!FileManager.default.fileExists(atPath: source.path))
+        #expect(try fileID(at: destination) == sourceID)
+    }
+
+    @Test func deviceMismatchFailsBeforeIntentOrMove() throws {
+        let fixture = try ExecutorFixture(fileCount: 1)
+        let executor = TidyExecutor(
+            ledger: fixture.ledger,
+            openFiles: fixture.openFiles,
+            fileOperator: fixture.fileOperator,
+            identityProbe: DeviceMismatchIdentityProbe(
+                destinationDirectory: fixture.destinationDirectory
+            )
+        )
+
+        let result = try executor.execute(
+            plan: fixture.plan,
+            selectedIDs: Set(fixture.plan.movable.map(\.id)),
+            trigger: .manual,
+            now: fixture.now,
+            shouldHalt: { false },
+            didMove: { _ in }
+        )
+
+        #expect(result.moves.isEmpty)
+        #expect(result.failures.count == 1)
+        #expect(fixture.fileOperator.moveAttempts.isEmpty)
+        #expect(fixture.sourceExists == [true])
+        #expect(try fixture.ledger.loadLatestPass()?.intendedMove == nil)
+        #expect(try fixture.ledger.loadLatestPass()?.status == .failed)
+    }
+
     @Test func hardCapMovesExactlyFifty() throws {
         let fixture = try ExecutorFixture(fileCount: 4_000)
 
@@ -232,6 +351,42 @@ import Testing
         #expect(throws: TidyUndoError.unavailable) {
             try fixture.executor.undoLatest(root: fixture.root, now: fixture.now)
         }
+    }
+
+    @Test func finalUndoAuditFailureRollsForwardWithoutConsumingEligibility() throws {
+        let fixture = try ExecutorFixture(fileCount: 2)
+        let failingFileManager = FinalUndoAuditFailingFileManager(
+            auditURL: fixture.support.url.appendingPathComponent("tidy.log")
+        )
+        let ledger = TidyLedger(
+            directory: fixture.support.url,
+            fileManager: failingFileManager,
+            now: { fixture.now }
+        )
+        let executor = TidyExecutor(
+            ledger: ledger,
+            openFiles: fixture.openFiles,
+            fileOperator: fixture.fileOperator
+        )
+        _ = try executor.execute(
+            plan: fixture.plan,
+            selectedIDs: Set(fixture.plan.movable.map(\.id)),
+            trigger: .manual,
+            now: fixture.now,
+            shouldHalt: { false },
+            didMove: { _ in }
+        )
+        fixture.fileOperator.reset()
+        failingFileManager.failAuditCheck(number: 3)
+
+        #expect(throws: TidyUndoError.self) {
+            try executor.undoLatest(root: fixture.root, now: fixture.now)
+        }
+
+        #expect(fixture.sourceExists == [false, false])
+        #expect(fixture.destinationChildren.count == 2)
+        #expect(try ledger.loadLatestPass()?.status == .completed)
+        #expect(try ledger.loadLatestPass()?.undoAvailable == true)
     }
 
     @Test func failedUndoRollsForwardAndKeepsUndoAvailable() throws {
@@ -408,6 +563,8 @@ private final class RecordingTidyFileOperator: TidyFileOperating {
     private(set) var moveAttempts: [(source: URL, destination: URL)] = []
     var failingMoveNumbers: Set<Int> = []
     var moveThenFailNumbers: Set<Int> = []
+    var collidingMoveNumbers: Set<Int> = []
+    var onCollision: (() -> Void)?
 
     var successfulMoveCount: Int {
         moveAttempts.count - moveAttempts.indices.filter {
@@ -427,6 +584,11 @@ private final class RecordingTidyFileOperator: TidyFileOperating {
         if failingMoveNumbers.contains(moveAttempts.count) {
             throw InjectedMoveError()
         }
+        if collidingMoveNumbers.contains(moveAttempts.count) {
+            try writeFixture("racer", to: destination)
+            onCollision?()
+            throw POSIXError(.EEXIST)
+        }
         try FileManager.default.moveItem(at: source, to: destination)
         if moveThenFailNumbers.contains(moveAttempts.count) {
             throw InjectedMoveError()
@@ -442,6 +604,86 @@ private final class RecordingTidyFileOperator: TidyFileOperating {
         moveAttempts = []
         failingMoveNumbers = []
         moveThenFailNumbers = []
+        collidingMoveNumbers = []
+        onCollision = nil
+    }
+}
+
+private struct DeviceMismatchIdentityProbe: TidyFileIdentityProbing {
+    let destinationDirectory: URL
+
+    func probe(at url: URL) -> TidyFileIdentityProbeResult {
+        let result = SystemTidyFileIdentityProbe().probe(at: url)
+        guard url.standardizedFileURL == destinationDirectory.standardizedFileURL,
+              case .present(let fileID) = result else {
+            return result
+        }
+        return .present(TidyFileID(
+            device: fileID.device ^ 1,
+            inode: fileID.inode
+        ))
+    }
+}
+
+private final class FinalUndoAuditFailingFileManager: FileManager {
+    private let auditPath: String
+    private var currentAuditCheck = 0
+    private var failingAuditCheck: Int?
+
+    init(auditURL: URL) {
+        auditPath = auditURL.path
+        super.init()
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func failAuditCheck(number: Int) {
+        currentAuditCheck = 0
+        failingAuditCheck = number
+    }
+
+    override func fileExists(atPath path: String) -> Bool {
+        if path == auditPath, failingAuditCheck != nil {
+            currentAuditCheck += 1
+            if currentAuditCheck == failingAuditCheck {
+                try? super.removeItem(atPath: auditPath)
+                try? super.createDirectory(
+                    atPath: auditPath,
+                    withIntermediateDirectories: false
+                )
+                failingAuditCheck = nil
+                return true
+            }
+        }
+        return super.fileExists(atPath: path)
+    }
+}
+
+private final class TemporaryJournalCreateFailingFileManager: FileManager {
+    private let temporaryJournalPath: String
+    var failNextTemporaryJournalCreate = false
+
+    init(temporaryJournalURL: URL) {
+        temporaryJournalPath = temporaryJournalURL.path
+        super.init()
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func createFile(
+        atPath path: String,
+        contents data: Data?,
+        attributes attr: [FileAttributeKey: Any]? = nil
+    ) -> Bool {
+        if path == temporaryJournalPath, failNextTemporaryJournalCreate {
+            failNextTemporaryJournalCreate = false
+            return false
+        }
+        return super.createFile(atPath: path, contents: data, attributes: attr)
     }
 }
 

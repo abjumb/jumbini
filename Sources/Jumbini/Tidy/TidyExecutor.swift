@@ -22,7 +22,18 @@ struct SystemTidyFileOperator: TidyFileOperating {
     }
 
     func moveItem(at source: URL, to destination: URL) throws {
-        try fileManager.moveItem(at: source, to: destination)
+        let result = source.path.withCString { sourcePath in
+            destination.path.withCString { destinationPath in
+                Darwin.renamex_np(
+                    sourcePath,
+                    destinationPath,
+                    UInt32(RENAME_EXCL)
+                )
+            }
+        }
+        guard result == 0 else {
+            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+        }
     }
 
     func itemExists(at url: URL) -> Bool {
@@ -47,17 +58,20 @@ final class TidyExecutor {
     private let openFiles: TidyOpenFileDetecting
     private let fileOperator: TidyFileOperating
     private let fileManager: FileManager
+    private let identityProbe: TidyFileIdentityProbing
 
     init(
         ledger: TidyLedger,
         openFiles: TidyOpenFileDetecting = SystemTidyOpenFileDetector(),
         fileOperator: TidyFileOperating = SystemTidyFileOperator(),
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default,
+        identityProbe: TidyFileIdentityProbing = SystemTidyFileIdentityProbe()
     ) {
         self.ledger = ledger
         self.openFiles = openFiles
         self.fileOperator = fileOperator
         self.fileManager = fileManager
+        self.identityProbe = identityProbe
     }
 
     func execute(
@@ -137,13 +151,13 @@ final class TidyExecutor {
                     skipped.append(item)
                     try ledger.recordSkip(item, in: pass.id)
 
-                case .move(let fileID):
+                case .move(let validatedFileID):
                     var destination = availableDestination(for: plannedMove)
                     let destinationDirectory = destination.deletingLastPathComponent()
                     var completed = TidyCompletedMove(
                         source: plannedMove.source,
                         destination: destination,
-                        fileID: fileID,
+                        fileID: validatedFileID,
                         ruleID: plannedMove.ruleID,
                         ruleName: plannedMove.ruleName
                     )
@@ -155,7 +169,6 @@ final class TidyExecutor {
                             under: root,
                             offendingURL: destination
                         )
-
                         // Recheck after folder creation as that call is an injected
                         // boundary and another process may have claimed the name.
                         if fileOperator.itemExists(at: destination) {
@@ -163,20 +176,46 @@ final class TidyExecutor {
                             completed = TidyCompletedMove(
                                 source: plannedMove.source,
                                 destination: destination,
-                                fileID: fileID,
+                                fileID: validatedFileID,
                                 ruleID: plannedMove.ruleID,
                                 ruleName: plannedMove.ruleName
                             )
                         }
 
-                        try ledger.recordIntent(completed, in: pass.id)
-                        try fileOperator.moveItem(
-                            at: completed.source,
-                            to: completed.destination
-                        )
+                        while true {
+                            try validateSameDevice(
+                                source: plannedMove.source,
+                                expectedID: validatedFileID,
+                                destinationDirectory: destinationDirectory
+                            )
+                            try ledger.recordIntent(completed, in: pass.id)
+                            do {
+                                try fileOperator.moveItem(
+                                    at: completed.source,
+                                    to: completed.destination
+                                )
+                                break
+                            } catch let error as POSIXError where error.code == .EEXIST {
+                                do {
+                                    try ledger.clearIntent(passID: pass.id)
+                                } catch {
+                                    throw IntentClearFailure(underlying: error)
+                                }
+                                destination = availableDestination(for: plannedMove)
+                                completed = TidyCompletedMove(
+                                    source: plannedMove.source,
+                                    destination: destination,
+                                    fileID: validatedFileID,
+                                    ruleID: plannedMove.ruleID,
+                                    ruleName: plannedMove.ruleName
+                                )
+                            }
+                        }
                         try ledger.recordCompletion(completed, in: pass.id)
                         completedMoves.append(completed)
                         didMove(completed)
+                    } catch let clearFailure as IntentClearFailure {
+                        throw clearFailure.underlying
                     } catch {
                         let originalError = error
                         // Whether the failure occurred before, during, or after the
@@ -280,10 +319,7 @@ final class TidyExecutor {
         }
 
         do {
-            for move in reversedMoves {
-                try ledger.recordUndo(move, in: pass.id)
-            }
-            try ledger.finish(pass.id, status: .undone)
+            try ledger.completeUndo(reversedMoves, in: pass.id)
         } catch {
             let auditMessage = failureMessage(error)
             var rollbackMessage: String?
@@ -368,6 +404,26 @@ final class TidyExecutor {
         }
     }
 
+    private func validateSameDevice(
+        source: URL,
+        expectedID: TidyFileID,
+        destinationDirectory: URL
+    ) throws {
+        guard let immediateSourceID = fileID(at: source),
+              immediateSourceID == expectedID else {
+            throw TidyExecutionError.identityUnavailable(source)
+        }
+        guard let destinationDirectoryID = fileID(at: destinationDirectory) else {
+            throw TidyExecutionError.identityUnavailable(destinationDirectory)
+        }
+        guard immediateSourceID.device == destinationDirectoryID.device else {
+            throw TidyExecutionError.deviceMismatch(
+                source: source,
+                destinationParent: destinationDirectory
+            )
+        }
+    }
+
     private func resolvedRoot(_ root: URL) throws -> URL {
         guard root.isFileURL else {
             throw TidyExecutionError.unsafeRoot(root)
@@ -438,14 +494,10 @@ final class TidyExecutor {
     }
 
     private func fileID(at url: URL) -> TidyFileID? {
-        var information = stat()
-        guard Darwin.lstat(url.path, &information) == 0 else {
+        guard case .present(let fileID) = identityProbe.probe(at: url) else {
             return nil
         }
-        return TidyFileID(
-            device: UInt64(information.st_dev),
-            inode: UInt64(information.st_ino)
-        )
+        return fileID
     }
 
     private func completedMove(from move: TidyPlannedMove) -> TidyCompletedMove {
@@ -466,4 +518,8 @@ final class TidyExecutor {
 private enum CandidateValidation {
     case skip(TidySkipReason)
     case move(TidyFileID)
+}
+
+private struct IntentClearFailure: Error {
+    let underlying: Error
 }

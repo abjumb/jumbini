@@ -43,6 +43,7 @@ enum TidyLedgerError: Error, Equatable {
     case noLatestPass
     case passMismatch(expected: UUID, actual: UUID)
     case intentAlreadyPending
+    case noPendingIntent
     case completionWithoutMatchingIntent
     case unableToCreateJournal
 }
@@ -130,6 +131,15 @@ final class TidyLedger {
         try save(pass)
     }
 
+    func clearIntent(passID: UUID) throws {
+        var pass = try requirePass(passID)
+        guard pass.intendedMove != nil else {
+            throw TidyLedgerError.noPendingIntent
+        }
+        pass.intendedMove = nil
+        try save(pass)
+    }
+
     func recordCompletion(_ move: TidyCompletedMove, in passID: UUID) throws {
         var pass = try requirePass(passID)
         guard pass.intendedMove == move else {
@@ -209,6 +219,13 @@ final class TidyLedger {
         )
     }
 
+    func completeUndo(_ moves: [TidyCompletedMove], in passID: UUID) throws {
+        for move in moves {
+            try recordUndo(move, in: passID)
+        }
+        try finish(passID, status: .undone)
+    }
+
     func finish(_ passID: UUID, status: TidyPassStatus) throws {
         var pass = try requirePass(passID)
         pass.status = status
@@ -218,8 +235,15 @@ final class TidyLedger {
         case .running, .undone:
             pass.undoAvailable = false
         }
-        try save(pass)
-        try append(passID: passID, action: "FINISH", result: status.rawValue)
+        if status == .undone {
+            // A failed final undo audit must leave the prior completed pass and
+            // its eligibility durable so the executor can roll files forward.
+            try append(passID: passID, action: "FINISH", result: status.rawValue)
+            try save(pass)
+        } else {
+            try save(pass)
+            try append(passID: passID, action: "FINISH", result: status.rawValue)
+        }
     }
 
     func loadLatestPass() throws -> TidyPassRecord? {
