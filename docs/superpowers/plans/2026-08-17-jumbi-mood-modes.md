@@ -13,7 +13,7 @@ pixels. The seven autonomy bands move out of `leaveIdleForAutonomy` into an
 `AutonomyOdds` value type that applies the mode multipliers and clamps the total
 so plain wandering always keeps a share of the roll.
 
-**Tech Stack:** Swift 5 language mode, SwiftPM (`swift build`, `swift test`),
+**Tech Stack:** Swift 5 language mode, SwiftPM (`swift build`, `Scripts/test.sh`),
 swift-testing (`@Test` / `#expect`), SpriteKit, AppKit.
 
 **Spec:** `docs/superpowers/specs/2026-08-17-jumbi-mood-modes-design.md`
@@ -40,9 +40,19 @@ swift-testing (`@Test` / `#expect`), SpriteKit, AppKit.
 - Mood defaults, exactly: `activity = .active`, `stayDown = false`,
   `roam = .wander`. Note this deliberately breaks the `JumbiniSettings`
   convention of defaulting every switch to `true`.
-- Build with `swift build`; test with `swift test`. Both must be clean before
-  every commit. `swift build` emits two `ld: warning: search path ... not found`
-  lines on this machine — those are pre-existing and are not failures.
+- Build with `swift build`; test with **`Scripts/test.sh`**, never bare
+  `swift test`. Both must be clean before every commit.
+  - `Scripts/test.sh` is a thin wrapper that passes the Swift Testing macro
+    plugin path and two rpaths into `/Library/Developer/CommandLineTools`. This
+    machine has Command Line Tools without Xcode, where bare `swift test`
+    compiles fine and then dies at launch with
+    `Library not loaded: @rpath/Testing.framework`. CI uses bare `swift test`
+    because its runners have full Xcode; you are not CI.
+  - It takes the same arguments, so `Scripts/test.sh --filter MoodTests` works.
+  - `swift build` emits two `ld: warning: search path ... not found` lines on
+    this machine — those are pre-existing and are not failures.
+- Baseline before this branch: **676 tests in 13 suites, all passing.** That
+  number only goes up.
 
 ---
 
@@ -220,7 +230,7 @@ private func isolatedDefaults() -> (UserDefaults, String) {
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `swift test --filter MoodTests`
+Run: `Scripts/test.sh --filter MoodTests`
 Expected: FAIL to compile — `cannot find 'Mood' in scope`, `cannot find
 'MoodSettings' in scope`, `cannot find 'ActivityMode' in scope`.
 
@@ -407,11 +417,11 @@ struct MoodMenuState: Equatable {
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
-Run: `swift test --filter MoodTests`
+Run: `Scripts/test.sh --filter MoodTests`
 Expected: PASS, 9 tests.
 
 Then run the whole suite to confirm nothing else moved:
-Run: `swift test`
+Run: `Scripts/test.sh`
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -577,7 +587,7 @@ Append to `Tests/JumbiniTests/DogBrainTests.swift`:
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `swift test --filter DogBrainTests`
+Run: `Scripts/test.sh --filter DogBrainTests`
 Expected: FAIL to compile — `cannot find 'AutonomyOdds' in scope` and
 `value of type 'BrainTuning' has no member 'wanderShare'`.
 
@@ -795,12 +805,12 @@ normalize to a clean 50/50 rather than leaking a wander band.
 
 - [ ] **Step 7: Run the tests to verify they pass**
 
-Run: `swift test --filter DogBrainTests`
+Run: `Scripts/test.sh --filter DogBrainTests`
 Expected: PASS — the five new tests, the rewritten one, and every other
 pre-existing `DogBrainTests` test unchanged. Any *other* pre-existing failure
 means the refactor was not behavior-preserving; do not proceed past it.
 
-Run: `swift test`
+Run: `Scripts/test.sh`
 Expected: PASS.
 
 - [ ] **Step 8: Commit**
@@ -985,7 +995,7 @@ private func idleOutcomes(mood: Mood, seeds: ClosedRange<UInt64> = 1...200) -> [
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `swift test --filter DogBrainTests`
+Run: `Scripts/test.sh --filter DogBrainTests`
 Expected: FAIL to compile — `value of type 'DogBrain' has no member 'mood'`, and
 `extra argument 'mood' in call` on the `AutonomyOdds` init.
 
@@ -1083,11 +1093,11 @@ Replace all three `tuning.zoomiesDuration` call sites with `zoomiesTimeout()`:
 
 - [ ] **Step 6: Run the tests to verify they pass**
 
-Run: `swift test --filter DogBrainTests`
+Run: `Scripts/test.sh --filter DogBrainTests`
 Expected: PASS, including every pre-existing test — `.active` is the identity, so
 none of them may move.
 
-Run: `swift test`
+Run: `Scripts/test.sh`
 Expected: PASS.
 
 - [ ] **Step 7: Commit**
@@ -1314,7 +1324,7 @@ Append to `Tests/JumbiniTests/DogBrainTests.swift`:
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `swift test --filter DogBrainTests`
+Run: `Scripts/test.sh --filter DogBrainTests`
 Expected: FAIL to compile — `value of type 'DogBrain' has no member 'setMood'`.
 
 - [ ] **Step 3: Add the lie deadline helper and apply it at all five sites**
@@ -1430,11 +1440,11 @@ shape as its two neighbours:
 
 - [ ] **Step 6: Run the tests to verify they pass**
 
-Run: `swift test --filter DogBrainTests`
+Run: `Scripts/test.sh --filter DogBrainTests`
 Expected: PASS, including every pre-existing test — the hold is off by default,
 so nothing already written may move.
 
-Run: `swift test`
+Run: `Scripts/test.sh`
 Expected: PASS.
 
 - [ ] **Step 7: Commit**
@@ -1602,7 +1612,7 @@ private func firstWalkTarget(_ brain: DogBrain) -> CGPoint? {
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `swift test --filter DogBrainTests`
+Run: `Scripts/test.sh --filter DogBrainTests`
 Expected: FAIL to compile — `value of type 'DogBrain' has no member
 'cursorPosition'` and `value of type 'BrainTuning' has no member 'followStandoff'`.
 
@@ -1703,12 +1713,12 @@ In `leaveIdleForAutonomy`, change the final return to:
 
 - [ ] **Step 8: Run the tests to verify they pass**
 
-Run: `swift test --filter DogBrainTests`
+Run: `Scripts/test.sh --filter DogBrainTests`
 Expected: PASS. `followWithNoCursorIsOrdinaryWandering` is the guard that the
 default path is untouched — `roamTarget()` calls straight through to
 `wanderTarget()` and consumes the same random numbers in the same order.
 
-Run: `swift test`
+Run: `Scripts/test.sh`
 Expected: PASS.
 
 - [ ] **Step 9: Commit**
@@ -1818,7 +1828,7 @@ import Testing
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
-Run: `swift test --filter SpeechBubbleTests`
+Run: `Scripts/test.sh --filter SpeechBubbleTests`
 Expected: FAIL to compile — `cannot find 'ReactionCaption' in scope`,
 `cannot find 'SpeechBubble' in scope`, and `type 'SystemSignal' has no member
 'allCases'`.
@@ -1995,7 +2005,7 @@ final class SpeechBubble: SKNode {
 
 - [ ] **Step 5: Run the new tests to verify they pass**
 
-Run: `swift test --filter SpeechBubbleTests`
+Run: `Scripts/test.sh --filter SpeechBubbleTests`
 Expected: PASS, 7 tests.
 
 - [ ] **Step 6: Speak the captions from the scene**
@@ -2051,7 +2061,7 @@ Run: `swift build`
 Expected: `Build complete!` with no errors. If the compiler reports
 `emoteIcon` as unused or missing, it was not fully deleted.
 
-Run: `swift test`
+Run: `Scripts/test.sh`
 Expected: PASS.
 
 - [ ] **Step 8: Commit**
@@ -2225,7 +2235,7 @@ to
 Run: `swift build`
 Expected: `Build complete!`
 
-Run: `swift test`
+Run: `Scripts/test.sh`
 Expected: PASS. The menu wiring itself has no unit test — `NSMenu` construction
 needs a running app — but `MoodTests` already proves the titles and the
 checkmark logic, and `DogBrainTests` proves what `setMood` does.
@@ -2327,7 +2337,7 @@ comfortable distance short, and he hunts the cursor far more often.
 
 - [ ] **Step 5: Verify**
 
-Run: `swift test`
+Run: `Scripts/test.sh`
 Expected: PASS. (`AppVersionTests` and `HeroSpecTests` read repository files;
 confirm neither parses the regions edited above.)
 
@@ -2350,7 +2360,7 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 
 ## Definition of done
 
-- `swift build` and `swift test` are clean.
+- `swift build` and `Scripts/test.sh` are clean.
 - Every pre-existing `DogBrainTests` test passes unmodified — `.active`, the
   hold off, and `.wander` are the defaults, so nothing written before this
   branch may have moved.
