@@ -521,10 +521,16 @@ enum CoatValidator {
             )
         }
         let state = String(parts[0])
-        if !allowedStates.contains(state) {
-            return nil // silently skip — user may have extra sprites
-        }
-        return nil
+        guard !allowedStates.contains(state) else { return nil }
+
+        // Info, not a warning: an extra sprite is harmless, and a coat kit may
+        // legitimately ship poses Jumbini has no state for. But the file is
+        // never drawn — sprites are looked up by state name — and saying so is
+        // the only way a typo like "idel_south.png" surfaces at all.
+        return ValidationFinding(
+            severity: .info,
+            message: "\(filename): \"\(state)\" is not one of the \(allowedStates.count) coat states — this sprite is never drawn."
+        )
     }
 
     private static func validateImage(
