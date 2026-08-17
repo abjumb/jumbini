@@ -397,6 +397,12 @@ enum CoatValidator {
         to destination: URL,
         fileManager: FileManager = .default
     ) throws {
+        // `zip -r` *updates* an archive that already exists, so exporting over
+        // a previous export would merge the two coats rather than replace one
+        // with the other — and NSSavePanel's "Replace?" only promises the
+        // former file is gone. Make that true.
+        try? fileManager.removeItem(at: destination)
+
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/zip")
         process.arguments = ["-r", destination.path, "."]
