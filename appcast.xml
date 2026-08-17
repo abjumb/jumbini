@@ -3,6 +3,18 @@
     <channel>
         <title>Jumbini</title>
         <item>
+            <title>4.10</title>
+            <pubDate>Mon, 17 Aug 2026 22:44:19 +0000</pubDate>
+            <sparkle:version>23</sparkle:version>
+            <sparkle:shortVersionString>4.10</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <enclosure url="https://abjumb.github.io/jumbini/Jumbini-4.10.dmg" length="2396900" type="application/octet-stream" sparkle:edSignature="8vZwmty6iBP+8Egm3If1mVlEEsaLp+6oAd8f0iz3JosWHdjUymFFp+D83pdcLqUSoyfODKdovoeqw9qwubsKDA=="/>
+            <sparkle:deltas>
+                <enclosure url="https://abjumb.github.io/jumbini/Jumbini23-21.delta" sparkle:deltaFrom="21" length="329818" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="977808" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="qhQNOhxpx07YhWECyKfbWCedcLI0kW8s6SRvuyqs7/aj2NCT4Fa9DV09M15Lb4YaUiZdukcjmqW9QY1PYpgHCw=="/>
+            </sparkle:deltas>
+        </item>
+        <item>
             <title>4.8</title>
             <pubDate>Sun, 16 Aug 2026 19:15:29 +0000</pubDate>
             <sparkle:version>21</sparkle:version>
@@ -27,20 +39,6 @@
                 <enclosure url="https://abjumb.github.io/jumbini/Jumbini17-13.delta" sparkle:deltaFrom="13" length="156814" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="980432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="7Bd8ivXYzXIiVicR7r0ovX1huNo9vE9Tmzp3OcJbkC+bM/eZmfr7Sg6qHTDDMoZeADYY8Y5hZ2ABC2/P3aspAQ=="/>
                 <enclosure url="https://abjumb.github.io/jumbini/Jumbini17-12.delta" sparkle:deltaFrom="12" length="196470" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="980432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="QpxwdVip0Xdin/RrZPQ7t4m+b7N8s6r5FqoNZpEbMAwuPgU/Tv0Q3n4p+cm2tu2EI9wcg4t7Bid2S/zNUqZTAA=="/>
                 <enclosure url="https://abjumb.github.io/jumbini/Jumbini17-11.delta" sparkle:deltaFrom="11" length="197922" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="980432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="kcKXPM4c0bZWjrnl994A8/jVYdZTGMp7IGdBF1ouD6MewdJr3w2ZFXvyAEJUjCLo6UcorZZI7QcDi3xxwIq+AQ=="/>
-            </sparkle:deltas>
-        </item>
-        <item>
-            <title>4.5</title>
-            <pubDate>Sun, 16 Aug 2026 06:46:04 +0000</pubDate>
-            <sparkle:version>14</sparkle:version>
-            <sparkle:shortVersionString>4.5</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <enclosure url="https://abjumb.github.io/jumbini/Jumbini-4.5.dmg" length="2052474" type="application/octet-stream" sparkle:edSignature="ggOvLIYMdhl2zXQbdS6Cott48g+bjnxJIy1F5txemNCinACQAEzGpUugpaNeMnJ7by/SG5oP+LXge+PwqPNFBQ=="/>
-            <sparkle:deltas>
-                <enclosure url="https://abjumb.github.io/jumbini/Jumbini14-13.delta" sparkle:deltaFrom="13" length="41254" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="980432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="emrvXdEjd79NDbSY2lACj2bljNVw+WDCjhqKFLpfDv/93PKiwsLbfLiFV0dNtTuzBAMVNbU8R3umjgPfBkuxBg=="/>
-                <enclosure url="https://abjumb.github.io/jumbini/Jumbini14-12.delta" sparkle:deltaFrom="12" length="146378" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="980432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="5npBObhlzh+TUGqnCoaOJy6BC+zEImmF6sjNstMIKlThCYTYVU11WxN8I459VoPZmyS+HacvlArGBxtOtndUCw=="/>
-                <enclosure url="https://abjumb.github.io/jumbini/Jumbini14-11.delta" sparkle:deltaFrom="11" length="146674" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="980432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="e8KpjKM9300LIiKpX5e0xuEiLh1od/zv4ZD+WpgPIBcaHvgqjPzztawQQ+hZLSdcOzTydE3AL814uPKix8SMBg=="/>
             </sparkle:deltas>
         </item>
     </channel>
