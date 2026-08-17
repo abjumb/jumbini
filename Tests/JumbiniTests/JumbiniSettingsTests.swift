@@ -28,6 +28,9 @@ private func isolatedDefaults() -> (UserDefaults, String) {
     #expect(JumbiniSettings(defaults: defaults) == expected)
 }
 
+// AppDelegate is main-actor isolated (it owns AppKit), so the test that pokes
+// at it has to be too.
+@MainActor
 @Test func appDelegateLoadsPersistedSettingsForLaunch() {
     let (defaults, name) = isolatedDefaults()
     defer { defaults.removePersistentDomain(forName: name) }

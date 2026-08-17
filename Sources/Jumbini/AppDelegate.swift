@@ -3,6 +3,7 @@ import Carbon.HIToolbox
 import Sparkle
 import SpriteKit
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var window: OverlayWindow?
     private var skView: SKView?
@@ -348,9 +349,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return OSStatus(eventNotHandledErr)
             }
             let delegate = Unmanaged<AppDelegate>.fromOpaque(userData).takeUnretainedValue()
-            // Carbon dispatches on the main thread already; the async hop is
-            // cheap insurance that the SpriteKit render happens on main.
-            DispatchQueue.main.async { delegate.captureJumbiniCam() }
+            // Carbon dispatches on the main thread already; the hop onto the
+            // main actor is cheap insurance that the SpriteKit render happens
+            // there, and it satisfies the compiler from a C callback.
+            Task { @MainActor in delegate.captureJumbiniCam() }
             return noErr
         }
         InstallEventHandler(
