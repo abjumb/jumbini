@@ -225,11 +225,10 @@ bookmark round-trip to a temporary directory, and complete bookmark removal:
 }
 ```
 
-Define `TemporaryDirectory`, fixture URL writers,
-`TidyCompletedMove.fixture(index:)`,
-`TidyCompletedMove.fixture(source:destination:)`, and
-`TidyPlan.fixture(moveCount:)` in `TidyTestSupport.swift`. Use `mkdtemp`, cleanup
-in `deinit`, and keep every fixture helper out of the production target.
+Define `TemporaryDirectory` and fixture URL writers in
+`TidyTestSupport.swift`. Use `mkdtemp`, cleanup in `deinit`, and keep every
+fixture helper out of the production target. Typed fixtures are added only in
+the task that introduces their production type.
 
 - [ ] **Step 2: Run tests and verify RED**
 
@@ -293,6 +292,7 @@ git commit -m "feat: persist Tidy rules and folder grants"
 - Create: `Sources/Jumbini/Tidy/TidyPlanner.swift`
 - Create: `Tests/JumbiniTests/TidyPlannerTests.swift`
 - Modify: `Sources/Jumbini/Tidy/TidyModels.swift`
+- Modify: `Tests/JumbiniTests/TidyTestSupport.swift`
 
 **Interfaces:**
 - Consumes: `TidyRuleEngine`, `TidyRuleSet`, and injected `Date`.
@@ -392,6 +392,9 @@ with `resolved.path == root.path || resolved.path.hasPrefix(root.path + "/")`.
 Reserve planned destination names in a `Set<String>` so within-batch collisions
 also suffix safely.
 
+Add `TidyPlan.fixture(moveCount:)` to `TidyTestSupport.swift` now that Task 3
+defines `TidyPlan`.
+
 Implement `SystemTidyOpenFileDetector` with `/usr/sbin/lsof -Fn +d <root>`.
 Parse only `n/path` records, standardize paths, and return an empty set if the
 tool is absent or exits unsuccessfully. Treat a package as open if any returned
@@ -406,7 +409,7 @@ Expected: all pass, and temporary roots contain only test fixtures.
 - [ ] **Step 5: Commit the planner**
 
 ```bash
-git add Sources/Jumbini/Tidy/TidyModels.swift Sources/Jumbini/Tidy/TidyPlanner.swift Tests/JumbiniTests/TidyPlannerTests.swift
+git add Sources/Jumbini/Tidy/TidyModels.swift Sources/Jumbini/Tidy/TidyPlanner.swift Tests/JumbiniTests/TidyPlannerTests.swift Tests/JumbiniTests/TidyTestSupport.swift
 git commit -m "feat: plan safe Tidy moves"
 ```
 
@@ -415,6 +418,7 @@ git commit -m "feat: plan safe Tidy moves"
 **Files:**
 - Create: `Sources/Jumbini/Tidy/TidyLedger.swift`
 - Create: `Tests/JumbiniTests/TidyLedgerTests.swift`
+- Modify: `Tests/JumbiniTests/TidyTestSupport.swift`
 
 **Interfaces:**
 - Consumes: `TidyFileID` and planned source/destination/rule information.
@@ -489,6 +493,10 @@ blocking error when both/neither source and destination exist; when exactly the
 destination exists, promote the intent into `moves` and append a `RECOVERED`
 line.
 
+Add `TidyCompletedMove.fixture(index:)` and
+`TidyCompletedMove.fixture(source:destination:)` to
+`TidyTestSupport.swift` now that Task 4 defines `TidyCompletedMove`.
+
 - [ ] **Step 4: Run focused and full tests**
 
 Run: `./Scripts/test.sh --filter TidyLedgerTests && ./Scripts/test.sh`
@@ -498,7 +506,7 @@ Expected: all pass.
 - [ ] **Step 5: Commit journaling**
 
 ```bash
-git add Sources/Jumbini/Tidy/TidyLedger.swift Tests/JumbiniTests/TidyLedgerTests.swift
+git add Sources/Jumbini/Tidy/TidyLedger.swift Tests/JumbiniTests/TidyLedgerTests.swift Tests/JumbiniTests/TidyTestSupport.swift
 git commit -m "feat: journal Tidy passes"
 ```
 
