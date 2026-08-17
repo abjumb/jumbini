@@ -118,6 +118,44 @@ import Testing
         #expect(fixture.coordinator.state.needsPreview == false)
     }
 
+    @Test @MainActor func anIdlePassPlansFreshAndIsTaggedAsIdle() async throws {
+        let fixture = CoordinatorFixture.readyForLiveRun()
+        _ = try await fixture.coordinator.runManual()
+        try fixture.coordinator.updateIdle(enabled: true)
+
+        _ = try await fixture.coordinator.runIdle()
+
+        #expect(fixture.backend.executeTriggers == [.manual, .idle])
+        #expect(fixture.backend.planCallCount == 2)
+        #expect(fixture.backend.haltChecks == [false, false])
+    }
+
+    @Test @MainActor func anIdlePassCannotRunWhileIdleTidyingIsOff() async throws {
+        let fixture = CoordinatorFixture.readyForLiveRun()
+
+        await expectCoordinatorError(.previewRequired) {
+            _ = try await fixture.coordinator.runIdle()
+        }
+        #expect(fixture.backend.executeTriggers.isEmpty)
+    }
+
+    /// Coming back mid-pass asks the executor to stop at the next file boundary;
+    /// the request belongs to that pass alone and must not leak into the next.
+    @Test @MainActor func returningMidPassHaltsOnlyThatPass() async throws {
+        let fixture = CoordinatorFixture.readyForLiveRun()
+        _ = try await fixture.coordinator.runManual()
+        try fixture.coordinator.updateIdle(enabled: true)
+
+        let halt = fixture.coordinator.haltFlag
+        fixture.backend.duringExecute = { halt.request() }
+        _ = try await fixture.coordinator.runIdle()
+        #expect(fixture.backend.haltChecks.last == true)
+
+        fixture.backend.duringExecute = nil
+        _ = try await fixture.coordinator.runManual()
+        #expect(fixture.backend.haltChecks.last == false)
+    }
+
     @Test @MainActor func confirmedPreviewPropagatesSelectionAndUnlocksIdleWithoutEnablingIt() async throws {
         let fixture = CoordinatorFixture(needsPreview: true, completedManualPass: false)
         let preview = try await fixture.coordinator.makePreview()
@@ -407,6 +445,9 @@ private final class CoordinatorBackend: @unchecked Sendable {
     var executionOutcomes: [ExecutionOutcome] = []
     var allowsScopeAccess = true
     var undoResult = TidyUndoResult(restoredCount: 1)
+    /// Runs on the executor's queue, just before the halt check the real
+    /// executor makes between files.
+    var duringExecute: (@Sendable () -> Void)?
 
     private(set) var savedRules: [TidyRuleSet] = []
     private(set) var savedPreferences: [TidyPreferences] = []
@@ -422,6 +463,7 @@ private final class CoordinatorBackend: @unchecked Sendable {
     private(set) var operationScopeDepths: [Int] = []
     private(set) var planRanOnMainThread: [Bool] = []
     private(set) var executeRanOnMainThread: [Bool] = []
+    private(set) var haltChecks: [Bool] = []
 
     init(
         folder: URL?,
@@ -489,11 +531,13 @@ private final class CoordinatorBackend: @unchecked Sendable {
                 self.operationScopeDepths.append(self.scopeDepth)
                 return self.plan
             },
-            execute: { plan, selection, trigger, _ in
+            execute: { plan, selection, trigger, _, shouldHalt in
                 self.executeSelections.append(selection)
                 self.executeTriggers.append(trigger)
                 self.executeRanOnMainThread.append(Thread.isMainThread)
                 self.operationScopeDepths.append(self.scopeDepth)
+                self.duringExecute?()
+                self.haltChecks.append(shouldHalt())
                 if !self.executionOutcomes.isEmpty {
                     switch self.executionOutcomes.removeFirst() {
                     case .result(let result):

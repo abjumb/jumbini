@@ -94,6 +94,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // System reactions: drop the poll timer and the thermal observer.
         systemMonitor?.stop()
         systemMonitor = nil
+        // Tidy: stop watching for lock and sleep. A pass in flight halts at its
+        // next file boundary; anything already moved stays moved and stays in
+        // the ledger, which is what makes it undoable next launch.
+        NSWorkspace.shared.notificationCenter.removeObserver(self)
+        tidyCoordinator?.requestHalt()
         demoDriver?.stop()
         demoDriver = nil
     }
@@ -282,10 +287,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard systemMonitor == nil else { return }
         let monitor = SystemMonitor()
         monitor.onSignal = { [weak self] signal in
+            guard let self else { return }
+            // Tidy first, and unconditionally: idle tidying is its own setting,
+            // so turning the dog's reactions off — or pausing him — must not
+            // quietly turn off the tidying the user switched on separately.
+            self.tidyCoordinator?.receive(signal)
             // SystemMonitor guarantees main-thread delivery, which is what
             // the scene needs. Paused means the overlay is hidden and the
             // view is frozen — the dog should not be reacting to anything.
-            guard let self, !self.isPaused else { return }
+            guard !self.isPaused else { return }
             self.scene?.receive(signal)
         }
         monitor.start()
@@ -298,14 +308,55 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         systemMonitor = nil
     }
 
-    private func apply(settings: JumbiniSettings) {
-        self.settings = settings
-        scene?.apply(settings: settings)
-        if settings.systemReactionsEnabled {
+    /// The monitor stays alive for whichever feature still needs it. Idle
+    /// tidying rides on the same idle signal the emotes do, so switching off
+    /// Mac-aware reactions must not take the idle clock away with it.
+    private func updateSystemMonitorLifetime() {
+        let tidyNeedsIdle = tidyCoordinator?.state.preferences.idleEnabled ?? false
+        if settings.systemReactionsEnabled || tidyNeedsIdle {
             startSystemMonitor()
         } else {
             stopSystemMonitor()
         }
+    }
+
+    private func apply(settings: JumbiniSettings) {
+        self.settings = settings
+        scene?.apply(settings: settings)
+        updateSystemMonitorLifetime()
+    }
+
+    /// Locking the screen, switching user, or the displays going to sleep all
+    /// mean the same thing to Tidy: nothing may start, and anything running
+    /// stops at the next file boundary.
+    private func observeSessionAvailability() {
+        let center = NSWorkspace.shared.notificationCenter
+        for name in [
+            NSWorkspace.sessionDidResignActiveNotification,
+            NSWorkspace.screensDidSleepNotification,
+        ] {
+            center.addObserver(
+                self, selector: #selector(sessionBecameUnavailable),
+                name: name, object: nil
+            )
+        }
+        for name in [
+            NSWorkspace.sessionDidBecomeActiveNotification,
+            NSWorkspace.screensDidWakeNotification,
+        ] {
+            center.addObserver(
+                self, selector: #selector(sessionBecameAvailable),
+                name: name, object: nil
+            )
+        }
+    }
+
+    @objc private func sessionBecameUnavailable() {
+        tidyCoordinator?.sessionBecameUnavailable()
+    }
+
+    @objc private func sessionBecameAvailable() {
+        tidyCoordinator?.sessionBecameAvailable()
     }
 
     // MARK: - Tidy
@@ -378,11 +429,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         coordinator.onStateChange = { [weak self] state in
             self?.refreshTidyMenu()
             self?.tidySettingsPanel?.render(state: state)
+            // Switching idle tidying on may be the only reason the machine
+            // needs watching at all.
+            self?.updateSystemMonitorLifetime()
         }
         coordinator.onNotice = { [weak self] notice in
             self?.showTidyNotice(notice)
         }
         tidyCoordinator = coordinator
+        observeSessionAvailability()
         refreshTidyMenu()
     }
 

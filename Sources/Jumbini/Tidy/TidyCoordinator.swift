@@ -49,6 +49,123 @@ enum TidyNotice: Equatable {
     }
 }
 
+/// Whether an idle pass may start, and whether a running one must stop.
+///
+/// Pure and clock-injected, like the trackers in `SystemMonitor`: idle tidying
+/// is the one path where files move with nobody watching, so every reason not to
+/// start — switched off, screen locked, displays asleep, the person came back —
+/// is decided in a value that can be checked without a Mac underneath.
+struct TidyIdleTracker {
+    enum Action: Equatable {
+        case none
+        case schedule(after: TimeInterval)
+        case cancelPending
+        case startPass
+        case haltAtBoundary
+    }
+
+    /// The configured idle interval, in seconds, counted from the *user's* last
+    /// activity rather than from the signal.
+    var threshold: TimeInterval
+    var isEnabled = true
+    var sessionAvailable = true
+    /// Set by `tick` when an idle pass starts and cleared by `passFinished()`.
+    /// Only unattended passes are halted by the user coming back — a manual run
+    /// is one they asked for while sitting there.
+    var isRunningIdlePass = false
+
+    private var dueAt: TimeInterval?
+    private var hasFiredThisInterval = false
+
+    init(threshold: TimeInterval) {
+        self.threshold = threshold
+    }
+
+    mutating func receive(_ signal: SystemSignal, at now: TimeInterval) -> Action {
+        switch signal {
+        case .idleBegan:
+            guard isEnabled, sessionAvailable, !isRunningIdlePass else { return .none }
+            hasFiredThisInterval = false
+            // `SystemMonitor` reports idle at its own threshold, so only the
+            // remainder of the configured interval is left to wait out.
+            let remaining = max(0, threshold - SystemMonitor.idleSignalThreshold)
+            dueAt = now + remaining
+            return .schedule(after: remaining)
+
+        case .idleEnded:
+            let wasPending = dueAt != nil
+            dueAt = nil
+            hasFiredThisInterval = false
+            if isRunningIdlePass { return .haltAtBoundary }
+            return wasPending ? .cancelPending : .none
+
+        default:
+            return .none
+        }
+    }
+
+    mutating func tick(at now: TimeInterval) -> Action {
+        guard isEnabled, sessionAvailable, !isRunningIdlePass,
+              !hasFiredThisInterval, let dueAt, now >= dueAt else { return .none }
+        self.dueAt = nil
+        hasFiredThisInterval = true
+        isRunningIdlePass = true
+        return .startPass
+    }
+
+    /// The screen locked, the session was switched away, or the displays went to
+    /// sleep. Nothing may start, and anything running stops at a file boundary.
+    mutating func sessionBecameUnavailable(at now: TimeInterval) -> Action {
+        sessionAvailable = false
+        let wasPending = dueAt != nil
+        dueAt = nil
+        hasFiredThisInterval = false
+        if isRunningIdlePass { return .haltAtBoundary }
+        return wasPending ? .cancelPending : .none
+    }
+
+    /// Coming back only re-arms the machinery. A pass has to be earned by a
+    /// fresh idle interval, never by the screens waking up.
+    mutating func sessionBecameAvailable(at now: TimeInterval) -> Action {
+        sessionAvailable = true
+        dueAt = nil
+        hasFiredThisInterval = false
+        return .none
+    }
+
+    mutating func passFinished() {
+        isRunningIdlePass = false
+    }
+}
+
+/// A halt request the executor can read from its own queue.
+///
+/// The executor checks this between files, never during one — which is what
+/// "stops at a file boundary" means, and why the flag lives behind a lock rather
+/// than on the main actor the request comes from.
+final class TidyHaltFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var requested = false
+
+    func request() {
+        lock.lock()
+        defer { lock.unlock() }
+        requested = true
+    }
+
+    func clear() {
+        lock.lock()
+        defer { lock.unlock() }
+        requested = false
+    }
+
+    var isRequested: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return requested
+    }
+}
+
 /// What the Tidy submenu offers, as data.
 ///
 /// The menu decides real things — whether a pass can start, whether the last one
@@ -133,7 +250,8 @@ final class TidyCoordinator {
         let resolveFolder: () throws -> TidyFolderGrant?
         let forgetFolder: () throws -> Void
         let plan: (URL, [TidyRule], Int, Date) throws -> TidyPlan
-        let execute: (TidyPlan, Set<UUID>, TidyTrigger, Date) throws -> TidyPassResult
+        let execute: (TidyPlan, Set<UUID>, TidyTrigger, Date, @escaping () -> Bool) throws
+            -> TidyPassResult
         let undo: (URL, Date) throws -> TidyUndoResult
         let startAccessing: (URL) -> Bool
         let stopAccessing: (URL) -> Void
@@ -159,6 +277,12 @@ final class TidyCoordinator {
     private var block: Block?
     private var preview: TidyPlan?
     private var operationInFlight = false
+    /// Read by the executor between files, set here when the user comes back or
+    /// the session goes away. Internal so a test can request a halt from the
+    /// executor's own thread, which is where a real one arrives from.
+    let haltFlag = TidyHaltFlag()
+    private var idleTracker = TidyIdleTracker(threshold: 600)
+    private var idleTimer: Timer?
 
     private(set) var state: State
     var onStateChange: ((State) -> Void)?
@@ -187,13 +311,13 @@ final class TidyCoordinator {
                     now: date
                 )
             },
-            execute: { plan, selectedIDs, trigger, date in
+            execute: { plan, selectedIDs, trigger, date, shouldHalt in
                 try executor.execute(
                     plan: plan,
                     selectedIDs: selectedIDs,
                     trigger: trigger,
                     now: date,
-                    shouldHalt: { false },
+                    shouldHalt: shouldHalt,
                     didMove: { _ in }
                 )
             },
@@ -247,6 +371,128 @@ final class TidyCoordinator {
             undoCount: 0,
             blockingError: initialBlock?.message
         )
+        syncIdleTracker()
+    }
+
+    // MARK: - Idle triggering
+
+    /// Forwarded from `SystemMonitor` whether or not the dog's own system
+    /// reactions are switched on: idle tidying is a separate setting, and it
+    /// would be a surprise for turning off emotes to turn off tidying too.
+    func receive(_ signal: SystemSignal) {
+        apply(idleTracker.receive(signal, at: monotonicNow()))
+    }
+
+    /// The screen locked, the session switched away, or the displays slept.
+    func sessionBecameUnavailable() {
+        apply(idleTracker.sessionBecameUnavailable(at: monotonicNow()))
+    }
+
+    func sessionBecameAvailable() {
+        apply(idleTracker.sessionBecameAvailable(at: monotonicNow()))
+    }
+
+    private func apply(_ action: TidyIdleTracker.Action) {
+        switch action {
+        case .none:
+            break
+        case .schedule(let interval):
+            scheduleIdleTick(after: interval)
+        case .cancelPending:
+            cancelIdleTick()
+        case .startPass:
+            startIdlePass()
+        case .haltAtBoundary:
+            requestHalt()
+        }
+    }
+
+    /// Ask a running pass to stop before its next file. Nothing already moved is
+    /// rolled back — a halted pass is a complete, undoable short pass — and the
+    /// request is cleared when the next pass begins.
+    func requestHalt() {
+        haltFlag.request()
+    }
+
+    private func scheduleIdleTick(after interval: TimeInterval) {
+        cancelIdleTick()
+        let timer = Timer(timeInterval: max(interval, 0), repeats: false) { [weak self] _ in
+            Task { @MainActor in self?.idleTickFired() }
+        }
+        // `.common` so an open menu or a window drag cannot hold the tick back.
+        RunLoop.main.add(timer, forMode: .common)
+        idleTimer = timer
+    }
+
+    private func cancelIdleTick() {
+        idleTimer?.invalidate()
+        idleTimer = nil
+    }
+
+    private func idleTickFired() {
+        idleTimer = nil
+        apply(idleTracker.tick(at: monotonicNow()))
+    }
+
+    private func startIdlePass() {
+        guard state.preferences.idleEnabled, state.idleAvailable, !operationInFlight else {
+            idleTracker.passFinished()
+            return
+        }
+        Task { @MainActor in
+            defer { self.idleTracker.passFinished() }
+            do {
+                _ = try await self.runIdle()
+            } catch {
+                // Already surfaced as a notice by runPass; an idle pass that
+                // cannot run simply does not run.
+            }
+        }
+    }
+
+    /// A pass nobody is watching: same plan, same executor, same cap, plus a
+    /// halt check between files.
+    func runIdle() async throws -> TidyPassResult {
+        let root = try requireFolder()
+        guard state.preferences.idleEnabled, state.idleAvailable else {
+            throw TidyCoordinatorError.previewRequired
+        }
+        let rules = state.rules.rules
+        let recencyMinutes = state.preferences.recencyMinutes
+        let date = dependencies.now()
+        return try await runPass(clearsPreviewGate: false) {
+            try await self.performWithAccess(to: root) { dependencies in
+                let plan = try dependencies.plan(root, rules, recencyMinutes, date)
+                return try dependencies.execute(
+                    plan,
+                    Set(plan.movable.map(\.id)),
+                    .idle,
+                    date,
+                    self.shouldHalt
+                )
+            }
+        }
+    }
+
+    /// Kept in step with the stored preferences so the tracker never schedules
+    /// against an interval the user has since changed.
+    private func syncIdleTracker() {
+        idleTracker.threshold = TimeInterval(max(state.preferences.idleMinutes, 1) * 60)
+        idleTracker.isEnabled = state.preferences.idleEnabled && state.idleAvailable
+        if !idleTracker.isEnabled {
+            cancelIdleTick()
+        }
+    }
+
+    private func monotonicNow() -> TimeInterval {
+        dependencies.now().timeIntervalSinceReferenceDate
+    }
+
+    /// Read from the executor's queue, so it goes through the lock rather than
+    /// the main actor.
+    private var shouldHalt: @Sendable () -> Bool {
+        let flag = haltFlag
+        return { flag.isRequested }
     }
 
     func setFolder(_ url: URL) throws {
@@ -259,6 +505,7 @@ final class TidyCoordinator {
         try dependencies.savePreferences(preferences)
         preview = nil
         updateState { $0.preferences = preferences }
+        syncIdleTracker()
 
         try dependencies.saveFolder(url)
         if case .staleBookmark? = block {
@@ -287,6 +534,7 @@ final class TidyCoordinator {
             $0.undoCount = 0
             $0.blockingError = nil
         }
+        syncIdleTracker()
         try dependencies.savePreferences(preferences)
     }
 
@@ -337,6 +585,7 @@ final class TidyCoordinator {
         preferences.idleEnabled = enabled
         try dependencies.savePreferences(preferences)
         updateState { $0.preferences = preferences }
+        syncIdleTracker()
     }
 
     func updateIdle(minutes: Int) throws {
@@ -345,6 +594,7 @@ final class TidyCoordinator {
         preferences.idleMinutes = max(minutes, 1)
         try dependencies.savePreferences(preferences)
         updateState { $0.preferences = preferences }
+        syncIdleTracker()
     }
 
     func makePreview() async throws -> TidyPlan {
@@ -374,7 +624,7 @@ final class TidyCoordinator {
         let date = dependencies.now()
         return try await runPass(clearsPreviewGate: true) {
             try await self.performWithAccess(to: root) { dependencies in
-                try dependencies.execute(preview, selection, .manual, date)
+                try dependencies.execute(preview, selection, .manual, date, self.shouldHalt)
             }
         }
     }
@@ -394,7 +644,8 @@ final class TidyCoordinator {
                     plan,
                     Set(plan.movable.map(\.id)),
                     .manual,
-                    date
+                    date,
+                    self.shouldHalt
                 )
             }
         }
@@ -426,6 +677,8 @@ final class TidyCoordinator {
     ) async throws -> TidyPassResult {
         try beginOperation(isPass: true)
         defer { finishOperation(isPass: true) }
+        // A halt request belongs to the pass it interrupted, never to the next.
+        haltFlag.clear()
 
         var passReturned = false
         do {
@@ -447,6 +700,7 @@ final class TidyCoordinator {
                 try dependencies.savePreferences(preferences)
             }
             updateState { $0.preferences = preferences }
+            syncIdleTracker()
             return result
         } catch {
             let surfaced: Error
