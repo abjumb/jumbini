@@ -238,11 +238,19 @@ enum CoatValidator {
         progress: (CoatImportStage) -> Void = { _ in }
     ) throws -> StagedCoat {
         let staging = try makeStagingDirectory(fileManager: fileManager)
+        var keepStaging = false
+        defer {
+            if !keepStaging {
+                try? fileManager.removeItem(at: staging)
+            }
+        }
         let folder: URL
 
+        try Task.checkCancellation()
         if url.pathExtension.lowercased() == "zip" {
             progress(.checkingArchive)
             let entries = try listZipContents(at: url, fileManager: fileManager)
+            try Task.checkCancellation()
             let refusals = checkZipSafety(entries).filter { $0.severity == .error }
             guard refusals.isEmpty else {
                 throw ValidationError.unsafeArchive(refusals.map(\.message))
@@ -251,6 +259,7 @@ enum CoatValidator {
             progress(.extracting)
             let extracted = staging.appendingPathComponent("extracted", isDirectory: true)
             try extractZip(at: url, to: extracted, fileManager: fileManager)
+            try Task.checkCancellation()
             guard let found = findCoatFolder(in: extracted, fileManager: fileManager) else {
                 throw ValidationError.noCoatFolderFound
             }
@@ -261,14 +270,18 @@ enum CoatValidator {
                 url.lastPathComponent, isDirectory: true
             )
             try fileManager.copyItem(at: url, to: destination)
+            try Task.checkCancellation()
             folder = destination
         }
 
         progress(.validating)
-        return StagedCoat(
+        let staged = StagedCoat(
             folder: folder,
             report: validate(folder: folder, fileManager: fileManager)
         )
+        try Task.checkCancellation()
+        keepStaging = true
+        return staged
     }
 
     /// A fresh, uniquely named folder under the temporary directory. Imports

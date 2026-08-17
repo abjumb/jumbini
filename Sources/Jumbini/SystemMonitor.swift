@@ -80,10 +80,16 @@ struct BuildWatcher {
     private var presentSince: TimeInterval?
     private var lastEmitted: TimeInterval?
 
-    mutating func update(toolsRunning: Bool, at now: TimeInterval) -> SystemSignal? {
+    mutating func update(
+        toolsRunning: Bool,
+        at now: TimeInterval,
+        observedRunningDuration: TimeInterval = 0
+    ) -> SystemSignal? {
         if toolsRunning {
             // First sighting starts the clock; later ones extend the same run.
-            if presentSince == nil { presentSince = now }
+            if presentSince == nil {
+                presentSince = now - max(0, observedRunningDuration)
+            }
             return nil
         }
         guard let started = presentSince else { return nil }
@@ -219,7 +225,7 @@ final class SystemMonitor {
 
     // MARK: Lifecycle
 
-func start() {
+    func start() {
         guard !lifecycle.isRunning else { return }
         _ = lifecycle.start()
 
@@ -246,7 +252,7 @@ func start() {
         self.timer = timer
     }
 
-func stop() {
+    func stop() {
         guard lifecycle.isRunning else { return }
         lifecycle.stop()
         timer?.invalidate()
@@ -307,7 +313,7 @@ func stop() {
 
     /// The polled sources, each in its own guarded step so a failure in one
     /// cannot skip the others.
-private func poll() {
+    private func poll() {
         let now = clock.now
         pollIdle()
         pollBattery()
@@ -404,10 +410,9 @@ private func poll() {
     /// a machine that has not built anything for five minutes the probe backs
     /// off to 30s, and the first sighting after that puts it straight back.
     ///
-    /// Backing off does delay noticing a build by up to half a minute, which
-    /// costs nothing: `BuildWatcher.minimumDuration` already ignores anything
-    /// that ran for less than 30 seconds, and the clock it measures starts at
-    /// the first sighting either way.
+    /// A quiet-cadence sighting also asks `ps` how long the matching process
+    /// has existed. That preserves the 30-second build threshold even when
+    /// the first observation arrives late in the build.
     private func pollBuild(at clockNow: ContinuousClock.Instant) {
         guard buildAvailable, !buildProbeInFlight else { return }
 
@@ -425,36 +430,42 @@ private func poll() {
         buildProbeInFlight = true
         let token = lifecycle.token
 
-        // Pass uptime (monotonic) rather than wall-clock Date to the
-        // BuildWatcher, so a backwards NTP correction can never make
-        // now - presentSince come out negative.
-        let nowUptime = ProcessInfo.processInfo.systemUptime
         buildQueue.async { [weak self] in
             guard let self else { return }
-            let result = Self.probeBuildTools()
+            let result = Self.probeBuildTools(measureElapsed: quiet)
+            let observedAt = ProcessInfo.processInfo.systemUptime
             DispatchQueue.main.async {
                 self.buildProbeInFlight = false
                 guard self.lifecycle.accepts(token) else { return }
-                guard let running = result else {
+                guard let result else {
                     // pgrep is missing or unrunnable: give up on this source.
                     self.buildAvailable = false
                     return
                 }
-                if running { self.lastBuildSightingAt = self.clock.now }
-                self.emit(self.build.update(toolsRunning: running, at: nowUptime), token: token)
+                if result.running { self.lastBuildSightingAt = self.clock.now }
+                self.emit(self.build.update(
+                    toolsRunning: result.running,
+                    at: observedAt,
+                    observedRunningDuration: result.longestElapsed ?? 0
+                ), token: token)
             }
         }
     }
 
-    /// true/false if `pgrep` answered, nil if it couldn't be run at all.
+    private struct BuildProbeResult {
+        let running: Bool
+        let longestElapsed: TimeInterval?
+    }
+
+    /// Running state if `pgrep` answered, nil if it couldn't be run at all.
     /// Exit status 0 means at least one match, 1 means none; anything else
     /// (or a throw) is a broken source.
-    private static func probeBuildTools() -> Bool? {
+    private static func probeBuildTools(measureElapsed: Bool) -> BuildProbeResult? {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/pgrep")
         process.arguments = ["-x", buildTools.joined(separator: "|")]
-        // Discard the pid list; the exit status is the whole answer.
-        process.standardOutput = FileHandle.nullDevice
+        let output = Pipe()
+        process.standardOutput = output
         process.standardError = FileHandle.nullDevice
         do {
             try process.run()
@@ -463,10 +474,73 @@ private func poll() {
             return nil
         }
         switch process.terminationStatus {
-        case 0: return true
-        case 1: return false
+        case 0:
+            guard measureElapsed else {
+                return BuildProbeResult(running: true, longestElapsed: nil)
+            }
+            let data = output.fileHandleForReading.readDataToEndOfFile()
+            let pids = String(data: data, encoding: .utf8)?
+                .split(whereSeparator: \.isNewline)
+                .compactMap { Int32($0) } ?? []
+            return BuildProbeResult(
+                running: true,
+                longestElapsed: longestElapsedTime(for: pids)
+            )
+        case 1:
+            return BuildProbeResult(running: false, longestElapsed: nil)
         default: return nil
         }
+    }
+
+    /// `ps` is only needed for the first sighting after the 30-second backoff.
+    /// BSD `etime` is `[[days-]hours:]minutes:seconds`.
+    private static func longestElapsedTime(for pids: [Int32]) -> TimeInterval? {
+        guard !pids.isEmpty else { return nil }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/ps")
+        process.arguments = [
+            "-o", "etime=", "-p", pids.map(String.init).joined(separator: ","),
+        ]
+        let output = Pipe()
+        process.standardOutput = output
+        process.standardError = FileHandle.nullDevice
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            return nil
+        }
+        guard process.terminationStatus == 0 else { return nil }
+        let data = output.fileHandleForReading.readDataToEndOfFile()
+        guard let text = String(data: data, encoding: .utf8) else { return nil }
+        return text.split(whereSeparator: \.isNewline)
+            .compactMap { parseElapsedTime(String($0)) }
+            .max()
+    }
+
+    static func parseElapsedTime(_ text: String) -> TimeInterval? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        let dayAndTime = trimmed.split(separator: "-", maxSplits: 1)
+        let days: TimeInterval
+        let timeText: Substring
+        if dayAndTime.count == 2 {
+            guard let value = TimeInterval(dayAndTime[0]) else { return nil }
+            days = value
+            timeText = dayAndTime[1]
+        } else {
+            days = 0
+            timeText = dayAndTime[0]
+        }
+
+        let pieces = timeText.split(separator: ":").compactMap(TimeInterval.init)
+        guard pieces.count == 2 || pieces.count == 3 else { return nil }
+        let hours = pieces.count == 3 ? pieces[0] : 0
+        let minutes = pieces[pieces.count - 2]
+        let seconds = pieces[pieces.count - 1]
+        guard minutes < 60, seconds < 60 else { return nil }
+        return days * 86_400 + hours * 3_600 + minutes * 60 + seconds
     }
 
     // MARK: Do Not Disturb / Focus

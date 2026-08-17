@@ -157,6 +157,23 @@ import Foundation
     #expect(watcher.update(toolsRunning: false, at: 35) == .buildFinished)
 }
 
+@Test func aLateFirstSightingCanUseObservedProcessAge() {
+    var watcher = BuildWatcher()
+    #expect(watcher.update(
+        toolsRunning: true,
+        at: 25,
+        observedRunningDuration: 25
+    ) == nil)
+    #expect(watcher.update(toolsRunning: false, at: 50) == .buildFinished)
+}
+
+@Test func parsesBSDProcessElapsedTime() {
+    #expect(SystemMonitor.parseElapsedTime("02:03") == 123)
+    #expect(SystemMonitor.parseElapsedTime("01:02:03") == 3_723)
+    #expect(SystemMonitor.parseElapsedTime("2-01:02:03") == 176_523)
+    #expect(SystemMonitor.parseElapsedTime("not-a-time") == nil)
+}
+
 @Test func backToBackBuildsInsideTheCooldownOnlyGetOneParty() {
     var watcher = BuildWatcher()
     _ = watcher.update(toolsRunning: true, at: 0)

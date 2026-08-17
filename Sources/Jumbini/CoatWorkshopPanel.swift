@@ -34,6 +34,8 @@ final class CoatWorkshopPanel: NSPanel {
     /// The import or re-validation in flight. Held so a second Import cancels
     /// the first rather than letting two stagings race to the same fields.
     private var stagingTask: Task<Void, Never>?
+    /// Identifies the import whose results and controls currently own the UI.
+    private var stagingGeneration = UUID()
 
     // MARK: - UI elements
 
@@ -293,6 +295,8 @@ final class CoatWorkshopPanel: NSPanel {
     /// seconds of frozen dog. All of it now happens on a detached task, with
     /// the status line updated from the stages as they pass.
     private func beginImport(from url: URL) {
+        let generation = UUID()
+        stagingGeneration = generation
         clearPreview()
         stagingTask?.cancel()
         importButton.isEnabled = false
@@ -301,26 +305,37 @@ final class CoatWorkshopPanel: NSPanel {
         let fileManager = self.fileManager
         // Called from the staging thread, so it hops before it draws.
         let announceStage: @Sendable (CoatImportStage) -> Void = { [weak self] stage in
-            Task { @MainActor in self?.statusLabel.stringValue = stage.message }
+            Task { @MainActor in
+                guard self?.stagingGeneration == generation else { return }
+                self?.statusLabel.stringValue = stage.message
+            }
         }
 
         stagingTask = Task { [weak self] in
-            defer { self?.importButton.isEnabled = true }
+            defer {
+                if self?.stagingGeneration == generation {
+                    self?.importButton.isEnabled = true
+                }
+            }
             do {
-                // A child Task (not detached), so cancellation flows
-                // through from stagingTask.cancel() to stop the fork
-                // and copy inside stageImport from starting new work.
-                let staged = try await Task(priority: .userInitiated) {
+                let worker = Task.detached(priority: .userInitiated) {
                     try CoatValidator.stageImport(
                         from: url, fileManager: fileManager, progress: announceStage
                     )
-                }.value
+                }
+                let staged = try await withTaskCancellationHandler {
+                    try await worker.value
+                } onCancel: {
+                    worker.cancel()
+                }
                 // Superseded by a second Import: the newer one owns the fields
                 // and the button now, so leave both alone.
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled,
+                      self?.stagingGeneration == generation else { return }
                 self?.accept(staged)
             } catch {
-                guard !Task.isCancelled else { return }
+                guard !Task.isCancelled,
+                      self?.stagingGeneration == generation else { return }
                 self?.statusLabel.stringValue = "Import failed: \(error.localizedDescription)"
             }
         }
@@ -590,6 +605,7 @@ private func updateDirectionButtons() {
     /// Support, so it goes off the main thread like the import does.
     @objc private func doInstall() {
         guard let staging = stagingURL, let report, report.canInstall else { return }
+        let generation = stagingGeneration
 
         guard let coatsDirectory = CoatCatalog.defaultCoatsDirectory() else {
             statusLabel.stringValue = "Could not find coats directory."
@@ -610,7 +626,9 @@ private func updateDirectionButtons() {
                 guard let self else { return }
                 // A second Import was started and accepted while this install
                 // was running — the fields are now someone else's.
-                guard self.stagingURL == staging, self.report?.coatID == report.coatID else { return }
+                guard self.stagingGeneration == generation,
+                      self.stagingURL == staging,
+                      self.report?.coatID == report.coatID else { return }
                 // Before the message, not after: stopPreview writes its own
                 // line into the status label.
                 self.stopPreview()
@@ -622,7 +640,9 @@ private func updateDirectionButtons() {
             } catch {
                 guard let self else { return }
                 // Same guard: a fresh Import swapped the fields under us.
-                guard self.stagingURL == staging, self.report?.coatID == report.coatID else { return }
+                guard self.stagingGeneration == generation,
+                      self.stagingURL == staging,
+                      self.report?.coatID == report.coatID else { return }
                 self.statusLabel.stringValue = "Install failed: \(error.localizedDescription)"
                 self.installButton.isEnabled = true
             }
@@ -669,6 +689,10 @@ private func updateDirectionButtons() {
     /// Re-validating decodes every sprite the coat has, exactly as an import
     /// does, so it takes the same detour off the main thread.
     func openForInstalledCoat(_ coat: Coat) {
+        let generation = UUID()
+        stagingGeneration = generation
+        stagingTask?.cancel()
+        importButton.isEnabled = true
         clearPreview()
         stagingURL = coat.root
         exportSource = coat.root
@@ -683,15 +707,18 @@ private func updateDirectionButtons() {
 
         exportButton.isEnabled = true
         statusLabel.stringValue = "Checking \(coat.title)…"
-
-        stagingTask?.cancel()
-        importButton.isEnabled = true
         let fileManager = self.fileManager
         stagingTask = Task { [weak self] in
-            let result = await Task(priority: .userInitiated) {
+            let worker = Task.detached(priority: .userInitiated) {
                 CoatValidator.validate(folder: root, fileManager: fileManager)
-            }.value
-            guard !Task.isCancelled, let self else { return }
+            }
+            let result = await withTaskCancellationHandler {
+                await worker.value
+            } onCancel: {
+                worker.cancel()
+            }
+            guard !Task.isCancelled, let self,
+                  self.stagingGeneration == generation else { return }
             self.report = result
             self.scaleEdits = result.scales
             self.displayReport(result)

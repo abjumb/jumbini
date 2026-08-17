@@ -358,6 +358,7 @@ final class DogGeneratorPanel: NSPanel {
                     self?.previewView.imageScaling = .scaleProportionallyUpOrDown
                     self?.previewView.setAccessibilityLabel("Your generated dog, sitting idle")
                     self?.applyButton.isEnabled = true
+                    self?.progressBar.doubleValue = self?.progressBar.maxValue ?? 0
                     self?.report("Done — click Apply to put him on screen.")
                 }
             } catch {

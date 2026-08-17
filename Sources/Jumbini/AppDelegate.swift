@@ -363,6 +363,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func screensDidWake() {
         screensAsleep = false
+        if let window, !isPausedByUser {
+            overlayHidden = !window.occlusionState.contains(.visible)
+        }
         applyRunState()
     }
 
@@ -427,14 +430,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// wake and a running build isn't lost. The settings toggle still creates
     /// or tears down the whole monitor.
     private func updateSystemMonitor() {
-        if settings.systemReactionsEnabled && !isSuspended {
-            if let monitor = systemMonitor {
-                monitor.resumePolling()
-            } else {
-                startSystemMonitor()
-            }
-        } else {
+        guard settings.systemReactionsEnabled else {
+            stopSystemMonitor()
+            return
+        }
+
+        if isSuspended {
             systemMonitor?.pausePolling()
+        } else if let monitor = systemMonitor {
+            monitor.resumePolling()
+        } else {
+            startSystemMonitor()
         }
     }
 
@@ -576,18 +582,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let sprites = try await DogGenerator.generate(
                 photos: photos, client: PixellabClient(), onProgress: onProgress
             )
-            let support = try FileManager.default.url(
-                for: .applicationSupportDirectory, in: .userDomainMask,
-                appropriateFor: nil, create: true
-            )
-            let coatsDirectory = support.appendingPathComponent("Jumbini/coats", isDirectory: true)
-            try DogGenerator.writeCoat(
-                sprites,
-                to: coatsDirectory.appendingPathComponent(DogGenerator.coatID, isDirectory: true)
-            )
             guard let preview = sprites[.idle]?[.south] else {
                 throw DogGeneratorError.missingFrame(.idle, .south)
             }
+            // 56 PNG writes + coat.json — push them off the main thread.
+            let coats = URL.applicationSupportDirectory.appending(path: "Jumbini/coats")
+            let folder = coats.appending(path: DogGenerator.coatID)
+            _ = try await Task.detached(priority: .userInitiated) {
+                try DogGenerator.writeCoat(sprites, to: folder)
+            }.value
             return preview
         }
         panel.onApply = { [weak self] in
