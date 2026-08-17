@@ -1,7 +1,7 @@
 # Tidy Design
 
-**Status:** Approved for implementation  
-**Date:** 17 August 2026  
+**Status:** Approved for implementation
+**Date:** 17 August 2026
 **Product source:** `.context/attachments/uL8xvg/prd-desktop-tidy.md`
 
 ## Scope and decisions
