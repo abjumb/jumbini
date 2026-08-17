@@ -160,6 +160,7 @@ final class PixellabClient: PixellabClientProtocol, Sendable {
         case invalidResponse
         case httpStatus(Int)
         case jobFailed(String)
+        case jobTimedOut(String)
 
         var errorDescription: String? {
             switch self {
@@ -171,6 +172,8 @@ final class PixellabClient: PixellabClientProtocol, Sendable {
                 return "Pixellab request failed (HTTP \(code))."
             case .jobFailed(let jobID):
                 return "Pixellab generation job failed (\(jobID))."
+            case .jobTimedOut(let jobID):
+                return "Pixellab generation job never finished (\(jobID)). Try again."
             }
         }
     }
@@ -178,15 +181,22 @@ final class PixellabClient: PixellabClientProtocol, Sendable {
     private let apiKey: String?
     private let session: URLSession
     private let pollInterval: TimeInterval
+    /// How long a single background job may stay unfinished before we give up
+    /// on it. Ten minutes is well past any real generation; what it catches is
+    /// a job that is never going to move — the API reporting a status this
+    /// client doesn't know, or one stuck "in progress" forever.
+    private let jobTimeout: Duration
 
     init(
         apiKey: String? = PixellabClient.resolveAPIKey(),
         session: URLSession = .shared,
-        pollInterval: TimeInterval = 5
+        pollInterval: TimeInterval = 5,
+        jobTimeout: Duration = .seconds(600)
     ) {
         self.apiKey = apiKey
         self.session = session
         self.pollInterval = pollInterval
+        self.jobTimeout = jobTimeout
     }
 
     // MARK: - createCharacter
@@ -313,7 +323,19 @@ final class PixellabClient: PixellabClientProtocol, Sendable {
         }
     }
 
+    /// Poll a background job until it completes, fails, or runs out of time.
+    ///
+    /// The deadline is the point: "completed" and "failed" are the only two
+    /// statuses this client recognises, and anything else means keep waiting.
+    /// Without a deadline, an unknown status — a renamed state, a job wedged
+    /// in progress — meant polling every five seconds until the user quit the
+    /// app, with the panel's spinner turning the whole time and no way for the
+    /// caller to find out.
+    ///
+    /// `ContinuousClock` rather than `Date`: it keeps counting across sleep
+    /// and cannot be moved by an NTP correction mid-generation.
     private func waitForJob(_ jobID: String) async throws {
+        let deadline = ContinuousClock.now + jobTimeout
         while true {
             let job: BackgroundJobResponse = try await get("/background-jobs/\(jobID)")
             switch job.status {
@@ -322,7 +344,10 @@ final class PixellabClient: PixellabClientProtocol, Sendable {
             case "failed":
                 throw PixellabError.jobFailed(jobID)
             default:
-                try await Task.sleep(nanoseconds: UInt64(pollInterval * 1_000_000_000))
+                guard ContinuousClock.now < deadline else {
+                    throw PixellabError.jobTimedOut(jobID)
+                }
+                try await Task.sleep(for: .seconds(pollInterval))
             }
         }
     }
