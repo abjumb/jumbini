@@ -1767,9 +1767,14 @@ final class PetScene: SKScene {
     /// (and its flies, which are children) with it.
     private func startAging(_ pile: SKSpriteNode) {
         guard let dry = SpriteLibrary.shared.singleProp(named: "deposit_dry") else { return }
+        // [weak pile], like the steam above: the action is run BY the pile, so
+        // capturing it strongly would be the node holding a reference to
+        // itself — a cycle that survives removeFromParent() and leaks every
+        // pile the dog ever leaves.
         pile.run(.sequence([
             .wait(forDuration: Self.pileDryAge),
-            .run { [weak self] in
+            .run { [weak self, weak pile] in
+                guard let pile else { return }
                 pile.texture = dry.textures[0]
                 pile.size = dry.nodeSize
                 self?.addFlies(to: pile)
