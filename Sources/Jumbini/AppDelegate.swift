@@ -420,14 +420,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let panel = DogGeneratorPanel()
         panel.generate = { photos in
             let sprites = try await DogGenerator.generate(photos: photos, client: PixellabClient())
-            let support = try FileManager.default.url(
-                for: .applicationSupportDirectory, in: .userDomainMask,
-                appropriateFor: nil, create: true
-            )
-            let coatsDirectory = support.appendingPathComponent("Jumbini/coats", isDirectory: true)
+            // `writeCoat` creates intermediate directories, so Application
+            // Support and Jumbini/coats come into being here if they have to.
             try DogGenerator.writeCoat(
                 sprites,
-                to: coatsDirectory.appendingPathComponent(DogGenerator.coatID, isDirectory: true)
+                to: CoatCatalog.defaultCoatsDirectory
+                    .appending(path: DogGenerator.coatID, directoryHint: .isDirectory)
             )
             guard let preview = sprites[.idle]?[.south] else {
                 throw DogGeneratorError.missingFrame(.idle, .south)
@@ -449,12 +447,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func openCoatWorkshopForMyDog() {
         scene?.openCoatWorkshop()
-        if let coatsDir = CoatCatalog.defaultCoatsDirectory() {
-            let myDogURL = coatsDir.appendingPathComponent(DogGenerator.coatID, isDirectory: true)
-            let coat = CoatCatalog.coat(at: myDogURL)
-            if let coat {
-                scene?.openWorkshopFor(coat: coat)
-            }
+        let myDogURL = CoatCatalog.defaultCoatsDirectory
+            .appending(path: DogGenerator.coatID, directoryHint: .isDirectory)
+        if let coat = CoatCatalog.coat(at: myDogURL) {
+            scene?.openWorkshopFor(coat: coat)
         }
     }
 }

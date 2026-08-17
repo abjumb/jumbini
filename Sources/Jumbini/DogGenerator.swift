@@ -152,7 +152,7 @@ enum DogGenerator {
         let sprites = try await generate(photos: photos, client: client)
         return try writeCoat(
             sprites,
-            to: coatsDirectory.appendingPathComponent(coatID, isDirectory: true),
+            to: coatsDirectory.appending(path: coatID, directoryHint: .isDirectory),
             fileManager: fileManager
         )
     }
@@ -176,14 +176,14 @@ enum DogGenerator {
                 guard let data = sprites[state]?[direction] else {
                     throw DogGeneratorError.missingFrame(state, direction)
                 }
-                let url = folder.appendingPathComponent(filename(state: state, direction: direction))
+                let url = folder.appending(path: filename(state: state, direction: direction))
                 try data.write(to: url)
             }
         }
 
         let manifest = #"{"name": "\#(coatName)"}"#
         try manifest.write(
-            to: folder.appendingPathComponent("coat.json"),
+            to: folder.appending(path: "coat.json"),
             atomically: true,
             encoding: .utf8
         )

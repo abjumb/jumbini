@@ -271,7 +271,7 @@ final class PixellabClient: PixellabClientProtocol {
     private var authHeader: String { "Bearer \(apiKey ?? "")" }
 
     private func request(_ path: String, method: String = "GET", body: Data? = nil) -> URLRequest {
-        var request = URLRequest(url: Self.baseURL.appendingPathComponent(path))
+        var request = URLRequest(url: Self.baseURL.appending(path: path))
         request.httpMethod = method
         request.setValue(authHeader, forHTTPHeaderField: "Authorization")
         if let body {

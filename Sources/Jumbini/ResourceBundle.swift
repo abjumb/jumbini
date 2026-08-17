@@ -27,7 +27,7 @@ extension Bundle {
         ]
 
         for candidate in candidates {
-            if let url = candidate?.appendingPathComponent(name),
+            if let url = candidate?.appending(path: name),
                let bundle = Bundle(url: url) {
                 return bundle
             }

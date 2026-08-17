@@ -293,7 +293,7 @@ final class PetScene: SKScene {
     /// a file drop, and requiring a relaunch to notice would be a poor trade
     /// for one directory listing on a menu open.
     private func availableCoats() -> [Coat] {
-        CoatCatalog.available(coatsDirectory: CoatCatalog.defaultCoatsDirectory())
+        CoatCatalog.available(coatsDirectory: CoatCatalog.defaultCoatsDirectory)
     }
 
     /// Swap which set of dog art SpriteLibrary resolves. The texture cache is

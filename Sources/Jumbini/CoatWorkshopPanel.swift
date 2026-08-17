@@ -223,7 +223,7 @@ final class CoatWorkshopPanel: JumbiniPanel {
         }
 
         statusLabel.stringValue = "Extracting…"
-        let extractDir = staging.appendingPathComponent("extracted", isDirectory: true)
+        let extractDir = staging.appending(path: "extracted", directoryHint: .isDirectory)
         try CoatValidator.extractZip(at: url, to: extractDir)
 
         guard let coatFolder = CoatValidator.findCoatFolder(in: extractDir) else {
@@ -235,7 +235,7 @@ final class CoatWorkshopPanel: JumbiniPanel {
     }
 
     private func importFolder(from url: URL, to staging: URL) throws -> URL {
-        let dest = staging.appendingPathComponent(url.lastPathComponent, isDirectory: true)
+        let dest = staging.appending(path: url.lastPathComponent, directoryHint: .isDirectory)
         try fileManager.copyItem(at: url, to: dest)
         return dest
     }
@@ -370,7 +370,7 @@ final class CoatWorkshopPanel: JumbiniPanel {
             manifest["scales"] = filtered.mapValues { Double($0) }
         }
         if let data = try? JSONSerialization.data(withJSONObject: manifest, options: .prettyPrinted) {
-            try? data.write(to: staging.appendingPathComponent("coat.json"))
+            try? data.write(to: staging.appending(path: "coat.json"))
         }
     }
 
@@ -475,14 +475,10 @@ private func updateDirectionButtons() {
     @objc private func doInstall() {
         guard let staging = stagingURL, let report, report.canInstall else { return }
 
-        guard let coatsDirectory = CoatCatalog.defaultCoatsDirectory() else {
-            statusLabel.stringValue = "Could not find coats directory."
-            return
-        }
-
         do {
             let installedURL = try CoatValidator.installCoat(
-                from: staging, coatsDirectory: coatsDirectory, fileManager: fileManager
+                from: staging, coatsDirectory: CoatCatalog.defaultCoatsDirectory,
+                fileManager: fileManager
             )
             statusLabel.stringValue = "Installed as \"\(installedURL.lastPathComponent)\"."
 

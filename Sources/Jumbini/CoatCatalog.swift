@@ -35,7 +35,7 @@ struct Coat: Identifiable {
     /// Where `name` would live if this coat carries its own art. Returns nil
     /// for the bundled coats, whose caller falls back to `Bundle.assets`.
     func fileURL(named name: String) -> URL? {
-        root?.appendingPathComponent("\(prefix)\(name).png")
+        root?.appending(path: "\(prefix)\(name).png")
     }
 }
 
@@ -69,14 +69,13 @@ enum CoatCatalog {
     static let requiredSprite = "idle_south.png"
 
     /// `~/Library/Application Support/Jumbini/coats`, where installed coats go.
-    static func defaultCoatsDirectory(
-        fileManager: FileManager = .default
-    ) -> URL? {
-        guard let support = try? fileManager.url(
-            for: .applicationSupportDirectory, in: .userDomainMask,
-            appropriateFor: nil, create: false
-        ) else { return nil }
-        return support.appendingPathComponent("Jumbini/coats", isDirectory: true)
+    ///
+    /// A path, not a promise: nothing is created here and the directory very
+    /// often does not exist yet. Callers that write go through
+    /// `createDirectory(withIntermediateDirectories:)`; callers that read get
+    /// an empty listing, which is the right answer for "no coats installed".
+    static var defaultCoatsDirectory: URL {
+        URL.applicationSupportDirectory.appending(path: "Jumbini/coats", directoryHint: .isDirectory)
     }
 
     /// Every coat the app can offer: the bundled ones first, then whatever is
@@ -117,7 +116,7 @@ enum CoatCatalog {
         guard fileManager.fileExists(atPath: folder.path, isDirectory: &isDirectory),
               isDirectory.boolValue,
               fileManager.fileExists(
-                  atPath: folder.appendingPathComponent(requiredSprite).path
+                  atPath: folder.appending(path: requiredSprite).path
               )
         else { return nil }
 
@@ -137,7 +136,7 @@ enum CoatCatalog {
     /// thing that matters, and a coat with a bad `coat.json` should still load
     /// at default scale rather than vanish from the menu.
     private static func manifest(in folder: URL, fileManager: FileManager) -> CoatManifest? {
-        let url = folder.appendingPathComponent("coat.json")
+        let url = folder.appending(path: "coat.json")
         guard fileManager.fileExists(atPath: url.path),
               let data = try? Data(contentsOf: url)
         else { return nil }

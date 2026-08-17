@@ -75,7 +75,7 @@ enum CoatValidator {
         let trimmed = manifest?.name?.trimmingCharacters(in: .whitespacesAndNewlines)
         let coatName = trimmed.flatMap { $0.isEmpty ? nil : $0 } ?? folderName
 
-        guard fileManager.fileExists(atPath: folder.appendingPathComponent(requiredSprite).path) else {
+        guard fileManager.fileExists(atPath: folder.appending(path: requiredSprite).path) else {
             findings.append(ValidationFinding(
                 severity: .error,
                 message: "Missing \(requiredSprite) — a coat folder must contain at least this sprite."
@@ -136,7 +136,7 @@ enum CoatValidator {
 
         // Check image format and dimensions for each sprite.
         for filename in spriteFiles {
-            let url = folder.appendingPathComponent(filename)
+            let url = folder.appending(path: filename)
             imageFindings.append(contentsOf: validateImage(at: url, filename: filename))
         }
         findings.append(contentsOf: imageFindings)
@@ -170,14 +170,14 @@ enum CoatValidator {
         }
 
         // Duplicate check against installed coats.
-        if let coatsDir = CoatCatalog.defaultCoatsDirectory(fileManager: fileManager) {
-            let installed = CoatCatalog.installed(coatsDirectory: coatsDir, fileManager: fileManager)
-            if installed.contains(where: { $0.id == folderName }) {
-                findings.append(ValidationFinding(
-                    severity: .warning,
-                    message: "A coat named \"\(folderName)\" is already installed. Installing will replace it."
-                ))
-            }
+        let installed = CoatCatalog.installed(
+            coatsDirectory: CoatCatalog.defaultCoatsDirectory, fileManager: fileManager
+        )
+        if installed.contains(where: { $0.id == folderName }) {
+            findings.append(ValidationFinding(
+                severity: .warning,
+                message: "A coat named \"\(folderName)\" is already installed. Installing will replace it."
+            ))
         }
 
         return CoatValidationReport(
@@ -316,7 +316,7 @@ enum CoatValidator {
         fileManager: FileManager = .default
     ) -> URL? {
         // First check if the extraction root itself is a coat folder.
-        if fileManager.fileExists(atPath: extractionRoot.appendingPathComponent(requiredSprite).path) {
+        if fileManager.fileExists(atPath: extractionRoot.appending(path: requiredSprite).path) {
             return extractionRoot
         }
 
@@ -331,7 +331,7 @@ enum CoatValidator {
         }
 
         if dirs.count == 1,
-           fileManager.fileExists(atPath: dirs[0].appendingPathComponent(requiredSprite).path) {
+           fileManager.fileExists(atPath: dirs[0].appending(path: requiredSprite).path) {
             return dirs[0]
         }
 
@@ -348,8 +348,8 @@ enum CoatValidator {
         fileManager: FileManager = .default
     ) throws -> URL {
         let coatID = staging.lastPathComponent
-        let destination = coatsDirectory.appendingPathComponent(coatID, isDirectory: true)
-        let tempDest = coatsDirectory.appendingPathComponent(".\(coatID).tmp", isDirectory: true)
+        let destination = coatsDirectory.appending(path: coatID, directoryHint: .isDirectory)
+        let tempDest = coatsDirectory.appending(path: ".\(coatID).tmp", directoryHint: .isDirectory)
 
         // Clean up any stale temp.
         try? fileManager.removeItem(at: tempDest)
@@ -362,7 +362,7 @@ enum CoatValidator {
 
         // Atomically replace the destination.
         if fileManager.fileExists(atPath: destination.path) {
-            let old = coatsDirectory.appendingPathComponent(".\(coatID).old", isDirectory: true)
+            let old = coatsDirectory.appending(path: ".\(coatID).old", directoryHint: .isDirectory)
             try? fileManager.removeItem(at: old)
             do {
                 try fileManager.moveItem(at: destination, to: old)
@@ -415,7 +415,7 @@ enum CoatValidator {
         in folder: URL,
         fileManager: FileManager
     ) -> CoatManifest? {
-        let url = folder.appendingPathComponent("coat.json")
+        let url = folder.appending(path: "coat.json")
         guard fileManager.fileExists(atPath: url.path),
               let data = try? Data(contentsOf: url)
         else { return nil }
