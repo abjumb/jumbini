@@ -418,7 +418,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         do {
             _ = try ledger.reconcile()
         } catch {
-            showTidyNotice(.failed(Self.tidyMessage(for: error)))
+            showTidyNotice(.failed(TidyFailureText.message(for: error)))
         }
 
         let coordinator = TidyCoordinator(
@@ -475,7 +475,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             do {
                 _ = try await coordinator.runManual()
             } catch {
-                self.showTidyNotice(.failed(Self.tidyMessage(for: error)))
+                self.showTidyNotice(.failed(TidyFailureText.message(for: error)))
             }
         }
     }
@@ -503,7 +503,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             openTidySettings()
             showTidyPreview()
         } catch {
-            showTidyNotice(.failed(Self.tidyMessage(for: error)))
+            showTidyNotice(.failed(TidyFailureText.message(for: error)))
         }
     }
 
@@ -548,7 +548,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 let plan = try await coordinator.makePreview()
                 self.presentTidyPreview(plan)
             } catch {
-                self.showTidyNotice(.failed(Self.tidyMessage(for: error)))
+                self.showTidyNotice(.failed(TidyFailureText.message(for: error)))
             }
         }
     }
@@ -567,7 +567,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 do {
                     _ = try await coordinator.executePreview(selection: selection)
                 } catch {
-                    self.showTidyNotice(.failed(Self.tidyMessage(for: error)))
+                    self.showTidyNotice(.failed(TidyFailureText.message(for: error)))
                 }
             }
         }
@@ -581,7 +581,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             do {
                 _ = try await coordinator.undo()
             } catch {
-                self.showTidyNotice(.failed(Self.tidyMessage(for: error)))
+                self.showTidyNotice(.failed(TidyFailureText.message(for: error)))
             }
         }
     }
@@ -654,7 +654,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         do {
             try change(coordinator)
         } catch {
-            showTidyNotice(.failed(Self.tidyMessage(for: error)))
+            showTidyNotice(.failed(TidyFailureText.message(for: error)))
         }
     }
 
@@ -684,6 +684,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let button = statusItem?.button else { return }
         let label = NSTextField(wrappingLabelWithString: notice.message)
         label.font = .systemFont(ofSize: 12)
+        // The failure sentences no longer carry a "Jumba stopped:" prefix, so
+        // colour is what marks bad news — the same signal TidySettingsPanel
+        // already uses for a blocking error.
+        label.textColor = notice.isFailure ? .systemRed : .labelColor
         label.preferredMaxLayoutWidth = 260
         label.translatesAutoresizingMaskIntoConstraints = false
 
@@ -702,25 +706,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         popover.contentViewController = content
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         tidyNoticePopover = popover
-    }
-
-    private static func tidyMessage(for error: Error) -> String {
-        if let coordinatorError = error as? TidyCoordinatorError {
-            return coordinatorError.message
-        }
-        if let undoError = error as? TidyUndoError {
-            switch undoError {
-            case .unavailable:
-                return "There is nothing left to undo."
-            case .sourceOccupied(let url):
-                return "Something else is at \(url.lastPathComponent) now, so Jumba put nothing back."
-            case .destinationChanged(let url):
-                return "\(url.lastPathComponent) changed since the tidy, so Jumba put nothing back."
-            case .rollbackFailed(let detail):
-                return detail
-            }
-        }
-        return (error as NSError).localizedDescription
     }
 
     // MARK: - Settings
