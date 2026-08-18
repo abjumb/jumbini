@@ -334,9 +334,13 @@ final class PetScene: SKScene {
     /// turn and every frame, because the anchor moves with his node size as
     /// well as his facing (sit art is taller than idle).
     ///
-    /// The dog's own xScale (±1 — the bark art is mirrored art, not a turn)
-    /// is divided back out of the child's position and scale, because a child
-    /// inherits its parent's transform. Same gotcha as reseatCarriedRabbit().
+    /// The dog's own xScale is divided back out of the child's position and
+    /// scale, because a child inherits its parent's transform. That is dormant
+    /// today: xScale is only ±1 when `anim.flipX` is set, which happens solely
+    /// in `SpriteLoader.yap`'s fallback to the old six-frame mirrored bark
+    /// strip, and the shipped art makes that branch unreachable. It is kept
+    /// because the fallback is kept. `mirror`, just below, is the live one —
+    /// that comes from the facing, not the art.
     private func reseatWornItem() {
         guard let node = wornItem, node.parent === dog,
               let spec = Self.wardrobeItems.first(where: { $0.item == currentWardrobeItem })
@@ -856,9 +860,16 @@ final class PetScene: SKScene {
     }
 
     /// Keep a carried ball at the dog's mouth as he turns.
+    ///
+    /// Divides out the dog's own xScale for the same reason as the toy and the
+    /// rabbit — see `reseatCarriedToy`. This one omitted it for a long time and
+    /// nobody noticed, because `flipX` is unreachable on the shipping art (see
+    /// `mirroredArtIsUnreachableOnTheShippedSpriteSet`); the omission would only
+    /// have shown up in a build falling back to the six-frame bark strip.
     private func reseatCarriedBall() {
         guard let ball, ball.parent === dog else { return }
-        ball.position = dog.mouthOffset
+        let parentFlip: CGFloat = dog.xScale < 0 ? -1 : 1
+        ball.position = CGPoint(x: dog.mouthOffset.x * parentFlip, y: dog.mouthOffset.y)
         ball.zPosition = dog.mouthZOffset
     }
 
@@ -1179,8 +1190,12 @@ final class PetScene: SKScene {
         )
     }
 
-    /// Keep a carried toy at the dog's mouth as he turns. The dog's own
-    /// xScale (±1, mirrored bark art) is divided back out, same as the rabbit.
+    /// Keep a carried toy at the dog's mouth as he turns.
+    ///
+    /// The dog's own xScale is divided back out because a child node inherits
+    /// its parent's transform. Dormant on the shipped art — xScale is only ±1
+    /// via `SpriteLoader.yap`'s six-frame fallback, which the bundled 8-rotation
+    /// bark art makes unreachable — and kept because that fallback is kept.
     private func reseatCarriedToy() {
         for kind in [ToyKind.frisbee, .squeaky] {
             guard let toy = toyNode(kind), toy.parent === dog else { continue }
@@ -1271,8 +1286,9 @@ final class PetScene: SKScene {
     }
 
     /// Keep the carried rabbit at the dog's mouth, facing the travel direction.
-    /// The dog's own xScale (±1, mirrored bark art) is divided back out because
-    /// a child node inherits its parent's scale.
+    /// The dog's own xScale is divided back out because a child node inherits
+    /// its parent's scale. Dormant on the shipped art, for the reason spelled
+    /// out on `reseatCarriedToy`. `headedWest` below is the live flip.
     private func reseatCarriedRabbit() {
         guard let rabbit, rabbit.parent === dog else { return }
         let parentFlip: CGFloat = dog.xScale < 0 ? -1 : 1
