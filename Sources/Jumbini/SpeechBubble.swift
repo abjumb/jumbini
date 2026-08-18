@@ -66,11 +66,23 @@ final class SpeechBubble: SKNode {
         min(1.4 + 0.05 * Double(text.count), 3.2)
     }
 
+    /// The plate's actual width, at the scale it settles at once `play()`
+    /// pops it in — NOT the scale it starts at.
+    ///
+    /// `init` ends by calling `setScale(0.6)` for the pop-in, and
+    /// `calculateAccumulatedFrame()` reports a node's frame in its PARENT's
+    /// coordinate system, which folds in whatever scale the node currently
+    /// has. Measuring `self` right after construction would therefore measure
+    /// the bubble at 60% of its real size — wrong for anything that needs to
+    /// know how wide it actually is, like the edge clamp in
+    /// `PetScene.showSpeech`. Stored here instead, at the width the plate was
+    /// built to, before scale ever entered the picture.
+    let plateWidth: CGFloat
+
     private let text: String
 
     init(text: String) {
         self.text = text
-        super.init()
 
         let label = SKLabelNode(fontNamed: Self.fontName)
         label.text = text
@@ -88,6 +100,9 @@ final class SpeechBubble: SKNode {
         let textSize = label.calculateAccumulatedFrame().size
         let width = min(textSize.width + Self.padX * 2, Self.maxWidth)
         let height = textSize.height + Self.padY * 2
+        self.plateWidth = width
+
+        super.init()
 
         let plate = SKShapeNode(
             rect: CGRect(x: -width / 2, y: -height / 2, width: width, height: height),

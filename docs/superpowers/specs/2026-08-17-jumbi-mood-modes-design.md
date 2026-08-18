@@ -156,10 +156,18 @@ shape of `disableBathroomBreaks(at:)` and `disableSystemReactions(at:)`.
   hold takes effect at the next idle. The rule exists so that changing a menu
   setting can never pull him off a window title bar, out of the user's hands,
   or off a chase.
-- Turning the hold off gets him up if the hold is what is keeping him down,
-  meaning he is lying down or walking to his bed to lie down. A nap or lie-down
-  caused by a system signal or by an explicit command is left alone, matching
-  how `riseFromRest` already distinguishes causes.
+- Turning the hold off gets him up whenever `restReason` is nil and he is
+  lying down or walking to his bed to lie down. A nap or lie-down caused by a
+  system signal is left alone: `restReason` marks it, and its own wake-up
+  signal is what gets him back up, matching how `riseFromRest` already
+  distinguishes causes. A lie-down caused by an explicit `.lieDown` command is
+  NOT left alone, and can't be — `handleCommand` clears `restReason` on every
+  command, so a command-caused lie looks exactly like a hold-caused one by the
+  time `setMood` sees it. That turns out to be the right call on its own
+  terms anyway: under the hold, a command lie has no clock either (the hold
+  suppresses `lieTimeout` the same way for both), so leaving it in place would
+  strand him with nothing left to end it. Getting him up is the only choice
+  that doesn't.
 - A change to activity or roam has no immediate effect. Both alter the next
   roll only. Zoomies already in progress end on their own schedule.
 

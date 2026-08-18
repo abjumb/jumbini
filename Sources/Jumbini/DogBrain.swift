@@ -586,10 +586,18 @@ final class DogBrain {
 
         // Hold released. Get him up only if the hold is what was keeping him
         // down: a rest the MACHINE caused belongs to its own wake-up signal,
-        // the way `riseFromRest` already distinguishes causes. Any other lie
-        // is held by definition while the hold is on — `lieDeadline` gave it
-        // no clock — so leaving it would strand him there.
-        guard restReason == nil else { return [] }
+        // the way `riseFromRest` already distinguishes causes, so it is left
+        // in place here. But the hold suppressed ITS clock too — `lieDeadline`
+        // gave it none while the hold was on — and simply returning would
+        // strand him there with nothing left to end it. Give the clock back
+        // before leaving: the machine's rest stays legitimately in force, it
+        // just isn't held hostage by a menu item anymore.
+        guard restReason == nil else {
+            if state == .lyingDown, deadline == nil {
+                deadline = now + tuning.lieTimeout
+            }
+            return []
+        }
         switch state {
         case .lyingDown:
             return enterIdle(at: now)
@@ -788,16 +796,8 @@ final class DogBrain {
             deadline = now + tuning.sitTimeout
             effects.append(.play(.sit))
         case .lieDown:
-            if let bed = bedPosition {
-                // He has a bed — walk over and settle in.
-                state = .goingToBed(.lie)
-                deadline = nil
-                effects.append(contentsOf: [.play(.walk), .moveTo(bed, speed: tuning.walkSpeed)])
-            } else {
-                state = .lyingDown
-                deadline = lieDeadline(at: now)
-                effects.append(.play(.lie))
-            }
+            // Same bed-aware settle as the hold and the battery conserve.
+            effects.append(contentsOf: lieOnFloorOrBed(at: now))
         case .spin:
             state = .spinning
             deadline = now + tuning.spinDuration
@@ -1094,14 +1094,7 @@ final class DogBrain {
 
     /// The existing lie-down path (bed-aware), used by the battery conserve.
     private func restfulLie(at now: TimeInterval) -> [DogEffect] {
-        if let bed = bedPosition {
-            state = .goingToBed(.lie)
-            deadline = nil
-            return [.play(.walk), .moveTo(bed, speed: tuning.walkSpeed)]
-        }
-        state = .lyingDown
-        deadline = lieDeadline(at: now)
-        return [.play(.lie)]
+        lieOnFloorOrBed(at: now)
     }
 
     /// A wake-up signal arrived: get up only if its counterpart put him
@@ -1131,11 +1124,21 @@ final class DogBrain {
 
     /// Put him on the floor — the bed if he has one, where he stands if not.
     /// The destination of the Stay Lying Down hold, and deliberately the same
-    /// path the `.lieDown` command takes.
+    /// path the `.lieDown` command and the battery conserve (`restfulLie`)
+    /// take.
+    private func settle(at now: TimeInterval) -> [DogEffect] {
+        lieOnFloorOrBed(at: now)
+    }
+
+    /// Put him on the floor — the bed if he has one, where he stands if not.
+    /// Shared by `restfulLie` (the battery conserve), `settle` (the Stay
+    /// Lying Down hold), and the `.lieDown` command: same bed check, same
+    /// clock, same effects — it used to be three copies of this, which meant
+    /// a bug fixed in one could silently still be live in the other two.
     ///
     /// Consumes no random numbers: the hold must be perfectly predictable, and
     /// a roll spent here would shift every later roll in the session.
-    private func settle(at now: TimeInterval) -> [DogEffect] {
+    private func lieOnFloorOrBed(at now: TimeInterval) -> [DogEffect] {
         if let bed = bedPosition {
             state = .goingToBed(.lie)
             deadline = nil

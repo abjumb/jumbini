@@ -585,7 +585,11 @@ final class PetScene: SKScene {
         stepFalling(dt: dt)
         stepSniffing(dt: dt)
         brain.position = dog.position
-        // Free: the hover test below already asks the window server for this.
+        // Not shared with the hover test below: `cursorScenePoint()` makes its
+        // own `NSEvent.mouseLocation` call and its own two coordinate
+        // conversions, on top of the ones `trackHover` makes via
+        // `mouseLocationInScene()`. Both run every frame regardless — the
+        // cost is cheap enough that it isn't worth coupling the two.
         brain.cursorPosition = cursorScenePoint()
         // Half his sprite height, live: the pose changes it, and the brain
         // needs it to stand his centre on a window's top edge.
@@ -670,7 +674,11 @@ final class PetScene: SKScene {
     /// then pulled back on screen if that offset would hang it off an edge.
     private func showSpeech(_ text: String) {
         let bubble = SpeechBubble(text: text)
-        let halfWidth = bubble.calculateAccumulatedFrame().width / 2
+        // `plateWidth`, not `calculateAccumulatedFrame()`: the bubble is
+        // still at its 0.6 pop-in scale here, and the accumulated frame
+        // would measure it at 60% of the width it clamps against once it
+        // pops up to full size — see `SpeechBubble.plateWidth`.
+        let halfWidth = bubble.plateWidth / 2
         let margin: CGFloat = 8
         bubble.position = CGPoint(
             x: min(max(dog.position.x + 30, halfWidth + margin),

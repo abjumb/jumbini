@@ -3482,7 +3482,21 @@ private func idleOutcomes(mood: Mood, seeds: ClosedRange<UInt64> = 1...200) -> [
     let effects = brain.setMood(Mood(stayDown: false), at: 10)
 
     #expect(effects.isEmpty, "batteryNormal owns this one, not the menu")
+    #expect(brain.state == .lyingDown, "he does not get up immediately")
+
+    // But the hold suppressed the lie's own clock (`lieDeadline` returns nil
+    // while it's on), and un-ticking the hold never restores it on its own —
+    // that used to strand him lying down until the charger arrived, since
+    // nothing was left to time him out. Releasing the hold must give the
+    // clock back: shortly before the ordinary 90s lieTimeout he's still
+    // down, and shortly after it he's up on his own, exactly as an
+    // un-held battery lie would behave.
+    #expect(brain.handle(.tick, at: 10 + brain.tuning.lieTimeout - 1) == [],
+            "not yet — the restored clock hasn't run out")
     #expect(brain.state == .lyingDown)
+
+    _ = brain.handle(.tick, at: 10 + brain.tuning.lieTimeout + 1)
+    #expect(brain.state != .lyingDown, "the restored clock got him up on its own")
 }
 
 @Test func changingActivityOrRoamHasNoImmediateEffect() {
@@ -3542,17 +3556,37 @@ private func firstWalkTarget(_ brain: DogBrain) -> CGPoint? {
 }
 
 @Test func followMillsAboutWhenTheCursorIsAlreadyClose() {
-    // Cursor 40pt away — well inside the 120pt standoff.
-    let brain = makeRoamer(roam: .follow, cursor: CGPoint(x: 440, y: 300))
+    // Cursor 10pt away — comfortably inside the 120pt standoff, so this
+    // exercises the mill branch (`guard distance > followStandoff`), not the
+    // walk-toward-the-cursor one.
+    let brain = makeRoamer(roam: .follow, cursor: CGPoint(x: 410, y: 300))
 
     let target = firstWalkTarget(brain)
 
     #expect(target != nil)
-    if let target {
-        let step = hypot(target.x - 400, target.y - 300)
-        #expect(step <= brain.tuning.followMill * 1.5,
-                "a small mill, not a march across the screen; got \(step)")
-    }
+    guard let target else { return }
+
+    // He actually moved somewhere: catches a `roamTarget` that degenerates
+    // into handing back his current position unchanged.
+    #expect(target != brain.position, "milling about is still moving")
+
+    // Per axis, not by Euclidean distance: the mill draws x and y
+    // independently from `-followMill...followMill`
+    // (`CGFloat.random(in: -mill...mill, ...)` twice), so EACH axis is
+    // bounded by `followMill` exactly, for every possible roll — this isn't
+    // probabilistic. A Euclidean check only bounds the diagonal to
+    // `followMill * sqrt(2)` (not the `* 1.5` this test used to use), and
+    // that bound is too loose to catch the bug this test exists for: delete
+    // `guard distance > tuning.followStandoff` and `travel` goes negative,
+    // walking him AWAY from the cursor by up to `followStandoff - distance`
+    // — which tops out at `followStandoff` (120) as distance shrinks to 0,
+    // comfortably under `followMill * sqrt(2)` (~127) and so invisible to a
+    // magnitude-only check. With the cursor 10pt away, that broken offset is
+    // 110pt on the x axis alone, which the per-axis bound below does catch.
+    #expect(abs(target.x - brain.position.x) <= brain.tuning.followMill,
+            "the mill never moves the x axis by more than followMill")
+    #expect(abs(target.y - brain.position.y) <= brain.tuning.followMill,
+            "the mill never moves the y axis by more than followMill")
 }
 
 @Test func followWithNoCursorIsOrdinaryWandering() {
