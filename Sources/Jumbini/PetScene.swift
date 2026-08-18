@@ -276,7 +276,7 @@ final class PetScene: SKScene {
         let title: String
         /// Catalog name; the files are `wardrobe_<item>_<direction>.png`.
         let item: String
-        let slot: Dog.WearSlot
+        let slot: WearSlot
         let frontWidth: CGFloat
     }
 
@@ -293,8 +293,6 @@ final class PetScene: SKScene {
     private static let wardrobeItemKey = "wardrobeItem"
 
     /// How far a hat sinks past the crown line, as a fraction of its own
-    /// height — otherwise it balances on his scalp instead of being worn.
-    private static let wardrobeHatSink: CGFloat = 0.15
 
     /// The four front directions the art ships in, plus whether to mirror.
     /// There is deliberately no west-side art (same as the bark frames), and
@@ -334,13 +332,11 @@ final class PetScene: SKScene {
     /// turn and every frame, because the anchor moves with his node size as
     /// well as his facing (sit art is taller than idle).
     ///
-    /// The dog's own xScale is divided back out of the child's position and
-    /// scale, because a child inherits its parent's transform. That is dormant
-    /// today: xScale is only ±1 when `anim.flipX` is set, which happens solely
-    /// in `SpriteLoader.yap`'s fallback to the old six-frame mirrored bark
-    /// strip, and the shipped art makes that branch unreachable. It is kept
-    /// because the fallback is kept. `mirror`, just below, is the live one —
-    /// that comes from the facing, not the art.
+    /// Where the piece actually goes is `WearPlacement`'s to decide — the
+    /// arithmetic never needed the scene, only the nodes it assigns to did.
+    /// What is left here is what genuinely needs SpriteKit: finding the art,
+    /// swapping the texture when the direction changes, and hiding the node
+    /// when the art is missing.
     private func reseatWornItem() {
         guard let node = wornItem, node.parent === dog,
               let spec = Self.wardrobeItems.first(where: { $0.item == currentWardrobeItem })
@@ -351,7 +347,13 @@ final class PetScene: SKScene {
         let direction = Self.wardrobeDirection(for: facing)
         guard let art = SpriteLibrary.shared.wardrobe(item: spec.item, direction: direction.key),
               let front = SpriteLibrary.shared.wardrobe(item: spec.item, direction: "s"),
-              front.ink.width > 0
+              let piece = WearPlacement.Piece(
+                  canvas: art.canvas,
+                  ink: art.ink,
+                  frontInkWidth: front.ink.width,
+                  frontWidth: spec.frontWidth,
+                  slot: spec.slot
+              )
         else {
             node.isHidden = true
             return
@@ -362,29 +364,22 @@ final class PetScene: SKScene {
             node.texture = art.texture
         }
 
-        // Points per art pixel, fixed per item by its front view, so the side
-        // views come out narrower on their own instead of being stretched.
-        // `wearScale` keeps the piece the same size on him across poses.
-        let scale = spec.frontWidth / front.ink.width * dog.wearScale
-        node.size = CGSize(width: art.canvas.width * scale, height: art.canvas.height * scale)
-
-        // Where the ink sits inside the node, measured from the node centre.
-        let inkX = (art.ink.midX - art.canvas.width / 2) * scale
-        let inkCentreY = (art.canvas.height / 2 - art.ink.midY) * scale
-        let inkBottomY = (art.canvas.height / 2 - art.ink.maxY) * scale
-
-        let anchor = dog.wearAnchor(spec.slot)
-        let flip: CGFloat = dog.xScale < 0 ? -1 : 1
-        let mirror: CGFloat = direction.mirrored ? -1 : 1
-        // A hat hangs by the bottom edge of its ink (the brim lands on his
-        // crown); everything else hangs by the middle of its ink.
-        let y = spec.slot == .crown
-            ? anchor.y - art.ink.height * scale * Self.wardrobeHatSink - inkBottomY
-            : anchor.y - inkCentreY
-        node.position = CGPoint(x: flip * (anchor.x - mirror * inkX), y: y)
-        node.xScale = mirror * flip
+        let placement = WearPlacement(
+            piece: piece,
+            pose: WearPlacement.Pose(
+                dogSize: dog.size,
+                facing: facing,
+                isTallCanvas: dog.isTallCanvasPose,
+                wearScale: dog.wearScale,
+                flip: dog.xScale < 0 ? -1 : 1,
+                mirrored: direction.mirrored
+            )
+        )
+        node.size = placement.size
+        node.position = placement.position
+        node.xScale = placement.xScale
         node.yScale = 1
-        node.zPosition = dog.wearZOffset
+        node.zPosition = placement.zPosition
     }
 
     private func wardrobeSelectionMenu() -> NSMenu {
