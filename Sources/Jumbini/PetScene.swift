@@ -168,6 +168,9 @@ final class PetScene: SKScene {
         brain.poopEnabled = initialSettings.poopEnabled
         brain.windowClimbingEnabled = initialSettings.windowClimbingEnabled
         windowClimbingEnabled = initialSettings.windowClimbingEnabled
+        // Direct assignment, not setMood: there is nothing to reconcile with a
+        // dog who has not started yet.
+        brain.mood = mood
         apply(effects: [.play(.idle)])
         startWatchingWindows()
     }
@@ -582,6 +585,8 @@ final class PetScene: SKScene {
         stepFalling(dt: dt)
         stepSniffing(dt: dt)
         brain.position = dog.position
+        // Free: the hover test below already asks the window server for this.
+        brain.cursorPosition = cursorScenePoint()
         // Half his sprite height, live: the pose changes it, and the brain
         // needs it to stand his centre on a window's top edge.
         brain.footOffset = dog.size.height / 2
@@ -1314,6 +1319,10 @@ final class PetScene: SKScene {
     /// Pause and the user's feature setting independently gate polling.
     private var windowWatchingActive = true
     private var windowClimbingEnabled = true
+    /// The three persistent switches from his right-click menu. The scene owns
+    /// these outright — they are never routed through JumbiniSettings, whose
+    /// panel rebuilds that struct from its checkboxes and would reset them.
+    private var mood = MoodSettings.load()
     /// The soft blob under his feet while he's on a ledge — or on the ground
     /// he's falling towards. nil until the first time one is needed.
     private var contactShadow: SKSpriteNode?
@@ -2113,6 +2122,15 @@ final class PetScene: SKScene {
         return view.convert(inWindow, to: self)
     }
 
+    /// The cursor in scene coordinates, or nil when there is no window to
+    /// convert through. `mouseLocationInScene()` returns a (-1, -1) sentinel in
+    /// that case, which is a fine place for a hover test and a terrible place
+    /// to send a dog.
+    private func cursorScenePoint() -> CGPoint? {
+        guard let window = overlayWindow, let view else { return nil }
+        return view.convert(window.convertPoint(fromScreen: NSEvent.mouseLocation), to: self)
+    }
+
     // MARK: - Displays coming and going
 
     /// A display was plugged in, unplugged, moved or resized.
@@ -2335,6 +2353,7 @@ final class PetScene: SKScene {
             menu.addItem(item)
         }
         menu.addItem(.separator())
+        menu.addItem(moodMenuItem())
         menu.addItem(tricksMenuItem())
         menu.addItem(toysMenuItem())
         let wardrobe = NSMenuItem(title: "Wardrobe", action: nil, keyEquivalent: "")
@@ -2344,6 +2363,70 @@ final class PetScene: SKScene {
         coat.submenu = coatSelectionMenu()
         menu.addItem(coat)
         NSMenu.popUpContextMenu(menu, with: event, for: view)
+    }
+
+    /// The Mood submenu: how much energy he has, whether he stays down, and
+    /// whether his walks aim at your cursor. Which item carries a checkmark is
+    /// decided by `MoodMenuState`, which is tested without AppKit.
+    private func moodMenuItem() -> NSMenuItem {
+        let state = MoodMenuState(mood: mood)
+        let moodItem = NSMenuItem(title: MoodMenuState.submenuTitle, action: nil, keyEquivalent: "")
+        let submenu = NSMenu()
+        for (mode, entry) in zip(ActivityMode.allCases, state.activityItems) {
+            let item = NSMenuItem(
+                title: entry.title, action: #selector(activityChosen(_:)), keyEquivalent: ""
+            )
+            item.target = self
+            item.representedObject = ActivityChoice(mode: mode)
+            item.state = entry.isChecked ? .on : .off
+            submenu.addItem(item)
+        }
+        submenu.addItem(.separator())
+        let stay = NSMenuItem(
+            title: state.stayDownItem.title, action: #selector(stayDownToggled), keyEquivalent: ""
+        )
+        stay.target = self
+        stay.state = state.stayDownItem.isChecked ? .on : .off
+        submenu.addItem(stay)
+        let follow = NSMenuItem(
+            title: state.followItem.title, action: #selector(followToggled), keyEquivalent: ""
+        )
+        follow.target = self
+        follow.state = state.followItem.isChecked ? .on : .off
+        submenu.addItem(follow)
+        moodItem.submenu = submenu
+        return moodItem
+    }
+
+    /// `representedObject` needs a class, and ActivityMode is an enum —
+    /// the same dance `ToyChoice` does two screens down.
+    private final class ActivityChoice: NSObject {
+        let mode: ActivityMode
+        init(mode: ActivityMode) { self.mode = mode }
+    }
+
+    /// Save the new mood and reconcile it with the dog on screen right now.
+    /// One funnel for all three items so persistence can never be forgotten.
+    private func changeMood(_ transform: (inout Mood) -> Void) {
+        var updated = mood
+        transform(&updated)
+        guard updated != mood else { return }
+        mood = updated
+        MoodSettings.save(mood)
+        apply(effects: brain.setMood(mood, at: lastTime))
+    }
+
+    @objc private func activityChosen(_ sender: NSMenuItem) {
+        guard let choice = sender.representedObject as? ActivityChoice else { return }
+        changeMood { $0.activity = choice.mode }
+    }
+
+    @objc private func stayDownToggled() {
+        changeMood { $0.stayDown.toggle() }
+    }
+
+    @objc private func followToggled() {
+        changeMood { $0.roam = $0.roam == .follow ? .wander : .follow }
     }
 
     /// The Tricks submenu: unlocked tricks by name, locked ones as
