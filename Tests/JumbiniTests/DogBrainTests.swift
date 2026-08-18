@@ -3319,3 +3319,192 @@ private func idleOutcomes(mood: Mood, seeds: ClosedRange<UInt64> = 1...200) -> [
         #expect(abs(perch - tuning.perchChance) < 0.0001, "\(mode)")
     }
 }
+
+// MARK: - Stay Lying Down (the soft hold)
+
+@Test func theHoldSendsEveryIdleBackToTheFloor() {
+    let brain = makeBrain { $0.zoomiesChance = 1 } // he'd zoom without the hold
+    brain.mood = Mood(stayDown: true)
+
+    _ = brain.handle(.tick, at: 0)
+    let effects = brain.handle(.tick, at: 100)
+
+    #expect(brain.state == .lyingDown)
+    #expect(effects.contains(.play(.lie)))
+}
+
+@Test func theHeldDogNeverGetsBackUpOnHisOwn() {
+    let brain = makeBrain()
+    brain.mood = Mood(stayDown: true)
+    _ = brain.handle(.tick, at: 0)
+    _ = brain.handle(.tick, at: 100)
+    #expect(brain.state == .lyingDown)
+
+    // Way past the 90s lie timeout: without a cleared deadline he'd stand up
+    // and flop down again every 90 seconds, which reads as a twitch.
+    #expect(brain.handle(.tick, at: 500) == [])
+    #expect(brain.state == .lyingDown)
+}
+
+@Test func theHoldUsesTheBedWhenHeHasOne() {
+    let brain = makeBrain()
+    brain.bedPosition = CGPoint(x: 120, y: 80)
+    brain.mood = Mood(stayDown: true)
+
+    _ = brain.handle(.tick, at: 0)
+    let effects = brain.handle(.tick, at: 100)
+
+    #expect(brain.state == .goingToBed(.lie))
+    #expect(moveTarget(in: effects)?.point == CGPoint(x: 120, y: 80))
+
+    // And the lie he arrives into carries no deadline either.
+    _ = brain.handle(.arrived, at: 110)
+    #expect(brain.state == .lyingDown)
+    #expect(brain.handle(.tick, at: 400) == [])
+    #expect(brain.state == .lyingDown)
+}
+
+@Test func theHoldIsSoftEnoughForATreat() {
+    let brain = makeBrain()
+    brain.mood = Mood(stayDown: true)
+    _ = brain.handle(.tick, at: 0)
+    _ = brain.handle(.tick, at: 100)
+    #expect(brain.state == .lyingDown)
+
+    // A treat interrupts exactly as it interrupts an ordinary lie-down...
+    _ = brain.handle(.treatDropped(at: CGPoint(x: 200, y: 200)), at: 110)
+    #expect(brain.state == .chasingTreat)
+    _ = brain.handle(.arrived, at: 115)
+    #expect(brain.state == .eating)
+
+    // ...he runs the whole digestion pipeline, which the hold does not touch
+    // (`poopEnabled` defaults to true on the brain, and `makeBrain` zeroes the
+    // hunch BAND without disabling the eating → hunching road that feeds it)...
+    _ = brain.handle(.tick, at: 130)
+    #expect(brain.state == .hunching)
+    _ = brain.handle(.tick, at: 140)
+    #expect(brain.state == .idle)
+
+    // ...and the next idle puts him back on the floor.
+    _ = brain.handle(.tick, at: 200)
+    #expect(brain.state == .lyingDown, "the hold reasserts itself at the next idle")
+}
+
+@Test func aSitCommandHoldsForItsFullTimeoutFirst() {
+    let brain = makeBrain()
+    brain.mood = Mood(stayDown: true)
+    _ = brain.handle(.command(.sit), at: 0)
+    #expect(brain.state == .sitting)
+
+    // 60s sitTimeout: the hold applies at the idle that follows, not instantly.
+    #expect(brain.handle(.tick, at: 30) == [])
+    #expect(brain.state == .sitting)
+    _ = brain.handle(.tick, at: 61)
+    #expect(brain.state == .idle)
+    _ = brain.handle(.tick, at: 100)
+    #expect(brain.state == .lyingDown)
+}
+
+// MARK: - setMood reconciliation
+
+@Test func turningTheHoldOnSettlesACalmDogNow() {
+    for calm in [DogState.idle, .wandering, .sitting] {
+        let brain = makeBrain()
+        switch calm {
+        case .wandering:
+            _ = brain.handle(.tick, at: 0)
+            _ = brain.handle(.tick, at: 100)
+        case .sitting:
+            _ = brain.handle(.command(.sit), at: 0)
+        default:
+            break
+        }
+        #expect(brain.state == calm, "setup for \(calm)")
+
+        let effects = brain.setMood(Mood(stayDown: true), at: 200)
+
+        #expect(brain.state == .lyingDown, "from \(calm)")
+        #expect(effects.contains(.stopMoving), "from \(calm)")
+        #expect(effects.contains(.play(.lie)), "from \(calm)")
+    }
+}
+
+@Test func turningTheHoldOnNeverPullsHimOffALedge() {
+    // makePercher's perchChance of 1 is a certainty again thanks to the
+    // wanderShare = 0 in makeBrain, so this is deterministic: he is on his way
+    // to a window and nowhere near calm.
+    let brain = makePercher()
+    _ = brain.handle(.tick, at: 0)
+    _ = brain.handle(.tick, at: 100)
+    let busy = brain.state
+    #expect(busy != .idle && busy != .wandering && busy != .sitting,
+            "he's off climbing, not in a state the hold may interrupt; got \(busy)")
+
+    let effects = brain.setMood(Mood(stayDown: true), at: 110)
+
+    #expect(effects.isEmpty, "a menu click is not an emergency")
+    #expect(brain.state == busy, "the hold waits for the next idle")
+}
+
+@Test func turningTheHoldOnWhileHesAlreadyDownJustClearsTheClock() {
+    let brain = makeBrain()
+    _ = brain.handle(.command(.lieDown), at: 0)
+    #expect(brain.state == .lyingDown)
+
+    let effects = brain.setMood(Mood(stayDown: true), at: 10)
+
+    #expect(effects.isEmpty, "no reason to restart the animation he's already in")
+    #expect(brain.state == .lyingDown)
+    #expect(brain.handle(.tick, at: 500) == [], "but the 90s clock is gone")
+    #expect(brain.state == .lyingDown)
+}
+
+@Test func turningTheHoldOffGetsHimUp() {
+    let brain = makeBrain()
+    brain.mood = Mood(stayDown: true)
+    _ = brain.handle(.tick, at: 0)
+    _ = brain.handle(.tick, at: 100)
+    #expect(brain.state == .lyingDown)
+
+    let effects = brain.setMood(Mood(stayDown: false), at: 110)
+
+    #expect(brain.state == .idle)
+    #expect(effects.contains(.play(.idle)))
+}
+
+@Test func turningTheHoldOffLeavesASystemCausedRestAlone() {
+    let brain = makeBrain()
+    brain.mood = Mood(stayDown: true)
+    // The battery put him down, not the hold.
+    _ = brain.handle(.system(.batteryLow), at: 0)
+    #expect(brain.state == .lyingDown)
+
+    let effects = brain.setMood(Mood(stayDown: false), at: 10)
+
+    #expect(effects.isEmpty, "batteryNormal owns this one, not the menu")
+    #expect(brain.state == .lyingDown)
+}
+
+@Test func changingActivityOrRoamHasNoImmediateEffect() {
+    let brain = makeBrain()
+    _ = brain.handle(.tick, at: 0)
+    _ = brain.handle(.tick, at: 100)
+    let before = brain.state
+
+    #expect(brain.setMood(Mood(activity: .veryActive, roam: .follow), at: 110) == [])
+    #expect(brain.state == before, "both alter the next roll only")
+    #expect(brain.mood.activity == .veryActive, "but the mood is stored")
+    #expect(brain.mood.roam == .follow)
+}
+
+@Test func theHoldIsUserCausedSoWakeUpSignalsIgnoreIt() {
+    let brain = makeBrain()
+    brain.mood = Mood(stayDown: true)
+    _ = brain.handle(.tick, at: 0)
+    _ = brain.handle(.tick, at: 100)
+    #expect(brain.state == .lyingDown)
+
+    // The charger going in must not haul up a dog the USER put down.
+    #expect(brain.handle(.system(.batteryNormal), at: 110) == [])
+    #expect(brain.state == .lyingDown)
+}

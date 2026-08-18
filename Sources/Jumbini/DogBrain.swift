@@ -541,6 +541,51 @@ final class DogBrain {
         return [.stopMoving] + enterIdle(at: now)
     }
 
+    /// Change the mood of a running dog and reconcile it with what he is doing.
+    ///
+    /// Activity and roam alter the next roll only — there is nothing to
+    /// reconcile, and cutting a zoomies burst short because a menu item was
+    /// ticked would be worse than waiting. The hold is the one that can be
+    /// out of step with the dog on screen right now.
+    func setMood(_ newMood: Mood, at now: TimeInterval) -> [DogEffect] {
+        let previous = mood
+        mood = newMood
+        guard previous.stayDown != newMood.stayDown else { return [] }
+
+        if newMood.stayDown {
+            switch state {
+            case .lyingDown:
+                // Already where the hold wants him. Just stop the clock —
+                // re-entering the state would restart the animation for
+                // nothing.
+                deadline = nil
+                return []
+            case .idle, .wandering, .sitting:
+                return [.stopMoving] + settle(at: now)
+            default:
+                // Mid-chase, in your arms, or up on a title bar. Ticking a
+                // menu item must never yank him off a ledge, so the hold
+                // waits for the next idle.
+                return []
+            }
+        }
+
+        // Hold released. Get him up only if the hold is what was keeping him
+        // down: a rest the MACHINE caused belongs to its own wake-up signal,
+        // the way `riseFromRest` already distinguishes causes. Any other lie
+        // is held by definition while the hold is on — `lieDeadline` gave it
+        // no clock — so leaving it would strand him there.
+        guard restReason == nil else { return [] }
+        switch state {
+        case .lyingDown:
+            return enterIdle(at: now)
+        case .goingToBed(.lie):
+            return [.stopMoving] + enterIdle(at: now)
+        default:
+            return []
+        }
+    }
+
     // MARK: - Event handling
 
     private func handleTick(at now: TimeInterval) -> [DogEffect] {
@@ -640,7 +685,7 @@ final class DogBrain {
             switch goal {
             case .lie:
                 state = .lyingDown
-                deadline = now + tuning.lieTimeout
+                deadline = lieDeadline(at: now)
                 return [.play(.lie)]
             case .sleep:
                 state = .sleeping
@@ -736,7 +781,7 @@ final class DogBrain {
                 effects.append(contentsOf: [.play(.walk), .moveTo(bed, speed: tuning.walkSpeed)])
             } else {
                 state = .lyingDown
-                deadline = now + tuning.lieTimeout
+                deadline = lieDeadline(at: now)
                 effects.append(.play(.lie))
             }
         case .spin:
@@ -1041,7 +1086,7 @@ final class DogBrain {
             return [.play(.walk), .moveTo(bed, speed: tuning.walkSpeed)]
         }
         state = .lyingDown
-        deadline = now + tuning.lieTimeout
+        deadline = lieDeadline(at: now)
         return [.play(.lie)]
     }
 
@@ -1070,8 +1115,29 @@ final class DogBrain {
         return [.play(.idle)]
     }
 
+    /// Put him on the floor — the bed if he has one, where he stands if not.
+    /// The destination of the Stay Lying Down hold, and deliberately the same
+    /// path the `.lieDown` command takes.
+    ///
+    /// Consumes no random numbers: the hold must be perfectly predictable, and
+    /// a roll spent here would shift every later roll in the session.
+    private func settle(at now: TimeInterval) -> [DogEffect] {
+        if let bed = bedPosition {
+            state = .goingToBed(.lie)
+            deadline = nil
+            return [.play(.walk), .moveTo(bed, speed: tuning.walkSpeed)]
+        }
+        state = .lyingDown
+        deadline = lieDeadline(at: now)
+        return [.play(.lie)]
+    }
+
     /// Idle timer fired: mostly wander, sometimes nap, rarely a spin flourish.
     private func leaveIdleForAutonomy(at now: TimeInterval) -> [DogEffect] {
+        // The hold changes where idle LEADS. Everything else about the brain is
+        // untouched, which is why a treat, a toy, or a command still interrupts
+        // it normally — they just find him back on the floor at the next idle.
+        if mood.stayDown { return settle(at: now) }
         let roll = Double.random(in: 0..<1, using: &rng)
         let odds = AutonomyOdds(
             tuning: tuning,
@@ -1150,7 +1216,7 @@ final class DogBrain {
             return [.play(.sit)]
         case .lyingDown:
             state = .lyingDown
-            deadline = now + tuning.lieTimeout
+            deadline = lieDeadline(at: now)
             return [.play(.lie)]
         default:
             return enterIdle(at: now)
@@ -1167,7 +1233,7 @@ final class DogBrain {
             return [.play(.sit)]
         case .lyingDown:
             state = .lyingDown
-            deadline = now + tuning.lieTimeout
+            deadline = lieDeadline(at: now)
             return [.play(.lie)]
         default:
             return enterIdle(at: now)
@@ -1690,6 +1756,16 @@ final class DogBrain {
 
     private func random(in range: ClosedRange<TimeInterval>) -> TimeInterval {
         Double.random(in: range, using: &rng)
+    }
+
+    /// When he should get back up from a lie — `nil` while the hold is on.
+    ///
+    /// One helper instead of five edits: the 90-second timeout is set from the
+    /// bed arrival, the lie-down command, the battery conserve, the end of a
+    /// bark, and the end of a petting session. Miss one and the held dog stands
+    /// up and flops down again every 90 seconds, which looks like a twitch.
+    private func lieDeadline(at now: TimeInterval) -> TimeInterval? {
+        mood.stayDown ? nil : now + tuning.lieTimeout
     }
 
     /// How long he stays idle before picking something to do. A hyper dog gets
