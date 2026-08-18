@@ -3508,3 +3508,123 @@ private func idleOutcomes(mood: Mood, seeds: ClosedRange<UInt64> = 1...200) -> [
     #expect(brain.handle(.system(.batteryNormal), at: 110) == [])
     #expect(brain.state == .lyingDown)
 }
+
+// MARK: - Follow My Cursor
+
+/// A brain that will fall through to an ordinary walk on its first idle roll.
+private func makeRoamer(roam: RoamMode, cursor: CGPoint?, seed: UInt64 = 3) -> DogBrain {
+    let brain = makeBrain(seed: seed) // every band is zeroed by makeBrain
+    brain.mood = Mood(roam: roam)
+    brain.cursorPosition = cursor
+    return brain
+}
+
+private func firstWalkTarget(_ brain: DogBrain) -> CGPoint? {
+    _ = brain.handle(.tick, at: 0)
+    let effects = brain.handle(.tick, at: 100)
+    return moveTarget(in: effects)?.point
+}
+
+@Test func followAimsAtTheCursorAndStopsShort() {
+    // Dog at (400, 300), cursor 400pt to the right.
+    let brain = makeRoamer(roam: .follow, cursor: CGPoint(x: 800, y: 300))
+
+    let target = firstWalkTarget(brain)
+
+    #expect(brain.state == .wandering)
+    #expect(target != nil)
+    if let target {
+        let gap = hypot(800 - target.x, 300 - target.y)
+        #expect(abs(gap - brain.tuning.followStandoff) < 1,
+                "he stops a standoff short, got a gap of \(gap)")
+        #expect(target.x > 400, "and he moved toward it")
+    }
+}
+
+@Test func followMillsAboutWhenTheCursorIsAlreadyClose() {
+    // Cursor 40pt away — well inside the 120pt standoff.
+    let brain = makeRoamer(roam: .follow, cursor: CGPoint(x: 440, y: 300))
+
+    let target = firstWalkTarget(brain)
+
+    #expect(target != nil)
+    if let target {
+        let step = hypot(target.x - 400, target.y - 300)
+        #expect(step <= brain.tuning.followMill * 1.5,
+                "a small mill, not a march across the screen; got \(step)")
+    }
+}
+
+@Test func followWithNoCursorIsOrdinaryWandering() {
+    // Same seed, same everything, cursor unknown: he must behave exactly as a
+    // wandering dog, not freeze and not walk to the origin.
+    let follow = makeRoamer(roam: .follow, cursor: nil, seed: 11)
+    let wander = makeRoamer(roam: .wander, cursor: nil, seed: 11)
+
+    #expect(firstWalkTarget(follow) == firstWalkTarget(wander))
+    #expect(follow.state == .wandering)
+}
+
+@Test func followTargetsStayInsideTheMargins() {
+    // Cursors well off every edge of the 800x600 world.
+    let corners = [
+        CGPoint(x: -900, y: -900), CGPoint(x: 1800, y: 1800),
+        CGPoint(x: -900, y: 1800), CGPoint(x: 1800, y: -900),
+    ]
+    for cursor in corners {
+        let brain = makeRoamer(roam: .follow, cursor: cursor)
+        let target = firstWalkTarget(brain)
+
+        #expect(target != nil, "cursor \(cursor)")
+        if let target {
+            let margin = brain.tuning.wanderMargin
+            #expect(target.x >= margin && target.x <= 800 - margin, "cursor \(cursor)")
+            #expect(target.y >= margin && target.y <= 600 - margin, "cursor \(cursor)")
+        }
+    }
+}
+
+@Test func followKeepsHimOutOfTheHolesBetweenDisplays() {
+    let brain = makeRoamer(roam: .follow, cursor: CGPoint(x: 700, y: 500))
+    // Only the left half of the world is a display; the cursor is in the void.
+    brain.roamableRects = [CGRect(x: 0, y: 0, width: 400, height: 600)]
+
+    let target = firstWalkTarget(brain)
+
+    #expect(target != nil)
+    if let target {
+        #expect(target.x <= 400, "he stops at the edge of the world, got \(target)")
+    }
+}
+
+@Test func followMakesTheCursorHuntHisCommonIdleActivity() {
+    var tuning = BrainTuning()
+    tuning.sniffChance = 0.12
+    let wandering = AutonomyOdds(
+        tuning: tuning, mood: Mood(roam: .wander),
+        poopEnabled: true, windowClimbingEnabled: true
+    )
+    let following = AutonomyOdds(
+        tuning: tuning, mood: Mood(roam: .follow),
+        poopEnabled: true, windowClimbingEnabled: true
+    )
+
+    let wanderSniff = wandering.sniffBand - wandering.zoomiesBand
+    let followSniff = following.sniffBand - following.zoomiesBand
+    #expect(abs(followSniff - wanderSniff * 2) < 0.0001, "the sniff band doubles")
+}
+
+@Test func veryActiveAndFollowTogetherStillLeaveRoomToClimb() {
+    // The composition that motivated the clamp: both switches on, every
+    // feature enabled. Window climbing is the last band and dies first.
+    let odds = AutonomyOdds(
+        tuning: BrainTuning(),
+        mood: Mood(activity: .veryActive, roam: .follow),
+        poopEnabled: true,
+        windowClimbingEnabled: true
+    )
+
+    #expect(odds.perchBand > odds.barkBand, "the climb band is still reachable")
+    #expect(odds.perchBand <= 1 - BrainTuning().wanderShare + 0.0001)
+    #expect(odds.sleepBand > 0, "and he can still nap")
+}

@@ -198,6 +198,11 @@ struct BrainTuning {
     /// The autonomy bands are scaled down proportionally if they would eat
     /// into it — see `AutonomyOdds`.
     var wanderShare: Double = 0.1
+    /// How far short of your cursor a follow walk stops. Close enough to be
+    /// company, far enough not to sit on the thing you are clicking.
+    var followStandoff: CGFloat = 120
+    /// How far he mills about when the cursor is already inside the standoff.
+    var followMill: CGFloat = 90
     var zoomiesDuration: TimeInterval = 10
     var zoomiesSpeed: CGFloat = 900
     var zoomiesChance: Double = 0.08
@@ -314,7 +319,10 @@ struct AutonomyOdds {
             tuning.sleepChance * activity.sleepScale,
             tuning.flourishChance * activity.flourishScale,
             tuning.zoomiesChance * activity.zoomiesScale,
-            tuning.sniffChance * activity.sniffScale,
+            // Follow mode doubles the cursor hunt. The per-frame chase already
+            // exists as sniff → stalk → pounce, and follow mode is what makes
+            // it his common idle activity rather than an occasional one.
+            tuning.sniffChance * activity.sniffScale * (mood.roam == .follow ? 2 : 1),
             poopEnabled ? tuning.hunchChance : 0,
             tuning.barkAtNothingChance,
             windowClimbingEnabled ? tuning.perchChance : 0,
@@ -396,6 +404,12 @@ final class DogBrain {
     /// Set this directly only before he is running. Once he is, go through
     /// `setMood(_:at:)` so a change can take effect on the dog you can see.
     var mood = Mood()
+    /// Where the cursor is in scene coordinates, kept current by the scene each
+    /// frame — it already computes this for hover detection, so it is free.
+    ///
+    /// `nil` means unknown (no window to convert through), and follow mode
+    /// falls back to ordinary wandering rather than walking to the origin.
+    var cursorPosition: CGPoint?
     /// How far the dog's CENTRE sits above his feet — half his sprite height,
     /// which changes with the pose, so the scene keeps it current. Standing on
     /// a window means `position.y == surface.topY + footOffset`.
@@ -1203,7 +1217,7 @@ final class DogBrain {
         }
         state = .wandering
         deadline = nil
-        return [.play(.walk), .moveTo(wanderTarget(), speed: tuning.walkSpeed)]
+        return [.play(.walk), .moveTo(roamTarget(), speed: tuning.walkSpeed)]
     }
 
     /// Bark finished: resume sitting/lying if that's what was interrupted.
@@ -1676,6 +1690,48 @@ final class DogBrain {
             attempts += 1
         }
         return onSolidGround(target)
+    }
+
+    /// Where an ordinary walk goes: a random spot, or a spot near your cursor.
+    ///
+    /// Follow REPLACES the target, not the walk. It is an ordinary `.moveTo`
+    /// toward a fixed point, so a cursor that moves mid-walk is not chased —
+    /// he arrives, idles, and re-aims on the next roll. That laziness is the
+    /// character: a pet that never stops walking at you is a nuisance in about
+    /// ninety seconds.
+    private func roamTarget() -> CGPoint {
+        guard mood.roam == .follow, let cursor = cursorPosition else {
+            return wanderTarget()
+        }
+        let dx = cursor.x - position.x
+        let dy = cursor.y - position.y
+        let distance = hypot(dx, dy)
+        guard distance > tuning.followStandoff else {
+            // Already beside the pointer. Mill about rather than cross the
+            // screen to reach something that is right here — and `distance`
+            // can be 0, so this is the divide-by-zero guard too.
+            let mill = tuning.followMill
+            return onSolidGround(clampToBounds(CGPoint(
+                x: position.x + CGFloat.random(in: -mill...mill, using: &rng),
+                y: position.y + CGFloat.random(in: -mill...mill, using: &rng)
+            )))
+        }
+        let travel = distance - tuning.followStandoff
+        return onSolidGround(clampToBounds(CGPoint(
+            x: position.x + dx / distance * travel,
+            y: position.y + dy / distance * travel
+        )))
+    }
+
+    /// Pull a computed point inside the roaming margin. `wanderTarget()` gets
+    /// this for free by sampling inside the margin; a point aimed at something
+    /// outside the world — your cursor on another display, say — does not.
+    private func clampToBounds(_ point: CGPoint) -> CGPoint {
+        let margin = tuning.wanderMargin
+        return CGPoint(
+            x: min(max(point.x, margin), max(margin, bounds.width - margin)),
+            y: min(max(point.y, margin), max(margin, bounds.height - margin))
+        )
     }
 
     /// Is this somewhere he could actually be seen standing?
