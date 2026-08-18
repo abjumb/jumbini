@@ -4,26 +4,26 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 
-<title>Jumbini — a dog who actually lives on your Mac</title>
+<title>Jumbini: a dog who actually lives on your Mac</title>
 <meta name="description" content="Jumba is a hand-drawn pixel dog for macOS. He walks along the tops of your open windows, gets the zoomies when your Mac runs hot, and naps when you step away. Free, open source, no network, no permissions, no AI.">
 
 <link rel="canonical" href="https://abjumb.github.io/jumbini/">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Jumbini">
-<meta property="og:title" content="Jumbini — a dog who actually lives on your Mac">
+<meta property="og:title" content="Jumbini: a dog who actually lives on your Mac">
 <meta property="og:description" content="A hand-drawn pixel dog for macOS. He walks on your windows, reacts to your machine, and never asks for a permission, a login, or a dollar.">
 <meta property="og:url" content="https://abjumb.github.io/jumbini/">
 <meta property="og:image" content="https://abjumb.github.io/jumbini/assets/page/app-icon-512.png">
 <meta name="twitter:card" content="summary_large_image">
 
-<meta name="theme-color" content="#FBFCFD" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#0F1216" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F2F2F7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0A0C11" media="(prefers-color-scheme: dark)">
 
 <link rel="icon" href="assets/page/app-icon-32.png" sizes="32x32" type="image/png">
 <link rel="apple-touch-icon" href="assets/page/app-icon-128.png">
 
 <link rel="preload" href="assets/fonts/lazy-dog.ttf" as="font" type="font/ttf" crossorigin>
-<link rel="preload" href="assets/fonts/avenir-condensed-hand.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="preload" href="assets/fonts/abel-400.woff2" as="font" type="font/woff2" crossorigin>
 
 <script>
 // Apply the stored theme before first paint so the page never flashes.
@@ -32,133 +32,478 @@ if(t==='dark'||t==='light'){document.documentElement.setAttribute('data-theme',t
 </script>
 
 <style>
-@font-face { font-family:'Lazy Dog'; src:url('assets/fonts/lazy-dog.ttf') format('truetype'); font-weight:400; font-style:normal; font-display:swap; }
-@font-face { font-family:'Avenir Condensed Hand'; src:url('assets/fonts/avenir-condensed-hand.ttf') format('truetype'); font-weight:400; font-style:normal; font-display:swap; }
-@font-face { font-family:'Silkscreen'; src:url('assets/fonts/silkscreen-400.woff2') format('woff2'); font-weight:400; font-display:swap; }
-@font-face { font-family:'Silkscreen'; src:url('assets/fonts/silkscreen-700.woff2') format('woff2'); font-weight:700; font-display:swap; }
+/* ==========================================================================
+   Jumbini — download page
+   --------------------------------------------------------------------------
+   Built from jumbini-website.fig. Everything structural in here comes out of
+   that file and is not up for reinvention:
 
-/* Companion direction. VARIANCE 7 / MOTION 4 / DENSITY 2.
-   One accent, one ink, hairlines instead of cards. The hard-shadow frame is
-   spent exactly once, on the demo, so the brand's shape language survives
-   without the page becoming a wall of boxes. */
+     canvas      #F2F2F7, the macOS system gray the design is drawn on
+     surfaces    white sheets, 40px radius on large ones, 20px on small ones
+     ramp        #EAEFFF #ADD5F7 #87BAFA #3D78F5 #0088FF #007AFF
+     the cut     an 86x86 bite taken out of a card corner, with the SAME 40px
+                 radius on the convex lip and on the concave turn back out.
+                 Cards do not float on the sheet; they interlock with it.
+     the nub     a pixel-art arrow sitting in that bite. It is the only place
+                 the dog's 1-bit world touches the smooth macOS one, so it is
+                 the only place that gets to be loud. Its 14x16 grid is
+                 transcribed from the asset in the file, rect for rect.
+     the stair   the sheet's bottom edge descends in four steps of one bite
+                 each. Jumba walks down them, because standing on the top edge
+                 of things is the entire product.
+
+   Type is three voices and no more. Lazy Dog draws the headings, because he
+   is hand-drawn too. Abel — one weight, 400, no bold anywhere — carries every
+   label, number and control, so UI emphasis has to come from size, case,
+   tracking and colour rather than weight. Long copy uses the reader's own
+   system face, the one thing here that should disappear. Silkscreen appears
+   once, in the mock title bar, where a pixel face is literal and not a
+   costume.
+
+   No third-party requests: fonts are local, icons are inline. Abel is the one
+   new file this design needs (SIL Open Font License 1.1, from Google Fonts);
+   it is served from assets/fonts/ rather than linked, so the page still makes
+   zero requests off this origin.
+   ========================================================================== */
+
+@font-face { font-family:'Lazy Dog'; src:url('assets/fonts/lazy-dog.ttf') format('truetype'); font-weight:400; font-style:normal; font-display:swap; }
+@font-face { font-family:'Abel'; src:url('assets/fonts/abel-400.woff2') format('woff2'); font-weight:400; font-style:normal; font-display:swap; }
+@font-face { font-family:'Silkscreen'; src:url('assets/fonts/silkscreen-400.woff2') format('woff2'); font-weight:400; font-display:swap; }
+
+/* ── tokens ─────────────────────────────────────────────────────────────── */
 :root{
-  --paper:#FBFCFD; --paper-deep:#EDF1F6; --paper-blur:rgba(251,252,253,.86);
-  --ink:#1A1C20; --muted:#5F6674; --muted-soft:#656D7B; --line:#D5DDE8;
-  --control-track:#7E8898; --control-knob:#FFFFFF;
-  --accent:#2E4A7D; --accent-fill:#2E4A7D; --accent-fill-hover:#1E3358; --on-accent:#FFFFFF;
-  --band:#16181C; --band-ink:#FFFFFF; --band-muted:#98A0AE; --band-line:rgba(255,255,255,.14);
-  --frame:#1A1C20; --frame-shadow:#C3CEE0;
-  --hair:rgba(26,28,32,.20);
+  --page:#F2F2F7; --sheet:#FFFFFF;
+  --tint:#EAEFFF; --tint-ink:#131313;
+  --sky-l:#ADD5F7; --sky-l-ink:#0C1D30;
+  --sky:#87BAFA;   --sky-ink:#0C1D30;
+  /* One ink for the whole blue family, down to the loudest step. White on
+     #0088FF is 3.3:1 and fails; this navy is 4.9:1 and keeps the ramp reading
+     as one material instead of flipping polarity on the last card. */
+  --azure:#0088FF; --azure-ink:#06214A;
+  --prime:#007AFF; --deep:#3D78F5; --label:#0A5FD0;
+  --ink:#131313; --muted:#5C6371; --soft:#7C8494;
+  --line:#E4E6EE; --hair:rgba(19,19,19,.10);
+  --code:#F6F7FB;
+  --violet-a:rgba(143,169,255,.38); --violet-b:rgba(100,105,254,.22); --violet-c:rgba(0,136,255,.16);
+  --track:#C7CBD6; --knob:#FFFFFF;
+
+  --radius:40px;                       /* the large radius, and the bite's */
+  --radius-s:20px;                     /* small cards, controls, code */
+  --notch:calc(var(--radius) * 2.15);  /* the bite: 86px against a 40px radius, per the file */
+  --gap:20px;                          /* the one gutter in the design */
+  --ease:cubic-bezier(.16,1,.3,1);
+
+  --display:'Lazy Dog',ui-monospace,monospace;
+  --ui:'Abel','Avenir Next Condensed',system-ui,sans-serif;
+  --body:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
+  --mono:ui-monospace,'SF Mono',Menlo,monospace;
+  --pixel:'Silkscreen',ui-monospace,monospace;
   color-scheme:light;
 }
 @media (prefers-color-scheme:dark){ :root:not([data-theme="light"]){
-  --paper:#0F1216; --paper-deep:#171C22; --paper-blur:rgba(15,18,22,.86);
-  --ink:#E9EDF3; --muted:#A2ABBA; --muted-soft:#8B95A6; --line:#272D36;
-  --accent:#93B2E6; --accent-fill:#2E4A7D; --accent-fill-hover:#3A5C97; --on-accent:#FFFFFF;
-  --band:#2A3140; --band-ink:#F2F5F9; --band-muted:#98A0AE; --band-line:rgba(255,255,255,.16);
-  --frame:#3A4350; --frame-shadow:#22303F;
-  --hair:rgba(233,237,243,.24);
-  --control-track:#6E7A8B; --control-knob:#E9EDF3;
+  --page:#0A0C11; --sheet:#14171E;
+  --tint:#1B2334; --tint-ink:#E9EDF5;
+  --sky-l:#233A5E; --sky-l-ink:#DCE8F7;
+  --sky:#2C5A94;   --sky-ink:#E9F1FB;
+  --azure:#0088FF; --azure-ink:#06214A;
+  --prime:#6FB4FF; --deep:#3D8CF7; --label:#6FB4FF;
+  --ink:#ECEFF5; --muted:#99A2B2; --soft:#8A93A3;
+  --line:#242833; --hair:rgba(236,239,245,.14);
+  --code:#0F1219;
+  --violet-a:rgba(143,169,255,.24); --violet-b:rgba(100,105,254,.20); --violet-c:rgba(0,136,255,.16);
+  --track:#39404F; --knob:#ECEFF5;
   color-scheme:dark;
 }}
 :root[data-theme="dark"]{
-  --paper:#0F1216; --paper-deep:#171C22; --paper-blur:rgba(15,18,22,.86);
-  --ink:#E9EDF3; --muted:#A2ABBA; --muted-soft:#8B95A6; --line:#272D36;
-  --accent:#93B2E6; --accent-fill:#2E4A7D; --accent-fill-hover:#3A5C97; --on-accent:#FFFFFF;
-  --band:#2A3140; --band-ink:#F2F5F9; --band-muted:#98A0AE; --band-line:rgba(255,255,255,.16);
-  --frame:#3A4350; --frame-shadow:#22303F;
-  --hair:rgba(233,237,243,.24);
-  --control-track:#6E7A8B; --control-knob:#E9EDF3;
+  --page:#0A0C11; --sheet:#14171E;
+  --tint:#1B2334; --tint-ink:#E9EDF5;
+  --sky-l:#233A5E; --sky-l-ink:#DCE8F7;
+  --sky:#2C5A94;   --sky-ink:#E9F1FB;
+  --azure:#0088FF; --azure-ink:#06214A;
+  --prime:#6FB4FF; --deep:#3D8CF7; --label:#6FB4FF;
+  --ink:#ECEFF5; --muted:#99A2B2; --soft:#8A93A3;
+  --line:#242833; --hair:rgba(236,239,245,.14);
+  --code:#0F1219;
+  --violet-a:rgba(143,169,255,.24); --violet-b:rgba(100,105,254,.20); --violet-c:rgba(0,136,255,.16);
+  --track:#39404F; --knob:#ECEFF5;
   color-scheme:dark;
 }
-.tgl { display:inline-flex; align-items:center; gap:8px; background:none; border:0; padding:6px;
-  cursor:pointer; color:var(--muted-soft); font:inherit; }
-.tgl .track { width:38px; height:21px; border-radius:999px; background:var(--control-track);
-  border:1px solid var(--control-track); position:relative; flex:none; }
-html.theme-anim .tgl .track { transition:background .35s cubic-bezier(.16,1,.3,1), border-color .25s ease; }
-.tgl .knob { position:absolute; top:2px; left:2px; width:15px; height:15px; border-radius:50%;
-  background:var(--control-knob); box-shadow:0 1px 2px rgba(0,0,0,.35); }
-html.theme-anim .tgl .knob { transition:transform .35s cubic-bezier(.16,1,.3,1); }
-.tgl[aria-checked="true"] .track { background:var(--accent-fill); border-color:var(--accent-fill); }
-.tgl[aria-checked="true"] .knob { background:#FFFFFF; }
-.tgl[aria-checked="true"] .knob { transform:translateX(17px); }
-.tgl:hover .track { border-color:var(--ink); }
-.tgl:hover .knob { transform:scale(1.08); }
-.tgl[aria-checked="true"]:hover .knob { transform:translateX(17px) scale(1.08); }
-html.theme-anim body, html.theme-anim .slice, html.theme-anim .acc, html.theme-anim section,
-html.theme-anim header, html.theme-anim footer { transition:background-color .3s ease, border-color .3s ease, color .3s ease; }
-html { scroll-behavior:smooth; scroll-padding-top:132px; -webkit-text-size-adjust:100%; }
-body { margin:0; background:var(--paper); color:var(--ink);
-  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
-  font-size:19px; line-height:1.62; -webkit-font-smoothing:antialiased; }
-img { image-rendering:pixelated; max-width:100%; display:block; }
-h1,h2,h3 { margin:0; font-weight:400; text-wrap:balance; }
-p { margin:0; text-wrap:pretty; }
-a { color:var(--accent); text-underline-offset:3px; }
-::selection { background:var(--accent-fill); color:var(--on-accent); }
-:focus-visible { outline:2px solid var(--accent); outline-offset:4px; border-radius:2px; }
 
-/* MOTION 4: transform and opacity only, one easing curve for the whole page. */
-@keyframes rise { from { opacity:0; transform:translateY(12px) } to { opacity:1; transform:none } }
-@keyframes bob  { 0%,100% { transform:translateY(0) } 50% { transform:translateY(-4px) } }
-[data-rise] { animation:rise .9s cubic-bezier(.16,1,.3,1) both; }
-[data-bob]  { animation:bob 5.5s ease-in-out infinite; }
+/* ── base ───────────────────────────────────────────────────────────────── */
+*,*::before,*::after{ box-sizing:border-box; }
+html{ scroll-behavior:smooth; scroll-padding-top:100px; -webkit-text-size-adjust:100%; }
+body{ margin:0; background:var(--page); color:var(--ink); font-family:var(--body);
+  font-size:18px; line-height:1.6; -webkit-font-smoothing:antialiased; font-synthesis-weight:none; }
+img{ image-rendering:pixelated; max-width:100%; display:block; }
+h1,h2,h3{ margin:0; font-family:var(--display); font-weight:400; text-wrap:balance; letter-spacing:.005em; }
+h1{ font-size:clamp(38px,5vw,66px); line-height:1.02; }
+h2{ font-size:clamp(29px,3.9vw,50px); line-height:1.06; }
+h3{ font-size:clamp(20px,1.7vw,25px); line-height:1.18; }
+p{ margin:0; text-wrap:pretty; }
+a{ color:var(--prime); text-underline-offset:3px; }
+::selection{ background:var(--azure); color:#fff; }
+:focus-visible{ outline:2.5px solid var(--prime); outline-offset:4px; border-radius:6px; }
+.skip{ position:absolute; left:-9999px; }
+.skip:focus{ left:20px; top:20px; z-index:99; background:var(--sheet); color:var(--ink);
+  padding:12px 20px; border-radius:999px; font-family:var(--ui); }
 
-/* Horizontal accordion. Slices open on hover instead of stacking into cards. */
-.acc { display:grid; grid-template-columns:repeat(4,1fr); gap:1px; background:var(--line);
-  border:1px solid var(--line); border-radius:6px; overflow:hidden;
-  max-width:1200px; margin-inline:auto; }
-.slice { background:var(--paper); padding:22px 20px 20px; min-height:196px; display:flex;
-  flex-direction:column; justify-content:flex-end; gap:12px;
-  transition:background .5s cubic-bezier(.16,1,.3,1); }
-.slice h3 { min-height:2.4em; display:flex; align-items:flex-end; }
-.slice .say { display:grid; grid-template-rows:0fr; opacity:0;
-  transition:grid-template-rows .5s cubic-bezier(.16,1,.3,1), opacity .4s cubic-bezier(.16,1,.3,1); }
-.slice .say > span { overflow:hidden; min-height:0; display:block; max-width:34ch;
-  color:var(--muted); font-size:15px; }
-.slice img { transition:transform .5s cubic-bezier(.16,1,.3,1); }
-.acc:hover .slice { background:var(--paper); }
-.slice:hover { background:var(--paper-deep); }
-.slice:hover .say { grid-template-rows:1fr; opacity:1; }
-.slice:hover img { transform:translateY(-3px); }
-@media (min-width:861px){
-  .acc { grid-template-columns:1fr 1fr 1fr 1fr; transition:grid-template-columns .55s cubic-bezier(.16,1,.3,1); }
-  .acc:has(.slice:nth-child(1):hover) { grid-template-columns:2.1fr 1fr 1fr 1fr; }
-  .acc:has(.slice:nth-child(2):hover) { grid-template-columns:1fr 2.1fr 1fr 1fr; }
-  .acc:has(.slice:nth-child(3):hover) { grid-template-columns:1fr 1fr 2.1fr 1fr; }
-  .acc:has(.slice:nth-child(4):hover) { grid-template-columns:1fr 1fr 1fr 2.1fr; }
+/* The violet bloom the design lays under everything. Fixed, so it reads as
+   light in the room rather than as a graphic that scrolls with the page. */
+.bloom{ position:fixed; inset:0; z-index:-1; pointer-events:none;
+  background:
+    radial-gradient(58% 46% at 8% 2%, var(--violet-a) 0%, transparent 62%),
+    radial-gradient(42% 38% at 96% 26%, var(--violet-c) 0%, transparent 66%),
+    radial-gradient(50% 40% at 74% 96%, var(--violet-b) 0%, transparent 68%); }
+
+/* ── shared type roles ──────────────────────────────────────────────────── */
+.ui{ font-family:var(--ui); font-size:16px; line-height:1.35; }
+/* --label, not --prime: #007AFF is 3.9:1 on white, which small caps cannot carry. */
+.eyebrow{ font-family:var(--ui); font-size:13px; letter-spacing:.2em; text-transform:uppercase;
+  color:var(--label); margin:0; }
+.lede{ color:var(--muted); font-size:clamp(16px,1.25vw,19px); }
+.small{ font-size:15px; color:var(--muted); }
+code{ font-family:var(--mono); font-size:.86em; background:var(--code); border-radius:6px; padding:.14em .42em; }
+pre{ font-family:var(--mono); font-size:14.5px; line-height:1.75; margin:0; background:var(--code);
+  color:var(--ink); padding:16px 20px; border-radius:var(--radius-s); overflow-x:auto;
+  white-space:pre-wrap; overflow-wrap:anywhere; }
+
+/* ── the bite ───────────────────────────────────────────────────────────────
+   Five mask layers: three rectangles for the body, one disc for the convex
+   lip, one inverted disc for the concave turn. --n is the bite, --r is the
+   radius used on both sides of it. Setting --n:0 collapses the whole thing
+   back to a plain rounded rectangle, which is what the narrow layouts do. */
+.cut{ --r:var(--radius); --n:var(--notch); border-radius:var(--r);
+  -webkit-mask-repeat:no-repeat; mask-repeat:no-repeat; }
+.cut-tr{
+  -webkit-mask-image:
+    linear-gradient(#000 0 0), linear-gradient(#000 0 0), linear-gradient(#000 0 0),
+    radial-gradient(circle var(--r) at 0 100%, #000 calc(var(--r) - .6px), #0000 var(--r)),
+    radial-gradient(circle var(--r) at 100% 0, #0000 calc(var(--r) - .6px), #000 var(--r));
+  mask-image:
+    linear-gradient(#000 0 0), linear-gradient(#000 0 0), linear-gradient(#000 0 0),
+    radial-gradient(circle var(--r) at 0 100%, #000 calc(var(--r) - .6px), #0000 var(--r)),
+    radial-gradient(circle var(--r) at 100% 0, #0000 calc(var(--r) - .6px), #000 var(--r));
+  -webkit-mask-size:100% calc(100% - var(--n)), calc(100% - var(--n) - var(--r) + 1.4px) calc(var(--n) + 1.4px),
+    calc(var(--r) + 1.4px) calc(var(--n) - var(--r) + 1.4px), var(--r) var(--r),
+    calc(var(--r) + 1.4px) calc(var(--r) + 1.4px);
+  mask-size:100% calc(100% - var(--n)), calc(100% - var(--n) - var(--r) + 1.4px) calc(var(--n) + 1.4px),
+    calc(var(--r) + 1.4px) calc(var(--n) - var(--r) + 1.4px), var(--r) var(--r),
+    calc(var(--r) + 1.4px) calc(var(--r) + 1.4px);
+  -webkit-mask-position:left 0 top var(--n), left 0 top 0, right var(--n) top var(--r),
+    right var(--n) top 0, right calc(var(--n) - var(--r)) top calc(var(--n) - var(--r));
+  mask-position:left 0 top var(--n), left 0 top 0, right var(--n) top var(--r),
+    right var(--n) top 0, right calc(var(--n) - var(--r)) top calc(var(--n) - var(--r));
 }
-@media (max-width:860px){ .acc { grid-template-columns:1fr 1fr } }
-@media (max-width:640px){
-  header nav { gap:14px 18px !important; order:3; flex:1 1 100%; justify-content:center; }
+.cut-tl{
+  -webkit-mask-image:
+    linear-gradient(#000 0 0), linear-gradient(#000 0 0), linear-gradient(#000 0 0),
+    radial-gradient(circle var(--r) at 100% 100%, #000 calc(var(--r) - .6px), #0000 var(--r)),
+    radial-gradient(circle var(--r) at 0 0, #0000 calc(var(--r) - .6px), #000 var(--r));
+  mask-image:
+    linear-gradient(#000 0 0), linear-gradient(#000 0 0), linear-gradient(#000 0 0),
+    radial-gradient(circle var(--r) at 100% 100%, #000 calc(var(--r) - .6px), #0000 var(--r)),
+    radial-gradient(circle var(--r) at 0 0, #0000 calc(var(--r) - .6px), #000 var(--r));
+  -webkit-mask-size:100% calc(100% - var(--n)), calc(100% - var(--n) - var(--r) + 1.4px) calc(var(--n) + 1.4px),
+    calc(var(--r) + 1.4px) calc(var(--n) - var(--r) + 1.4px), var(--r) var(--r),
+    calc(var(--r) + 1.4px) calc(var(--r) + 1.4px);
+  mask-size:100% calc(100% - var(--n)), calc(100% - var(--n) - var(--r) + 1.4px) calc(var(--n) + 1.4px),
+    calc(var(--r) + 1.4px) calc(var(--n) - var(--r) + 1.4px), var(--r) var(--r),
+    calc(var(--r) + 1.4px) calc(var(--r) + 1.4px);
+  -webkit-mask-position:left 0 top var(--n), right 0 top 0, left calc(var(--n) - 1.4px) top var(--r),
+    left var(--n) top 0, left calc(var(--n) - var(--r)) top calc(var(--n) - var(--r));
+  mask-position:left 0 top var(--n), right 0 top 0, left calc(var(--n) - 1.4px) top var(--r),
+    left var(--n) top 0, left calc(var(--n) - var(--r)) top calc(var(--n) - var(--r));
 }
-/* Touch devices never fire :hover, so the accordion copy must not be hover-gated there. */
-@media (hover:none){ .slice .say { grid-template-rows:1fr; opacity:1 } }
-@media (max-width:560px){ .acc { grid-template-columns:1fr } .slice { min-height:0 } .slice h3 { min-height:0 } .slice .say { grid-template-rows:1fr; opacity:1 } }
 
-/* VARIANCE 7 collapses to a strict single column under 820px. */
+/* ── the nub ────────────────────────────────────────────────────────────────
+   Sits in the bite, over the sheet, outside the masked card — a child would
+   be masked away with everything else. crispEdges keeps the rotated pixels
+   hard instead of letting the browser smooth them into a normal arrow. */
+.nub{ position:absolute; top:calc(var(--notch) / 2); width:calc(var(--notch) * .52); height:calc(var(--notch) * .52);
+  display:grid; place-items:center; color:var(--ink);
+  transition:transform .5s var(--ease), color .3s var(--ease); }
+.cell-wrap.tr .nub{ right:calc(var(--notch) / 2); transform:translate(50%,-50%); }
+.cell-wrap.tl .nub{ left:calc(var(--notch) / 2);  transform:translate(-50%,-50%); }
+.nub svg{ width:100%; height:100%; display:block; transform:rotate(-135deg); fill:currentColor; }
+.cell-wrap:hover .nub, .cell-wrap:focus-within .nub{ color:var(--azure); }
+.cell-wrap.tr:hover .nub, .cell-wrap.tr:focus-within .nub{ transform:translate(50%,-50%) translate(4px,-4px); }
+.cell-wrap.tl:hover .nub, .cell-wrap.tl:focus-within .nub{ transform:translate(-50%,-50%) translate(4px,-4px); }
+a.nub{ color:var(--ink); }
+
+/* ── layout shell ───────────────────────────────────────────────────────── */
+.shell{ max-width:1440px; margin-inline:auto; padding:var(--gap) max(var(--gap),2.5vw) 0; }
+.sheet{ background:var(--sheet); border-radius:var(--radius); }
+.band{ margin-top:clamp(28px,4.5vw,64px); }
+.band > .sheet{ padding:clamp(28px,3.4vw,52px); }
+.band-head{ max-width:62ch; }
+.band-head h2 + p{ margin-top:14px; }
+
+/* ── hero ───────────────────────────────────────────────────────────────── */
+.hero{ display:grid; grid-template-columns:minmax(0,1fr) 335px; gap:var(--gap); align-items:stretch; }
+.hero-sheet{ display:flex; flex-direction:column; background:none; border-radius:0; }
+/* The sheet's body carries the white and the bite out of its top-left corner;
+   the stair below carries the rest of the white. Both are the same colour, so
+   the join between them is invisible. */
+.sheet-body{ background:var(--sheet); border-radius:var(--radius) var(--radius) 0 0;
+  padding:var(--gap); display:flex; flex-direction:column; flex:1; }
+/* The bar fills the sheet's top band exactly, so the nav sits on the bite's
+   centre line rather than 20px under it. */
+.hero-bar{ height:var(--notch); margin:calc(var(--gap) * -1) calc(var(--gap) * -1) 0; display:flex;
+  align-items:center; gap:clamp(18px,2.4vw,46px); padding:0 var(--gap) 0 calc(var(--notch) + 14px); }
+.wordmark{ font-family:var(--ui); font-size:17px; letter-spacing:.24em; text-transform:uppercase;
+  color:var(--ink); text-decoration:none; }
+.hero-nav{ display:flex; align-items:center; gap:clamp(16px,2.2vw,50px); flex-wrap:wrap; }
+.hero-nav a{ font-family:var(--ui); font-size:16px; color:var(--muted); text-decoration:none;
+  transition:color .35s var(--ease); }
+.hero-nav a:hover{ color:var(--ink); }
+.hero-bar .tgl{ margin-left:auto; }
+
+.bento{ display:grid; grid-template-columns:2.21fr 1fr 1fr; grid-template-rows:1.44fr 1fr;
+  gap:var(--gap); margin-top:var(--gap); min-height:553px; }
+.cell-wrap{ position:relative; display:grid; }
+a.cell-wrap{ text-decoration:none; color:inherit; }
+.cell-wrap.a{ grid-column:1; grid-row:1 / 3; }
+.cell-wrap.b{ grid-column:2; grid-row:1; }
+.cell-wrap.c{ grid-column:2; grid-row:2; }
+.cell-wrap.d{ grid-column:3; grid-row:1 / 3; }
+.cell{ display:flex; flex-direction:column; justify-content:space-between; gap:20px;
+  padding:clamp(22px,2.1vw,32px); overflow:hidden; transition:filter .4s var(--ease); }
+a.cell-wrap:hover .cell{ filter:brightness(.965) saturate(1.05); }
+/* Nothing may sit under the bite, so the top row of a bitten card steps aside:
+   out of the way on the right, or across to the far side on the left. */
+/* margin, not padding: border-box would eat an <img>'s whole width instead. */
+.cell-wrap.tr > .cell > :first-child{ margin-right:calc(var(--notch) - 24px); }
+.cell-wrap.tl > .cell > :first-child{ align-self:flex-end; }
+/* The one card the file draws at the small radius, and the only one it leaves
+   unbitten — it is a statement, not a way through to somewhere else. */
+.cell-wrap.b > .cell{ border-radius:var(--radius-s); }
+.tone-tint{ background:var(--tint); color:var(--tint-ink); }
+.tone-sky-l{ background:var(--sky-l); color:var(--sky-l-ink); }
+.tone-sky{ background:var(--sky); color:var(--sky-ink); }
+.tone-azure{ background:var(--azure); color:var(--azure-ink); }
+.cell .lede{ color:inherit; opacity:.74; }
+
+.hero-actions{ display:flex; flex-wrap:wrap; align-items:center; gap:16px 22px; margin-top:clamp(24px,3vw,40px); }
+.cell-wrap.a > .cell{ justify-content:space-between; }
+.btn{ display:inline-flex; align-items:center; gap:10px; font-family:var(--ui); font-size:17px;
+  letter-spacing:.02em; text-decoration:none; padding:13px 26px; border-radius:999px;
+  background:var(--azure); color:#fff; border:0; cursor:pointer;
+  transition:transform .35s var(--ease), background .35s var(--ease); }
+.btn:hover{ background:var(--deep); transform:translateY(-2px); }
+.btn:active{ transform:scale(.98); }
+.btn svg{ width:1em; height:1em; flex:none; fill:none; stroke:currentColor; stroke-width:2;
+  stroke-linecap:round; stroke-linejoin:round; }
+.linkline{ font-family:var(--ui); font-size:17px; color:var(--muted); text-decoration:none;
+  border-bottom:1px solid var(--line); padding-bottom:2px;
+  transition:color .35s var(--ease), border-color .35s var(--ease); }
+.linkline:hover{ color:var(--ink); border-color:var(--ink); }
+
+/* flex:none, or a short card squashes the sprite to nothing along the main axis. */
+.cell-sprite{ width:clamp(48px,4.4vw,64px); height:auto; flex:none; }
+/* Not a heading — see the markup. Carries the display face by hand. */
+.cell-title{ font-family:var(--display); font-size:clamp(20px,1.7vw,25px); line-height:1.18;
+  letter-spacing:.005em; text-wrap:balance; }
+.claims{ font-family:var(--ui); font-size:clamp(19px,1.6vw,24px); line-height:1.32; letter-spacing:.01em; }
+.claims-foot{ font-family:var(--ui); font-size:16px; line-height:1.4; color:inherit; }
+.stair-note{ font-family:var(--ui); font-size:16px; color:var(--muted); max-width:34ch;
+  margin-top:clamp(22px,2.6vw,34px); }
+
+/* ── the stair ──────────────────────────────────────────────────────────────
+   Four treads of one bite each, descending left to right, plus three inverse
+   corners where a tread turns down into its riser. Plain elements rather than
+   more mask arithmetic, because the treads have to be placed in percentages
+   and background-position resolves percentages against the wrong box. */
+.stair{ position:relative; height:calc(var(--notch) * 3); }
+.stair > i{ position:absolute; top:0; right:0; background:var(--sheet); display:block; }
+.stair .t2{ left:40%;   height:var(--notch);              border-bottom-left-radius:var(--radius); }
+.stair .t3{ left:54%;   height:calc(var(--notch) * 2);    border-bottom-left-radius:var(--radius); }
+.stair .t4{ left:82.5%; height:calc(var(--notch) * 3);    border-bottom-left-radius:var(--radius);
+  border-bottom-right-radius:var(--radius); }
+/* The turn where a tread drops into its riser: the same 40px radius, inverted. */
+.stair > u{ position:absolute; width:var(--radius); height:var(--radius); display:block;
+  background:radial-gradient(circle var(--radius) at 0 100%,
+    #0000 calc(var(--radius) - .6px), var(--sheet) var(--radius)); }
+.stair .i2{ left:calc(40%   - var(--radius)); top:0; }
+.stair .i3{ left:calc(54%   - var(--radius)); top:var(--notch); }
+.stair .i4{ left:calc(82.5% - var(--radius)); top:calc(var(--notch) * 2); }
+/* And the dogs walking down them, each standing on its own tread. */
+.stair img{ position:absolute; width:60px; height:auto; }
+.stair .w1{ left:29%;   top:-60px; }
+.stair .w2{ left:46%;   top:calc(var(--notch) - 56px); }
+.stair .w3{ left:72.5%; top:calc(var(--notch) * 2 - 60px); }
+.stair .w4{ left:89.5%; top:calc(var(--notch) * 3 - 58px); }
+
+/* ── right rail ─────────────────────────────────────────────────────────── */
+.rail{ display:grid; grid-template-rows:276fr 124fr 495fr; gap:var(--gap); }
+.card{ background:var(--sheet); border-radius:var(--radius-s); padding:clamp(20px,1.7vw,26px);
+  display:flex; flex-direction:column; justify-content:space-between; gap:14px;
+  text-decoration:none; color:inherit; }
+.card.tall{ border-radius:var(--radius); }
+.card > :last-child{ margin-top:auto; }
+.spec{ font-family:var(--ui); font-size:16px; color:var(--muted); display:flex; flex-direction:column; gap:7px;
+  margin-top:14px; }
+.spec b{ font-weight:400; color:var(--ink); font-size:19px; }
+a.card{ justify-content:center; transition:background .35s var(--ease); }
+a.card > :last-child{ margin-top:0; }
+.card-row{ display:flex; align-items:center; justify-content:space-between; gap:14px;
+  font-family:var(--ui); font-size:17px; }
+a.card:hover{ background:var(--tint); }
+.px-inline{ width:17px; height:19px; fill:currentColor; transform:rotate(-135deg); flex:none;
+  transition:transform .4s var(--ease); }
+a.card:hover .px-inline{ transform:rotate(-135deg) translate(0,-4px); }
+.wall{ display:grid; grid-template-columns:repeat(3,1fr); gap:12px; place-items:center; align-content:center;
+  flex:1; }
+.wall img{ width:100%; max-width:64px; height:auto; }
+
+/* ── theme toggle ───────────────────────────────────────────────────────── */
+.tgl{ display:inline-flex; align-items:center; gap:8px; background:none; border:0; padding:6px;
+  cursor:pointer; color:var(--soft); font:inherit; flex:none; }
+.tgl .track{ width:38px; height:21px; border-radius:999px; background:var(--track);
+  border:1px solid var(--track); position:relative; flex:none; }
+html.theme-anim .tgl .track{ transition:background .35s var(--ease), border-color .25s ease; }
+.tgl .knob{ position:absolute; top:2px; left:2px; width:15px; height:15px; border-radius:50%;
+  background:var(--knob); box-shadow:0 1px 2px rgba(0,0,0,.3); }
+html.theme-anim .tgl .knob{ transition:transform .35s var(--ease); }
+.tgl[aria-checked="true"] .track{ background:var(--azure); border-color:var(--azure); }
+.tgl[aria-checked="true"] .knob{ background:#fff; transform:translateX(17px); }
+.tgl:hover .track{ border-color:var(--ink); }
+.tgl:hover .knob{ transform:scale(1.08); }
+.tgl[aria-checked="true"]:hover .knob{ transform:translateX(17px) scale(1.08); }
+
+/* ── the dock: the sheet's nav, after the sheet has scrolled away ───────── */
+.dock{ position:fixed; z-index:50; top:16px; left:50%; transform:translate(-50%,-140%);
+  display:flex; align-items:center; gap:clamp(14px,1.8vw,32px); max-width:calc(100vw - 32px);
+  padding:8px 8px 8px 22px; border-radius:999px; background:var(--sheet);
+  box-shadow:0 8px 30px rgba(19,27,45,.13), 0 0 0 1px var(--hair);
+  transition:transform .5s var(--ease), opacity .4s var(--ease); opacity:0; }
+.dock[hidden]{ display:none; }
+.dock[data-on]{ transform:translate(-50%,0); opacity:1; }
+.dock a.nav{ font-family:var(--ui); font-size:16px; color:var(--muted); text-decoration:none;
+  transition:color .3s var(--ease); }
+.dock a.nav:hover{ color:var(--ink); }
+.dock .btn{ padding:9px 20px; font-size:16px; }
+
+/* ── the demo ───────────────────────────────────────────────────────────── */
+.frame{ border-radius:var(--radius-s); overflow:hidden;
+  background:radial-gradient(120% 90% at 50% 0%, #33333C 0%, #1F1F26 55%, #131317 100%); }
+.chrome{ display:flex; align-items:center; gap:9px; padding:8px 15px; background:rgba(0,0,0,.4);
+  border-bottom:1px solid rgba(255,255,255,.16); font-family:var(--pixel); font-size:12px; color:#E8E8EE; }
+.chrome img{ width:16px; height:16px; }
+#jumba-canvas{ display:block; width:100%; height:440px; }
+
+/* ── behaviours: the ramp, once, in order ───────────────────────────────── */
+.ramp{ display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:var(--gap);
+  margin-top:clamp(24px,2.8vw,40px); }
+.step{ border-radius:var(--radius); padding:clamp(20px,1.8vw,28px); min-height:270px;
+  display:flex; flex-direction:column; justify-content:space-between; gap:18px; }
+.step img{ width:60px; height:auto; flex:none; }
+.step p{ font-size:15.5px; opacity:.8; }
+/* The loudest step has no opacity to spare: navy on #0088FF is 4.9:1 at full
+   strength and drops below AA the moment it is faded. */
+.step.loud p{ opacity:1; }
+.step h3{ text-wrap:balance; }
+
+/* ── the odds ───────────────────────────────────────────────────────────── */
+.odds{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 clamp(32px,6vw,96px);
+  margin-top:clamp(24px,2.8vw,40px); border-top:1px solid var(--line); }
+.odds div{ display:flex; align-items:baseline; gap:18px; padding:11px 0; border-bottom:1px solid var(--line); }
+.odds b{ font-family:var(--ui); font-size:23px; font-weight:400; font-variant-numeric:tabular-nums;
+  color:var(--label); min-width:2.7em; }
+.odds span{ font-size:15.5px; }
+
+/* ── generic pair / list blocks ─────────────────────────────────────────── */
+.pair{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:clamp(24px,3.4vw,56px); }
+.pair.wide-left{ grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr); }
+.parade{ display:grid; grid-template-columns:repeat(8,minmax(0,1fr)); align-items:end; justify-items:center;
+  gap:clamp(10px,1.6vw,24px); margin-bottom:clamp(24px,3vw,40px); }
+.parade img{ width:auto; height:62px; }
+.facts{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 clamp(32px,6vw,96px);
+  margin-top:clamp(22px,2.6vw,36px); }
+.facts div{ padding:15px 0; border-top:1px solid var(--line); }
+.facts p:first-child{ font-family:var(--ui); font-size:19px; letter-spacing:.01em; }
+.facts p:last-child{ color:var(--muted); font-size:15.5px; margin-top:5px; max-width:40ch; }
+.steps{ list-style:none; margin:0; padding:0; }
+.steps li{ display:grid; grid-template-columns:auto 1fr; gap:20px; align-items:baseline;
+  padding:15px 0; border-top:1px solid var(--line); }
+.steps li:last-child{ border-bottom:1px solid var(--line); }
+.steps b{ font-family:var(--ui); font-weight:400; font-variant-numeric:tabular-nums; color:var(--soft); font-size:15px; }
+.steps p:first-of-type{ font-family:var(--ui); font-size:19px; letter-spacing:.01em; }
+.steps p:last-of-type{ color:var(--muted); font-size:15.5px; margin-top:4px; }
+details{ margin-top:clamp(22px,2.6vw,36px); padding-top:18px; border-top:1px solid var(--line); max-width:760px; }
+summary{ font-family:var(--ui); font-size:16px; color:var(--muted); cursor:pointer; }
+summary:hover{ color:var(--ink); }
+details pre{ margin-top:16px; }
+
+footer{ padding:clamp(30px,3.4vw,48px) max(var(--gap),2.5vw) 40px; margin-top:clamp(28px,4.5vw,64px);
+  max-width:1440px; margin-inline:auto; }
+.foot{ display:flex; flex-wrap:wrap; gap:16px 32px; align-items:center; justify-content:space-between;
+  border-top:1px solid var(--line); padding-top:26px; }
+.foot nav{ display:flex; flex-wrap:wrap; gap:12px 26px; font-family:var(--ui); font-size:16px; }
+.foot a{ color:var(--muted); text-decoration:none; transition:color .3s var(--ease); }
+.foot a:hover{ color:var(--ink); }
+
+/* ── motion: transform and opacity only, one curve for the whole page ───── */
+@keyframes rise{ from{ opacity:0; transform:translateY(14px) } to{ opacity:1; transform:none } }
+@keyframes bob{ 0%,100%{ transform:translateY(0) } 50%{ transform:translateY(-4px) } }
+[data-rise]{ animation:rise .85s var(--ease) both; }
+[data-bob]{ animation:bob 5.5s ease-in-out infinite; }
+
+/* ── narrower ───────────────────────────────────────────────────────────── */
+@media (max-width:1180px){
+  :root{ --radius:32px; }
+  .hero{ grid-template-columns:minmax(0,1fr) 290px; }
+  .bento{ min-height:0; }
+}
+@media (max-width:1040px){
+  .hero{ grid-template-columns:minmax(0,1fr); }
+  .rail{ grid-template-rows:none; grid-template-columns:repeat(3,minmax(0,1fr)); }
+  .rail .tall{ grid-column:auto; }
+  .wall{ grid-template-columns:repeat(4,1fr); }
+  .ramp{ grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .stair .w1{ left:24% }
+  /* The hero card goes full width rather than growing into a tall empty box. */
+  .bento{ grid-template-columns:repeat(3,minmax(0,1fr)); grid-template-rows:none; min-height:0; }
+  .cell-wrap.a{ grid-column:1 / -1; grid-row:auto; }
+  .cell-wrap.b,.cell-wrap.c,.cell-wrap.d{ grid-column:auto; grid-row:auto; min-height:250px; }
+}
 @media (max-width:820px){
-  [data-split]  { grid-template-columns:minmax(0,1fr) !important; }
-  [data-hero]   { grid-template-columns:minmax(0,1fr) !important; padding-block:clamp(26px,6vw,38px) clamp(30px,7vw,46px) !important; }
-  [data-heroart]{ grid-row:1 !important; justify-self:center !important; }
-  [data-heroco] { text-align:center !important; }
-  [data-heroact]{ justify-content:center !important; }
+  :root{ --radius:28px; --gap:16px; }
+  .bento{ grid-template-columns:1fr 1fr; }
+  .cell-wrap.d{ grid-column:1 / -1; min-height:200px; }
+  .pair,.pair.wide-left,.facts,.odds{ grid-template-columns:minmax(0,1fr); }
+  .odds div{ padding:10px 0 }
+  .parade{ grid-template-columns:repeat(4,minmax(0,1fr)); row-gap:18px; }
+  .hero-bar{ height:auto; margin:0; padding:2px 0 16px 0; flex-wrap:wrap; row-gap:10px; }
+  .hero-nav{ order:3; flex:1 1 100%; }
+  .sheet-body{ border-radius:var(--radius); }
+  /* The stair is a desktop flourish. Below this it would be four steps in a
+     stairwell too narrow to walk down, so the sheet just ends. */
+  .stair{ display:none; }
+  .dock a.nav{ display:none; }
 }
-@media (max-width:760px){ [data-grid="sprites"] { grid-template-columns:repeat(4,minmax(0,1fr)) !important } }
-@media (max-width:640px){ [data-odds] { grid-template-columns:minmax(0,1fr) !important } }
+@media (max-width:600px){
+  :root{ --notch:0px }       /* no bite, so no nub either */
+  body{ font-size:17px }
+  .nub{ display:none }
+  .cell-wrap.tr > .cell > :first-child{ margin-right:0 }
+  .cell-wrap.tl > .cell > :first-child{ align-self:auto }
+  .bento{ grid-template-columns:minmax(0,1fr) }
+  .cell-wrap.a{ grid-column:auto }
+  .cell-wrap.b,.cell-wrap.c,.cell-wrap.d{ min-height:0 }
+  .rail{ grid-template-columns:minmax(0,1fr) }
+  .ramp{ grid-template-columns:minmax(0,1fr) }
+  .step{ min-height:0 }
+  .wall{ grid-template-columns:repeat(4,1fr) }
+  #jumba-canvas{ height:330px }
+  .dock{ padding-left:16px }
+  .foot{ justify-content:flex-start }
+}
 
 @media (prefers-reduced-motion:reduce){
-  html { scroll-behavior:auto; }
-  [data-rise],[data-bob] { animation:none !important; }
-  * { transition-duration:.01ms !important; }
+  html{ scroll-behavior:auto }
+  [data-rise],[data-bob]{ animation:none !important }
+  *{ transition-duration:.01ms !important }
 }
-/* Hover/active states. The authored file expressed these as Deco style-hover
-   attributes; support.js is not deployed, so they are real CSS here. */
-.lnk { transition:color .35s cubic-bezier(.16,1,.3,1); }
-.lnk:hover { color:var(--ink); }
-.srclnk:hover { color:var(--ink); border-color:var(--ink); }
-.btn:hover { background:var(--accent-fill-hover); transform:translateY(-2px); }
-.btn:active { transform:scale(0.98); }
 </style>
 </head>
 
@@ -167,208 +512,325 @@ a { color:var(--accent); text-underline-offset:3px; }
      bottom writes it into every [data-version-label] on the page. Renaming or
      dropping it fails the release. -->
 <body data-version="v4.2">
-<div style="background:var(--paper); color:var(--ink); font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif; font-size:19px; line-height:1.62">
 
-  <header style="position:sticky; top:0; z-index:40; display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px 24px; padding:14px max(22px,5vw); background:var(--paper-blur); backdrop-filter:blur(12px); border-bottom:1px solid var(--line)">
-    <a href="#top" style="font-family:'Avenir Condensed Hand',system-ui,sans-serif; font-size:15px; font-weight:700; letter-spacing:0.2em; text-transform:uppercase; color:var(--ink); text-decoration:none">Jumbini</a>
-    <nav style="display:flex; align-items:center; flex-wrap:wrap; gap:28px; font-family:'Avenir Condensed Hand',system-ui,sans-serif; font-size:15px">
-      <a class="lnk" href="#what-he-does" style="color: var(--muted); text-decoration: none; font-weight: 700">What he does</a>
-      <a class="lnk" href="#your-own" style="color: var(--muted); text-decoration: none; font-weight: 700">Your own dog</a>
-      <a class="lnk" href="#privacy" style="color: var(--muted); text-decoration: none; font-weight: 700">What he doesn't</a>
-      <a class="lnk" href="#install" style="color: var(--muted); text-decoration: none; font-weight: 700">Install</a>
-    </nav>
-    <button type="button" class="tgl" data-theme-toggle role="switch" aria-checked="false" aria-label="Dark mode">
-      <span class="track" aria-hidden="true"><span class="knob"></span></span>
-    </button>
-  </header>
+<!-- The nub, transcribed rect for rect from the arrow in jumbini-website.fig.
+     One symbol, used everywhere, so it costs 14x16 rectangles exactly once. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><symbol id="px-arrow" viewBox="0 0 14 16" shape-rendering="crispEdges"><path d="M6 0h2v13H6zM0 7h1v1H0zM13 7h1v1h-1zM0 8h2v1H0zM12 8h2v1h-2zM0 9h3v1H0zM11 9h3v1h-3zM1 10h3v1H1zM10 10h3v1h-3zM2 11h3v1H2zM9 11h3v1H9zM3 12h8v1H3zM4 13h6v1H4zM5 14h4v1H5zM6 15h2v1H6z"/></symbol></svg>
 
-  <main id="top">
+<div class="bloom" aria-hidden="true"></div>
+<a class="skip" href="#top">Skip to content</a>
 
-    <!-- HERO. Asymmetric per VARIANCE 7: copy sits left of centre, the dog low and right,
-         and the empty zone between them is the point. -->
-    <section data-hero="grid" style="max-width:1200px; margin-inline:auto; padding:clamp(34px,4vw,58px) max(22px,5vw) clamp(40px,5vw,68px); display:grid; grid-template-columns:minmax(0,1.35fr) minmax(0,0.65fr); gap:clamp(28px,4vw,56px); align-items:end">
+<div class="dock" data-dock hidden>
+  <a class="wordmark" href="#top">Jumbini</a>
+  <a class="nav" href="#what-he-does">What he does</a>
+  <a class="nav" href="#your-own">Your own dog</a>
+  <a class="nav" href="#privacy">What he doesn't</a>
+  <button type="button" class="tgl" data-theme-toggle role="switch" aria-checked="false" aria-label="Dark mode">
+    <span class="track" aria-hidden="true"><span class="knob"></span></span>
+  </button>
+  <a class="btn" href="https://github.com/abjumb/jumbini/releases/latest">Download</a>
+</div>
 
-      <div data-heroco="copy" data-rise style="animation-delay:.05s">
-        <h1 style="font-family:'Lazy Dog','Silkscreen',ui-monospace,monospace; font-size:clamp(38px,6.2vw,74px); line-height:1.06; margin:0; max-width:14ch">Something small, quietly alive.</h1>
-        <p style="max-width:44ch; margin:20px 0 0; color:var(--muted); font-size:19px">A hand-drawn dog who lives on your desktop. He walks on your windows, naps when you step away, and never asks you for anything.</p>
+<div class="shell">
 
-        <div data-heroact="actions" style="display:flex; flex-wrap:wrap; align-items:center; gap:24px; margin-top:28px">
-          <a class="btn" href="https://github.com/abjumb/jumbini/releases/latest" style="display:inline-flex; align-items:center; gap:10px; font-family:'Avenir Condensed Hand',system-ui,sans-serif; font-size:19px; font-weight:700; text-decoration:none; padding:14px 30px; border-radius:999px; background:var(--accent-fill); color:var(--on-accent); transition:transform .35s cubic-bezier(.16,1,.3,1), background .35s cubic-bezier(.16,1,.3,1)">
-            <svg viewBox="0 0 24 24" aria-hidden="true" style="width:1em; height:1em; flex:none; fill:none; stroke:currentColor; stroke-width:2.2; stroke-linecap:round; stroke-linejoin:round"><path d="M12 3.5v11m0 0 4.5-4.5M12 14.5 7.5 10M4.5 19.5h15"></path></svg>
-            Download
+  <!-- HERO. The sheet, its bitten corner, its stair, and the rail beside it,
+       laid out exactly as the file draws them. -->
+  <section class="hero" id="top">
+
+    <div class="hero-sheet">
+      <div class="sheet-body cut cut-tl">
+
+        <header class="hero-bar">
+          <a class="wordmark" href="#top">Jumbini</a>
+          <nav class="hero-nav">
+            <a href="#what-he-does">What he does</a>
+            <a href="#your-own">Your own dog</a>
+            <a href="#privacy">What he doesn't</a>
+            <a href="#install">Install</a>
+          </nav>
+          <button type="button" class="tgl" data-theme-toggle role="switch" aria-checked="false" aria-label="Dark mode">
+            <span class="track" aria-hidden="true"><span class="knob"></span></span>
+          </button>
+        </header>
+
+        <div class="bento">
+
+          <div class="cell-wrap a tr" data-rise style="animation-delay:.05s">
+            <div class="cell cut cut-tr tone-tint">
+              <p class="eyebrow">Free &middot; Open source &middot; macOS</p>
+              <div>
+                <h1>Something small, quietly alive.</h1>
+                <p class="lede" style="max-width:42ch; margin-top:20px">A hand-drawn dog who lives on your desktop. He walks on your windows, naps when you leave, and wants nothing.</p>
+                <div class="hero-actions">
+                  <a class="btn" href="https://github.com/abjumb/jumbini/releases/latest">
+                    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-2"></path><path d="M7 11l5 5l5 -5"></path><path d="M12 4l0 12"></path></svg>
+                    Download
+                  </a>
+                  <a class="linkline" href="https://github.com/abjumb/jumbini">Read the source</a>
+                </div>
+              </div>
+            </div>
+            <a class="nub" href="#demo" aria-label="Watch him wander"><svg><use href="#px-arrow"/></svg></a>
+          </div>
+
+          <div class="cell-wrap b" data-rise style="animation-delay:.13s">
+            <div class="cell tone-azure">
+              <p class="claims">No network.<br>No permissions.<br>No account.<br>No price.</p>
+              <p class="claims-foot">He is a drawing on a window, and that is all he needs to be.</p>
+            </div>
+          </div>
+
+          <a class="cell-wrap c tl" href="#what-he-does" data-rise style="animation-delay:.21s">
+            <div class="cell cut cut-tl tone-sky-l">
+              <img class="cell-sprite" src="assets/jumba/pounce_south-east.png" alt="" width="64" height="64">
+              <div>
+                <p class="cell-title">He runs his own life</p>
+                <p class="lede" style="margin-top:8px; font-size:15.5px">Every few seconds he rolls the dice and picks something to do.</p>
+              </div>
+            </div>
+            <span class="nub" aria-hidden="true"><svg><use href="#px-arrow"/></svg></span>
           </a>
-          <a class="srclnk lnk" href="https://github.com/abjumb/jumbini" style="font-family:'Avenir Condensed Hand',system-ui,sans-serif; font-size:19px; font-weight:700; color:var(--muted); text-decoration:none; border-bottom:1px solid var(--line); padding-bottom:2px; transition:color .35s cubic-bezier(.16,1,.3,1), border-color .35s cubic-bezier(.16,1,.3,1)">Source</a>
+
+          <a class="cell-wrap d tr" href="#your-own" data-rise style="animation-delay:.29s">
+            <div class="cell cut cut-tr tone-sky">
+              <img class="cell-sprite" data-bob src="assets/jumba/shaggy_idle_south-east.png" alt="" width="64" height="64">
+              <div>
+                <p class="cell-title">Or bring your own dog</p>
+                <p class="lede" style="margin-top:8px; font-size:15.5px">334 sprites make a coat. Draw one, or hand three photos to the optional generator.</p>
+              </div>
+            </div>
+            <span class="nub" aria-hidden="true"><svg><use href="#px-arrow"/></svg></span>
+          </a>
+
         </div>
+
+        <p class="stair-note">The tops of your windows are just more steps to him.</p>
       </div>
 
-      <div data-heroart="art" data-rise style="animation-delay:.25s; justify-self:center; position:relative; padding-bottom:8px">
-        <img data-bob src="assets/jumba/idle_south.png" alt="Jumba, a tricolor spaniel mix, drawn in pixel art" width="120" height="120" style="position:relative; width:120px; height:120px; margin-inline:auto">
-        <div style="position:relative; width:150px; height:1px; margin:12px auto 0; background:linear-gradient(90deg, transparent, var(--hair), transparent)"></div>
+      <!-- The sheet's bottom edge, and the four dogs walking down it. -->
+      <div class="stair" aria-hidden="true">
+        <i class="t2"></i><i class="t3"></i><i class="t4"></i>
+        <u class="i2"></u><u class="i3"></u><u class="i4"></u>
+        <img class="w1" src="assets/jumba/idle_south-east.png" alt="" width="64" height="64" loading="lazy">
+        <img class="w2" src="assets/jumba/run1_east.png" alt="" width="64" height="64" loading="lazy">
+        <img class="w3" src="assets/jumba/peek_south-east.png" alt="" width="64" height="64" loading="lazy">
+        <img class="w4" src="assets/jumba/sleep_south.png" alt="" width="64" height="64" loading="lazy">
       </div>
-    </section>
+    </div>
 
-    <!-- The one framed moment on the page. -->
-<section style="max-width:1120px; margin-inline:auto; padding:0 max(22px,5vw) clamp(44px,5.5vw,76px)">
-      <div style="border:3px solid var(--frame); border-radius:10px; box-shadow:10px 10px 0 var(--frame-shadow); overflow:hidden; background:radial-gradient(120% 90% at 50% 0%, #33333C 0%, #1F1F26 55%, #131317 100%)">
-        <div style="display:flex; align-items:center; gap:9px; padding:7px 14px; background:rgba(0,0,0,0.4); border-bottom:1px solid rgba(255,255,255,0.16); font-family:'Silkscreen',ui-monospace,monospace; font-size:12px; color:#E8E8EE">
-          <img src="assets/page/img2.png" alt="" width="16" height="16" style="width:16px; height:16px">
+    <aside class="rail">
+      <div class="card">
+        <p class="eyebrow">Runs on</p>
+        <p class="spec">
+          <b>macOS 14 Sonoma or newer</b>
+          <span>Apple Silicon. Signed and notarized, so it opens on first launch.</span>
+        </p>
+        <p class="small" data-version-label hidden></p>
+      </div>
+
+      <a class="card" href="https://github.com/abjumb/jumbini">
+        <span class="card-row">Read the source
+          <svg class="px-inline" viewBox="0 0 14 16" aria-hidden="true"><use href="#px-arrow"/></svg>
+        </span>
+      </a>
+
+      <div class="card tall">
+        <p class="eyebrow">Every frame drawn by hand</p>
+        <div class="wall">
+          <img src="assets/jumba/sit_south.png" alt="Jumba sitting" width="64" height="72" loading="lazy">
+          <img src="assets/jumba/sniff_east.png" alt="Jumba sniffing" width="60" height="60" loading="lazy">
+          <img src="assets/jumba/bark_east.png" alt="Jumba barking" width="60" height="60" loading="lazy">
+          <img src="assets/jumba/pounce_south-east.png" alt="Jumba pouncing" width="60" height="60" loading="lazy">
+          <img src="assets/jumba/highfive_south.png" alt="Jumba raising a paw" width="60" height="60" loading="lazy">
+          <img src="assets/jumba/playdead_south.png" alt="Jumba playing dead" width="60" height="60" loading="lazy">
+          <img src="assets/jumba/peek_south.png" alt="Jumba peeking over an edge" width="60" height="60" loading="lazy">
+          <img src="assets/jumba/idle_north.png" alt="Jumba seen from behind" width="60" height="60" loading="lazy">
+          <img src="assets/jumba/sleep_south.png" alt="Jumba asleep" width="60" height="60" loading="lazy">
+        </div>
+        <p class="small">Seventeen states, eight directions, no tweening.</p>
+      </div>
+    </aside>
+  </section>
+
+  <!-- THE DEMO. The one dark surface on the page. -->
+  <section class="band" id="demo">
+    <div class="sheet">
+      <div class="frame">
+        <div class="chrome">
+          <img src="assets/page/img2.png" alt="" width="16" height="16">
           <span>Jumbini</span>
           <span style="flex:1"></span>
           <span data-clock="true">3:42 PM</span>
         </div>
-        <canvas id="jumba-canvas" role="img" aria-label="An animated pixel-art dog wandering a mock desktop, climbing onto the title bars of two windows, and following the mouse pointer." style="display:block; width:100%; height:440px"></canvas>
+        <canvas id="jumba-canvas" role="img" aria-label="An animated pixel-art dog wandering a mock desktop, climbing onto the title bars of two windows, and following the mouse pointer."></canvas>
       </div>
-      <p style="margin:20px auto 0; max-width:52ch; text-align:center; color:var(--muted-soft); font-size:15px">Move your pointer in here and he will come and sniff it.</p>
-    </section>
-<!-- Behaviours as a horizontal accordion. No cards. -->
-    <section id="what-he-does" style="padding:0 0 clamp(44px,5.5vw,76px)">
-      <div style="max-width:1200px; margin-inline:auto; padding:0 max(22px,5vw) clamp(22px,2.6vw,34px)">
-        <h2 style="font-family:'Lazy Dog','Silkscreen',ui-monospace,monospace; font-size:clamp(28px,4.2vw,48px); line-height:1.12; margin:0; max-width:16ch">He runs his own life.</h2>
-        <p style="max-width:52ch; margin:16px 0 0; color:var(--muted); font-size:19px">Every few seconds of standing around, he rolls the dice and picks something to do.</p>
+      <p class="small" style="margin-top:18px; text-align:center">Move your pointer in here and he will come and sniff it.</p>
+    </div>
+  </section>
+
+  <!-- WHAT HE DOES. Four behaviours, walked up the ramp from lightest to
+       loudest, because they get less polite in that order. -->
+  <section class="band" id="what-he-does">
+    <div class="sheet">
+      <div class="band-head">
+        <h2>He runs his own life.</h2>
+        <p class="lede">Every few seconds of standing around, he rolls the dice and picks something to do. Nothing here is scripted, and none of it asks you first.</p>
       </div>
 
-      <div style="padding:0 max(22px,5vw)">
-      <div class="acc">
-        <article class="slice">
-          <img src="assets/jumba/sniff_east.png" alt="Jumba with his nose to the ground" width="64" height="64" loading="lazy" style="width:64px; height:64px">
-          <h3 style="font-family:'Lazy Dog','Silkscreen',ui-monospace,monospace; font-size:24px; line-height:1.16">He follows your cursor</h3>
-          <p class="say"><span>He trots over, drops his nose, and tracks it. Six times out of ten that turns into a stalk, a freeze, and a pounce.</span></p>
-        </article>
-        <article class="slice">
-          <img src="assets/jumba/peek_south.png" alt="Jumba leaning over an edge" width="64" height="64" loading="lazy" style="width:64px; height:64px">
-          <h3 style="font-family:'Lazy Dog','Silkscreen',ui-monospace,monospace; font-size:24px; line-height:1.16">He climbs your windows</h3>
-          <p class="say"><span>Not the edge of the screen. Your actual windows. Move one and he rides it. Move it hard and he falls off.</span></p>
-        </article>
-        <article class="slice">
-          <img src="assets/jumba/run1_east.png" alt="Jumba running" width="64" height="64" loading="lazy" style="width:64px; height:64px">
-          <h3 style="font-family:'Lazy Dog','Silkscreen',ui-monospace,monospace; font-size:24px; line-height:1.16">He reads the room</h3>
-          <p class="say"><span>Machine runs hot and he gets the zoomies. Battery drops and he lies down about it. He never tells you either way.</span></p>
-        </article>
-        <article class="slice">
-          <img src="assets/jumba/sleep_south.png" alt="Jumba curled up asleep" width="64" height="64" loading="lazy" style="width:64px; height:64px">
-          <h3 style="font-family:'Lazy Dog','Silkscreen',ui-monospace,monospace; font-size:24px; line-height:1.16">He sleeps when you go</h3>
-          <p class="say"><span>Two minutes without input and he curls up wherever he happens to be standing.</span></p>
-        </article>
-      </div>
-      </div>
-
-      <div data-odds style="max-width:1200px; margin:clamp(26px,3.2vw,42px) auto 0; padding:0 max(22px,5vw); display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 clamp(40px,7vw,110px)">
-        <div style="display:contents">
-          <div style="display:flex; align-items:baseline; gap:18px; padding:10px 0; border-top:1px solid var(--line)"><span style="font-family:'Avenir Condensed Hand',system-ui,sans-serif; font-size:24px; font-weight:700; font-variant-numeric:tabular-nums; color:var(--accent); min-width:2.6em">40%</span><span style="font-size:15px">Wander somewhere new</span></div>
-          <div style="display:flex; align-items:baseline; gap:18px; padding:10px 0; border-top:1px solid var(--line)"><span style="font-family:'Avenir Condensed Hand',system-ui,sans-serif; font-size:24px; font-weight:700; font-variant-numeric:tabular-nums; color:var(--accent); min-width:2.6em">15%</span><span style="font-size:15px">Nap, in his bed if he has one</span></div>
-          <div style="display:flex; align-items:baseline; gap:18px; padding:10px 0; border-top:1px solid var(--line)"><span style="font-family:'Avenir Condensed Hand',system-ui,sans-serif; font-size:24px; font-weight:700; font-variant-numeric:tabular-nums; color:var(--accent); min-width:2.6em">12%</span><span style="font-size:15px">Sniff your cursor around the screen</span></div>
-          <div style="display:flex; align-items:baseline; gap:18px; padding:10px 0; border-top:1px solid var(--line)"><span style="font-family:'Avenir Condensed Hand',system-ui,sans-serif; font-size:24px; font-weight:700; font-variant-numeric:tabular-nums; color:var(--accent); min-width:2.6em">10%</span><span style="font-size:15px">Spin in place, for no reason</span></div>
-          <div style="display:flex; align-items:baseline; gap:18px; padding:10px 0; border-top:1px solid var(--line)"><span style="font-family:'Avenir Condensed Hand',system-ui,sans-serif; font-size:24px; font-weight:700; font-variant-numeric:tabular-nums; color:var(--accent); min-width:2.6em">8%</span><span style="font-size:15px">Zoomies</span></div>
-          <div style="display:flex; align-items:baseline; gap:18px; padding:10px 0; border-top:1px solid var(--line)"><span style="font-family:'Avenir Condensed Hand',system-ui,sans-serif; font-size:24px; font-weight:700; font-variant-numeric:tabular-nums; color:var(--accent); min-width:2.6em">6%</span><span style="font-size:15px">Hunch over and do his business</span></div>
-          <div style="display:flex; align-items:baseline; gap:18px; padding:10px 0; border-top:1px solid var(--line); border-bottom:1px solid var(--line)"><span style="font-family:'Avenir Condensed Hand',system-ui,sans-serif; font-size:24px; font-weight:700; font-variant-numeric:tabular-nums; color:var(--accent); min-width:2.6em">5%</span><span style="font-size:15px">Climb onto one of your windows</span></div>
-          <div style="display:flex; align-items:baseline; gap:18px; padding:10px 0; border-top:1px solid var(--line); border-bottom:1px solid var(--line)"><span style="font-family:'Avenir Condensed Hand',system-ui,sans-serif; font-size:24px; font-weight:700; font-variant-numeric:tabular-nums; color:var(--accent); min-width:2.6em">4%</span><span style="font-size:15px">Bark at nothing in particular</span></div>
-        </div>
-      </div>
-    </section>
-
-    <!-- Make your own, elevated onto its own surface. The sprite row now lives here,
-         where it argues for the feature instead of sitting in a section of its own. -->
-<section id="your-own" style="background:var(--paper-deep); border-block:1px solid var(--line); padding:clamp(44px,5.5vw,76px) max(22px,5vw)">
-      <div style="max-width:1200px; margin-inline:auto">
-<div data-grid="sprites" style="display:grid; grid-template-columns:repeat(8,minmax(0,1fr)); justify-items:center; align-items:end; gap:clamp(12px,2vw,28px); margin-bottom:clamp(26px,3.2vw,42px)">
-          <img src="assets/jumba/sit_south.png" alt="Jumba sitting" width="64" height="72" loading="lazy" style="width:auto; height:66px">
-          <img src="assets/jumba/sniff_east.png" alt="Jumba sniffing" width="60" height="60" loading="lazy" style="width:60px; height:60px">
-          <img src="assets/jumba/run1_east.png" alt="Jumba running" width="60" height="60" loading="lazy" style="width:60px; height:60px">
-          <img src="assets/jumba/bark_east.png" alt="Jumba barking" width="60" height="60" loading="lazy" style="width:60px; height:60px">
-          <img src="assets/jumba/pounce_south-east.png" alt="Jumba pouncing" width="60" height="60" loading="lazy" style="width:60px; height:60px">
-          <img src="assets/jumba/highfive_south.png" alt="Jumba raising a paw" width="60" height="60" loading="lazy" style="width:60px; height:60px">
-          <img src="assets/jumba/playdead_south.png" alt="Jumba playing dead" width="60" height="60" loading="lazy" style="width:60px; height:60px">
-          <img src="assets/jumba/shaggy_idle_south-east.png" alt="Jumba in his shaggy winter coat" width="60" height="60" loading="lazy" style="width:60px; height:60px">
-        </div>
-<div data-split="pair" style="display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:clamp(24px,4vw,64px); align-items:end; margin-bottom:clamp(24px,3vw,40px)">
-          <h2 style="font-family:'Lazy Dog','Silkscreen',ui-monospace,monospace; font-size:clamp(30px,4.6vw,54px); line-height:1.1; margin:0; max-width:14ch">Or bring your own dog.</h2>
-          <p style="max-width:50ch; margin:0; color:var(--muted); font-size:19px">A coat is 334 sprites across seventeen states and eight directions. Jumba is the one you get. If you want a different one there are two ways, and both are off until you turn them on.</p>
-        </div>
-
-        <div data-split="pair" style="display:grid; grid-template-columns:minmax(0,1.15fr) minmax(0,0.85fr); gap:clamp(26px,4vw,64px); align-items:start; padding-top:clamp(22px,3vw,36px); border-top:1px solid var(--line)">
+      <div class="ramp">
+        <article class="step" style="background:var(--tint); color:var(--tint-ink)">
+          <img src="assets/jumba/sniff_east.png" alt="Jumba with his nose to the ground" width="64" height="64" loading="lazy">
           <div>
-            <p style="font-family:'Avenir Condensed Hand',system-ui,sans-serif; font-size:15px; font-weight:700; letter-spacing:0.16em; text-transform:uppercase; color:var(--accent); margin:0 0 12px">From three photos</p>
-            <p style="color:var(--muted); font-size:19px; max-width:48ch">The optional <strong style="color:var(--ink); font-weight:600">Make Your Own Dog</strong> feature calls the Pixellab API to turn three photos into a coat. Skip it and the app makes no network calls at all. No key ships in the binary, so it stays inert until you supply one.</p>
-            <pre style="font-family:ui-monospace,'SF Mono',Menlo,monospace; background:var(--paper); border:1px solid var(--line); color:var(--ink); padding:14px 18px; border-radius:8px; overflow-x:auto; font-size:15px; line-height:1.7; margin:18px 0 0; white-space:pre-wrap; overflow-wrap:anywhere">security add-generic-password \
-  -s ai.pixellab.api -a Jumbini -w &lt;your-key&gt;</pre>
+            <h3>He follows your cursor</h3>
+            <p>He trots over, drops his nose, and tracks it. Six times out of ten that turns into a stalk, a freeze, and a pounce.</p>
           </div>
+        </article>
+        <article class="step" style="background:var(--sky-l); color:var(--sky-l-ink)">
+          <img src="assets/jumba/peek_south.png" alt="Jumba leaning over an edge" width="64" height="64" loading="lazy">
           <div>
-            <p style="font-family:'Avenir Condensed Hand',system-ui,sans-serif; font-size:15px; font-weight:700; letter-spacing:0.16em; text-transform:uppercase; color:var(--accent); margin:0 0 12px">Or draw one yourself</p>
-            <p style="color:var(--muted); font-size:19px; max-width:44ch">Drop a folder of sprites into the coats directory and it appears in the Coat menu next to Classic and Shaggy. Pick Classic to get Jumba back, in one click.</p>
-            <pre style="font-family:ui-monospace,'SF Mono',Menlo,monospace; background:var(--paper); border:1px solid var(--line); color:var(--ink); padding:14px 18px; border-radius:8px; overflow-x:auto; font-size:15px; line-height:1.7; margin:18px 0 0; white-space:pre-wrap; overflow-wrap:anywhere">~/Library/Application Support/Jumbini/coats/</pre>
-            <p style="margin:14px 0 0; font-size:15px; color:var(--muted-soft)"><a href="https://github.com/abjumb/jumbini/blob/main/COATS.md">COATS.md</a> has the format.</p>
+            <h3>He climbs your windows</h3>
+            <p>Not the edge of the screen. Your actual windows. Move one and he rides it. Move it hard and he falls off.</p>
           </div>
-        </div>
-
+        </article>
+        <article class="step" style="background:var(--sky); color:var(--sky-ink)">
+          <img src="assets/jumba/run1_east.png" alt="Jumba running" width="64" height="64" loading="lazy">
+          <div>
+            <h3>He reads the room</h3>
+            <p>Machine runs hot and he gets the zoomies. Battery drops and he lies down about it. He never tells you either way.</p>
+          </div>
+        </article>
+        <article class="step loud" style="background:var(--azure); color:var(--azure-ink)">
+          <img src="assets/jumba/sleep_south.png" alt="Jumba curled up asleep" width="64" height="64" loading="lazy">
+          <div>
+            <h3>He sleeps when you go</h3>
+            <p>Two minutes without input and he curls up wherever he happens to be standing.</p>
+          </div>
+        </article>
       </div>
-    </section>
-<!-- The page's one moment of contrast. Kept calm: air, not density. -->
-    <section id="privacy" style="background:var(--band); color:var(--band-ink); border-block:1px solid var(--band-line); padding:clamp(46px,5.5vw,76px) max(22px,5vw)">
-      <div style="max-width:1200px; margin-inline:auto">
-        <h2 style="font-family:'Lazy Dog','Silkscreen',ui-monospace,monospace; font-size:clamp(28px,4.2vw,48px); line-height:1.12; margin:0; max-width:15ch; color:var(--band-ink)">What he doesn't do.</h2>
-        <div data-split="pair" style="display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:0 clamp(40px,7vw,110px); margin-top:clamp(24px,3vw,40px)">
-          <div style="padding:14px 0; border-top:1px solid var(--band-line)"><p style="color:var(--band-ink); font-size:19px; font-weight:600">No network</p><p style="color:var(--band-muted); font-size:15px; margin-top:6px; max-width:40ch">The hand-drawn dog never phones home. Make Your Own Dog is the one exception, and it is opt-in.</p></div>
-          <div style="padding:14px 0; border-top:1px solid var(--band-line)"><p style="color:var(--band-ink); font-size:19px; font-weight:600">No permissions</p><p style="color:var(--band-muted); font-size:15px; margin-top:6px; max-width:40ch">No Accessibility, no Screen Recording, no Full Disk Access, no Input Monitoring.</p></div>
-          <div style="padding:14px 0; border-top:1px solid var(--band-line)"><p style="color:var(--band-ink); font-size:19px; font-weight:600">No account, no telemetry</p><p style="color:var(--band-muted); font-size:15px; margin-top:6px; max-width:40ch">Nothing to sign into, nothing measured, nothing sent anywhere.</p></div>
-          <div style="padding:14px 0; border-top:1px solid var(--band-line)"><p style="color:var(--band-ink); font-size:19px; font-weight:600">No purchases</p><p style="color:var(--band-muted); font-size:15px; margin-top:6px; max-width:40ch">No cosmetic packs, no subscription, no ads. 327 tests and a notarized build.</p></div>
-        </div>
-      </div>
-    </section>
 
-    <!-- Install as a sequence, not three equal cards. -->
-    <section id="install" style="max-width:1200px; margin-inline:auto; padding:clamp(46px,5.5vw,76px) max(22px,5vw)">
-      <div data-split="pair" style="display:grid; grid-template-columns:minmax(0,0.9fr) minmax(0,1.1fr); gap:clamp(26px,4vw,64px); align-items:start">
+      <p class="eyebrow" style="margin-top:clamp(28px,3.2vw,44px)">What he picks, and how often</p>
+      <div class="odds">
+        <div><b>40%</b><span>Wander somewhere new</span></div>
+        <div><b>15%</b><span>Nap, in his bed if he has one</span></div>
+        <div><b>12%</b><span>Sniff your cursor around the screen</span></div>
+        <div><b>10%</b><span>Spin in place, for no reason</span></div>
+        <div><b>8%</b><span>Zoomies</span></div>
+        <div><b>6%</b><span>Hunch over and do his business</span></div>
+        <div><b>5%</b><span>Climb onto one of your windows</span></div>
+        <div><b>4%</b><span>Bark at nothing in particular</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- YOUR OWN DOG. -->
+  <section class="band" id="your-own">
+    <div class="sheet">
+      <div class="parade">
+        <img src="assets/jumba/sit_south.png" alt="Jumba sitting" width="64" height="72" loading="lazy">
+        <img src="assets/jumba/sniff_east.png" alt="Jumba sniffing" width="60" height="60" loading="lazy">
+        <img src="assets/jumba/run1_east.png" alt="Jumba running" width="60" height="60" loading="lazy">
+        <img src="assets/jumba/bark_east.png" alt="Jumba barking" width="60" height="60" loading="lazy">
+        <img src="assets/jumba/pounce_south-east.png" alt="Jumba pouncing" width="60" height="60" loading="lazy">
+        <img src="assets/jumba/highfive_south.png" alt="Jumba raising a paw" width="60" height="60" loading="lazy">
+        <img src="assets/jumba/playdead_south.png" alt="Jumba playing dead" width="60" height="60" loading="lazy">
+        <img src="assets/jumba/shaggy_idle_south-east.png" alt="Jumba in his shaggy winter coat" width="60" height="60" loading="lazy">
+      </div>
+
+      <div class="pair" style="align-items:end; margin-bottom:clamp(24px,3vw,40px)">
+        <h2 style="max-width:14ch">Or bring your own dog.</h2>
+        <p class="lede" style="max-width:50ch">A coat is 334 sprites across seventeen states and eight directions. Jumba is the one you get. If you want a different one there are two ways, and both are off until you turn them on.</p>
+      </div>
+
+      <div class="pair wide-left" style="align-items:start; padding-top:clamp(20px,2.6vw,34px); border-top:1px solid var(--line)">
         <div>
-          <h2 style="font-family:'Lazy Dog','Silkscreen',ui-monospace,monospace; font-size:clamp(28px,4.2vw,48px); line-height:1.12; margin:0; max-width:12ch">Bring him home.</h2>
-          <p style="max-width:38ch; margin:16px 0 24px; color:var(--muted); font-size:19px">macOS 14 (Sonoma) or newer, Apple Silicon. Signed and notarized, so it opens on first launch.</p>
-          <a class="btn" href="https://github.com/abjumb/jumbini/releases/latest" style="display:inline-flex; align-items:center; gap:10px; font-family:'Avenir Condensed Hand',system-ui,sans-serif; font-size:19px; font-weight:700; text-decoration:none; padding:14px 30px; border-radius:999px; background:var(--accent-fill); color:var(--on-accent); transition:transform .35s cubic-bezier(.16,1,.3,1), background .35s cubic-bezier(.16,1,.3,1)">
-            <svg viewBox="0 0 24 24" aria-hidden="true" style="width:1em; height:1em; flex:none; fill:none; stroke:currentColor; stroke-width:2.2; stroke-linecap:round; stroke-linejoin:round"><path d="M12 3.5v11m0 0 4.5-4.5M12 14.5 7.5 10M4.5 19.5h15"></path></svg>
+          <p class="eyebrow">From three photos</p>
+          <p class="lede" style="max-width:48ch; margin-top:12px">The optional <b style="color:var(--ink); font-weight:600">Make Your Own Dog</b> feature calls the Pixellab API to turn three photos into a coat. Skip it and the app makes no network calls at all. No key ships in the binary, so it stays inert until you supply one.</p>
+          <pre style="margin-top:18px">security add-generic-password \
+  -s ai.pixellab.api -a Jumbini -w &lt;your-key&gt;</pre>
+        </div>
+        <div>
+          <p class="eyebrow">Or draw one yourself</p>
+          <p class="lede" style="max-width:44ch; margin-top:12px">Drop a folder of sprites into the coats directory and it appears in the Coat menu next to Classic and Shaggy. Pick Classic to get Jumba back, in one click.</p>
+          <pre style="margin-top:18px">~/Library/Application Support/Jumbini/coats/</pre>
+          <p class="small" style="margin-top:14px"><a href="https://github.com/abjumb/jumbini/blob/main/COATS.md">COATS.md</a> has the format.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- WHAT HE DOESN'T. -->
+  <section class="band" id="privacy">
+    <div class="sheet">
+      <div class="band-head">
+        <h2>What he doesn't do.</h2>
+        <p class="lede">The short version is on the blue card at the top. This is the long one.</p>
+      </div>
+      <div class="facts">
+        <div>
+          <p>No network</p>
+          <p>The hand-drawn dog never phones home. Make Your Own Dog is the one exception, and it is opt-in.</p>
+        </div>
+        <div>
+          <p>No permissions</p>
+          <p>No Accessibility, no Screen Recording, no Full Disk Access, no Input Monitoring.</p>
+        </div>
+        <div>
+          <p>No account, no telemetry</p>
+          <p>Nothing to sign into, nothing measured, nothing sent anywhere.</p>
+        </div>
+        <div>
+          <p>No purchases</p>
+          <p>No cosmetic packs, no subscription, no ads. 327 tests and a notarized build.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- INSTALL. Numbered, because this one actually is a sequence. -->
+  <section class="band" id="install">
+    <div class="sheet">
+      <div class="pair" style="align-items:start">
+        <div>
+          <h2 style="max-width:12ch">Bring him home.</h2>
+          <p class="lede" style="max-width:38ch; margin:16px 0 26px">macOS 14 (Sonoma) or newer, Apple Silicon. Signed and notarized, so it opens on first launch.</p>
+          <a class="btn" href="https://github.com/abjumb/jumbini/releases/latest">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-2"></path><path d="M7 11l5 5l5 -5"></path><path d="M12 4l0 12"></path></svg>
             Download
           </a>
-          <p data-version-label hidden style="margin:12px 0 0; font-size:15px; color:var(--muted-soft)"></p>
+          <p class="small" data-version-label hidden style="margin-top:12px"></p>
         </div>
 
-        <ol style="list-style:none; margin:0; padding:0; counter-reset:step">
-          <li style="counter-increment:step; display:grid; grid-template-columns:auto 1fr; gap:20px; align-items:baseline; padding:15px 0; border-top:1px solid var(--line)">
-            <span style="font-family:'Silkscreen',ui-monospace,monospace; font-size:12px; color:var(--muted-soft)">01</span>
-            <div><p style="font-size:19px; font-weight:600">Download the disk image</p><p style="color:var(--muted); font-size:15px; margin-top:4px">Grab <code style="font-family:ui-monospace,Menlo,monospace; font-size:0.88em; background:var(--paper-deep); border-radius:4px; padding:0.12em 0.4em">Jumbini.dmg</code> from the latest release.</p></div>
-          </li>
-          <li style="counter-increment:step; display:grid; grid-template-columns:auto 1fr; gap:20px; align-items:baseline; padding:15px 0; border-top:1px solid var(--line)">
-            <span style="font-family:'Silkscreen',ui-monospace,monospace; font-size:12px; color:var(--muted-soft)">02</span>
-            <div><p style="font-size:19px; font-weight:600">Drag him to Applications</p><p style="color:var(--muted); font-size:15px; margin-top:4px">Open the disk image and drag Jumbini across.</p></div>
-          </li>
-          <li style="counter-increment:step; display:grid; grid-template-columns:auto 1fr; gap:20px; align-items:baseline; padding:15px 0; border-block:1px solid var(--line)">
-            <span style="font-family:'Silkscreen',ui-monospace,monospace; font-size:12px; color:var(--muted-soft)">03</span>
-            <div><p style="font-size:19px; font-weight:600">Open it</p><p style="color:var(--muted); font-size:15px; margin-top:4px">That is the whole thing. No right-click trick, no trip through Privacy &amp; Security.</p></div>
-          </li>
+        <ol class="steps">
+          <li><b>01</b><div><p>Download the disk image</p><p>Grab <code>Jumbini.dmg</code> from the latest release.</p></div></li>
+          <li><b>02</b><div><p>Drag him to Applications</p><p>Open the disk image and drag Jumbini across.</p></div></li>
+          <li><b>03</b><div><p>Open it</p><p>That is the whole thing. No right-click trick, no trip through Privacy &amp; Security.</p></div></li>
         </ol>
       </div>
 
-      <details style="max-width:760px; margin:clamp(24px,3vw,40px) 0 0; padding-top:18px; border-top:1px solid var(--line)">
-        <summary style="font-family:'Avenir Condensed Hand',system-ui,sans-serif; font-size:15px; font-weight:700; cursor:pointer; color:var(--muted)">Or build him from source, no Xcode needed</summary>
-        <pre style="font-family:ui-monospace,'SF Mono',Menlo,monospace; background:var(--paper-deep); color:var(--ink); padding:18px 22px; border-radius:8px; overflow-x:auto; font-size:15px; line-height:1.7; margin:18px 0 0; white-space:pre-wrap; overflow-wrap:anywhere">git clone https://github.com/abjumb/jumbini.git
+      <details>
+        <summary>Or build him from source, no Xcode needed</summary>
+        <pre>git clone https://github.com/abjumb/jumbini.git
 cd jumbini
 ./Scripts/bundle.sh          # -&gt; build/Jumbini.app
 open build/Jumbini.app</pre>
       </details>
-    </section>
-
-  </main>
-
-  <footer style="border-top:1px solid var(--line); padding:28px max(22px,5vw) 38px">
-    <div style="max-width:1200px; margin-inline:auto; display:flex; flex-wrap:wrap; gap:18px 34px; align-items:center; justify-content:space-between">
-      <div style="display:flex; flex-wrap:wrap; gap:12px 28px; font-family:'Avenir Condensed Hand',system-ui,sans-serif; font-size:15px; font-weight:700">
-        <a class="lnk" href="https://github.com/abjumb/jumbini" style="color:var(--muted); text-decoration:none">Source</a>
-        <a class="lnk" href="https://github.com/abjumb/jumbini/releases" style="color:var(--muted); text-decoration:none">Releases</a>
-        <a class="lnk" href="https://github.com/abjumb/jumbini/blob/main/COATS.md" style="color:var(--muted); text-decoration:none">Draw your own dog</a>
-        <a class="lnk" href="https://github.com/abjumb/jumbini/issues" style="color:var(--muted); text-decoration:none">Report a bug</a>
-        <a class="lnk" href="https://github.com/abjumb/jumbini/blob/main/LICENSE" style="color:var(--muted); text-decoration:none">License</a>
-      </div>
-      <p style="font-size:15px; color:var(--muted-soft)">Code MIT. Artwork rights reserved. No trackers on this page either.</p>
     </div>
-  </footer>
-
+  </section>
 </div>
+
+<footer>
+  <div class="foot">
+    <nav>
+      <a href="https://github.com/abjumb/jumbini">Source</a>
+      <a href="https://github.com/abjumb/jumbini/releases">Releases</a>
+      <a href="https://github.com/abjumb/jumbini/blob/main/COATS.md">Draw your own dog</a>
+      <a href="https://github.com/abjumb/jumbini/issues">Report a bug</a>
+      <a href="https://github.com/abjumb/jumbini/blob/main/LICENSE">License</a>
+    </nav>
+    <p class="small">Code MIT. Artwork rights reserved. No trackers on this page either.</p>
+  </div>
+</footer>
+
 <script src="jumba.js" defer></script>
 <script>
 (function () {
@@ -419,8 +881,20 @@ open build/Jumbini.app</pre>
     if (c && !booted.has(c)) arm();
   }).observe(document.body, { childList: true, subtree: true });
 
+  // The nav lives in the hero sheet, welded to its bitten corner, so it leaves
+  // with the sheet. The dock is the same nav, brought back once the hero is
+  // gone, and it is only ever created if the browser can tell us when that is.
+  var dock = document.querySelector('[data-dock]'), hero = document.getElementById('top');
+  if (dock && hero && 'IntersectionObserver' in window) {
+    dock.hidden = false;
+    new IntersectionObserver(function (entries) {
+      if (entries[0].isIntersecting) dock.removeAttribute('data-on');
+      else dock.setAttribute('data-on', '');
+    }, { rootMargin: '-60px 0px 0px 0px' }).observe(hero);
+  }
+
   // Theme toggle. The stored choice is applied before paint by the inline script
-  // in <head>; this only keeps the control in sync and records new choices.
+  // in <head>; this only keeps the controls in sync and records new choices.
   var root = document.documentElement;
   var media = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
   function isDark() {
