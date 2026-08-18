@@ -2222,7 +2222,7 @@ private func hopTarget(in effects: [DogEffect]) -> CGPoint? {
     tuning.perchChance = 1
 
     let odds = AutonomyOdds(
-        tuning: tuning, poopEnabled: true, windowClimbingEnabled: true
+        tuning: tuning, mood: Mood(), poopEnabled: true, windowClimbingEnabled: true
     )
 
     #expect(abs(odds.sleepBand - 0.5) < 0.0001, "sleep owns the lower half")
@@ -3100,7 +3100,7 @@ private func isSomewhereReal(_ point: CGPoint, _ rects: [CGRect] = lShapedWorld)
 
 @Test func theShippingBandsAreOrderedAndUnclamped() {
     let odds = AutonomyOdds(
-        tuning: BrainTuning(), poopEnabled: true, windowClimbingEnabled: true
+        tuning: BrainTuning(), mood: Mood(), poopEnabled: true, windowClimbingEnabled: true
     )
     let tuning = BrainTuning()
 
@@ -3124,13 +3124,13 @@ private func isSomewhereReal(_ point: CGPoint, _ rects: [CGRect] = lShapedWorld)
 @Test func aDisabledFeatureZeroesItsBandWithoutMovingTheOthers() {
     let tuning = BrainTuning()
     let noPoop = AutonomyOdds(
-        tuning: tuning, poopEnabled: false, windowClimbingEnabled: true
+        tuning: tuning, mood: Mood(), poopEnabled: false, windowClimbingEnabled: true
     )
     #expect(noPoop.hunchBand == noPoop.sniffBand, "the hunch band is closed")
     #expect(noPoop.sleepBand == tuning.sleepChance, "bands above it are untouched")
 
     let noClimb = AutonomyOdds(
-        tuning: tuning, poopEnabled: true, windowClimbingEnabled: false
+        tuning: tuning, mood: Mood(), poopEnabled: true, windowClimbingEnabled: false
     )
     #expect(noClimb.perchBand == noClimb.barkBand, "the climb band is closed")
 }
@@ -3148,7 +3148,7 @@ private func isSomewhereReal(_ point: CGPoint, _ rects: [CGRect] = lShapedWorld)
     tuning.perchChance = 1
 
     let odds = AutonomyOdds(
-        tuning: tuning, poopEnabled: true, windowClimbingEnabled: true
+        tuning: tuning, mood: Mood(), poopEnabled: true, windowClimbingEnabled: true
     )
 
     #expect(odds.perchBand <= 1 - tuning.wanderShare + 0.0001)
@@ -3162,7 +3162,7 @@ private func isSomewhereReal(_ point: CGPoint, _ rects: [CGRect] = lShapedWorld)
     tuning.zoomiesChance = 1.0 // twice the sleep band
 
     let odds = AutonomyOdds(
-        tuning: tuning, poopEnabled: false, windowClimbingEnabled: false
+        tuning: tuning, mood: Mood(), poopEnabled: false, windowClimbingEnabled: false
     )
     let sleep = odds.sleepBand
     let zoomies = odds.zoomiesBand - odds.flourishBand
@@ -3181,8 +3181,141 @@ private func isSomewhereReal(_ point: CGPoint, _ rects: [CGRect] = lShapedWorld)
     tuning.perchChance = 0
 
     let odds = AutonomyOdds(
-        tuning: tuning, poopEnabled: true, windowClimbingEnabled: true
+        tuning: tuning, mood: Mood(), poopEnabled: true, windowClimbingEnabled: true
     )
 
     #expect(odds.perchBand == 0, "a dog with nothing to do just wanders")
+}
+
+// MARK: - Activity modes
+
+/// A brain whose idle roll lands inside a band that only a mode can open.
+/// `roll` is drawn first from the same generator every time, so a band that
+/// widens under a mode is the only variable.
+private func makeMoodBrain(mood: Mood, seed: UInt64 = 7) -> DogBrain {
+    let brain = makeBrain(seed: seed) { tuning in
+        tuning.sleepChance = 0.15
+        tuning.flourishChance = 0
+        tuning.zoomiesChance = 0.08
+        tuning.sniffChance = 0
+    }
+    brain.mood = mood
+    return brain
+}
+
+/// Roll the idle timer over and report where he ended up, for many seeds.
+private func idleOutcomes(mood: Mood, seeds: ClosedRange<UInt64> = 1...200) -> [DogState] {
+    seeds.map { seed in
+        let brain = makeMoodBrain(mood: mood, seed: seed)
+        _ = brain.handle(.tick, at: 0)
+        _ = brain.handle(.tick, at: 100)
+        return brain.state
+    }
+}
+
+@Test func anExplicitlyActiveMoodChangesNothing() {
+    // The regression guard in a single test: the default brain and an
+    // explicitly .active brain walk the same path from the same seed.
+    for seed in UInt64(1)...25 {
+        let plain = makeBrain(seed: seed) { $0.zoomiesChance = 0.5 }
+        let active = makeBrain(seed: seed) { $0.zoomiesChance = 0.5 }
+        active.mood = Mood(activity: .active)
+
+        _ = plain.handle(.tick, at: 0)
+        _ = active.handle(.tick, at: 0)
+        let plainEffects = plain.handle(.tick, at: 100)
+        let activeEffects = active.handle(.tick, at: 100)
+
+        #expect(plainEffects == activeEffects, "seed \(seed)")
+        #expect(plain.state == active.state, "seed \(seed)")
+    }
+}
+
+@Test func veryActiveGetsFarMoreZoomies() {
+    let veryActive = idleOutcomes(mood: Mood(activity: .veryActive))
+        .filter { $0 == .zoomies }.count
+    let active = idleOutcomes(mood: Mood(activity: .active))
+        .filter { $0 == .zoomies }.count
+
+    #expect(veryActive > active * 2, "very active: \(veryActive), active: \(active)")
+}
+
+@Test func sleepyNapsMoreAndZoomiesLess() {
+    let sleepy = idleOutcomes(mood: Mood(activity: .sleepy))
+    let active = idleOutcomes(mood: Mood(activity: .active))
+
+    #expect(sleepy.filter { $0 == .sleeping }.count
+        > active.filter { $0 == .sleeping }.count)
+    #expect(sleepy.filter { $0 == .zoomies }.count
+        < active.filter { $0 == .zoomies }.count)
+}
+
+@Test func veryActiveGetsBoredSooner() {
+    let hyper = makeBrain { $0.idleDuration = 4...4 }
+    hyper.mood = Mood(activity: .veryActive)
+    _ = hyper.handle(.tick, at: 0)
+    // 4s scaled by 0.5 = 2s, so 2.1 is past the timer and 1.9 is not.
+    #expect(hyper.handle(.tick, at: 1.9) == [])
+    _ = hyper.handle(.tick, at: 2.1)
+    #expect(hyper.state != .idle, "a hyper dog is bored in half the time")
+
+    let sleepy = makeBrain { $0.idleDuration = 4...4 }
+    sleepy.mood = Mood(activity: .sleepy)
+    _ = sleepy.handle(.tick, at: 0)
+    // 4s scaled by 2.0 = 8s.
+    #expect(sleepy.handle(.tick, at: 7.9) == [])
+    _ = sleepy.handle(.tick, at: 8.1)
+    #expect(sleepy.state != .idle, "a sleepy dog takes twice as long")
+}
+
+@Test func veryActiveLengthensEveryZoomiesBurst() {
+    // The autonomous roll.
+    let rolled = makeBrain { $0.zoomiesChance = 1 }
+    rolled.mood = Mood(activity: .veryActive)
+    _ = rolled.handle(.tick, at: 0)
+    _ = rolled.handle(.tick, at: 100)
+    #expect(rolled.state == .zoomies)
+    // 10s baseline x 1.5 = 15s.
+    #expect(rolled.handle(.tick, at: 114) == [], "still running at 14s")
+    _ = rolled.handle(.tick, at: 116)
+    #expect(rolled.state != .zoomies, "over by 16s")
+
+    // The hot-fans reaction takes the same scaling.
+    let hot = makeBrain()
+    hot.mood = Mood(activity: .veryActive)
+    _ = hot.handle(.system(.fansUp), at: 0)
+    #expect(hot.state == .zoomies)
+    #expect(hot.handle(.tick, at: 14) == [])
+    _ = hot.handle(.tick, at: 16)
+    #expect(hot.state != .zoomies)
+
+    // And so does the explicit command.
+    let told = makeBrain()
+    told.mood = Mood(activity: .veryActive)
+    _ = told.handle(.command(.zoomies), at: 0)
+    #expect(told.state == .zoomies)
+    #expect(told.handle(.tick, at: 14) == [])
+    _ = told.handle(.tick, at: 16)
+    #expect(told.state != .zoomies)
+}
+
+@Test func modeDoesNotTouchTheHabitBands() {
+    let tuning = BrainTuning()
+    for mode in ActivityMode.allCases {
+        let odds = AutonomyOdds(
+            tuning: tuning,
+            mood: Mood(activity: mode),
+            poopEnabled: true,
+            windowClimbingEnabled: true
+        )
+        let hunch = odds.hunchBand - odds.sniffBand
+        let bark = odds.barkBand - odds.hunchBand
+        let perch = odds.perchBand - odds.barkBand
+
+        // Each is governed by its own feature switch and reads as a habit,
+        // not a level of energy. Unclamped in all three modes.
+        #expect(abs(hunch - tuning.hunchChance) < 0.0001, "\(mode)")
+        #expect(abs(bark - tuning.barkAtNothingChance) < 0.0001, "\(mode)")
+        #expect(abs(perch - tuning.perchChance) < 0.0001, "\(mode)")
+    }
 }

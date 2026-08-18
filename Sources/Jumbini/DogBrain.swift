@@ -300,14 +300,21 @@ struct AutonomyOdds {
     let barkBand: Double
     let perchBand: Double
 
-    init(tuning: BrainTuning, poopEnabled: Bool, windowClimbingEnabled: Bool) {
+    init(
+        tuning: BrainTuning,
+        mood: Mood,
+        poopEnabled: Bool,
+        windowClimbingEnabled: Bool
+    ) {
         // A feature switched off closes its band; the bands around it do not
-        // move, exactly as before.
+        // move, exactly as before. `.active` scales every column by 1.0, which
+        // is exact in binary floating point — the identity really is identical.
+        let activity = mood.activity
         let widths = [
-            tuning.sleepChance,
-            tuning.flourishChance,
-            tuning.zoomiesChance,
-            tuning.sniffChance,
+            tuning.sleepChance * activity.sleepScale,
+            tuning.flourishChance * activity.flourishScale,
+            tuning.zoomiesChance * activity.zoomiesScale,
+            tuning.sniffChance * activity.sniffScale,
             poopEnabled ? tuning.hunchChance : 0,
             tuning.barkAtNothingChance,
             windowClimbingEnabled ? tuning.perchChance : 0,
@@ -382,6 +389,13 @@ final class DogBrain {
     /// into tuning so a panel change takes effect without rebuilding the scene.
     var poopEnabled = true
     var windowClimbingEnabled = true
+    /// The three persistent switches from his right-click menu, kept current
+    /// by the scene exactly like `bounds` and `position`. The brain reads them;
+    /// the scene owns the menu, the storage, and the pixels.
+    ///
+    /// Set this directly only before he is running. Once he is, go through
+    /// `setMood(_:at:)` so a change can take effect on the dog you can see.
+    var mood = Mood()
     /// How far the dog's CENTRE sits above his feet — half his sprite height,
     /// which changes with the pose, so the scene keeps it current. Standing on
     /// a window means `position.y == surface.topY + footOffset`.
@@ -532,7 +546,7 @@ final class DogBrain {
     private func handleTick(at now: TimeInterval) -> [DogEffect] {
         // First tick after entering idle externally (initial state): start the timer.
         if state == .idle && deadline == nil {
-            deadline = now + random(in: tuning.idleDuration)
+            deadline = now + idlePause()
             return []
         }
         // Window walking is watched on EVERY tick, deadline or no deadline:
@@ -748,7 +762,7 @@ final class DogBrain {
             effects.append(.play(.spin))
         case .zoomies:
             state = .zoomies
-            deadline = now + tuning.zoomiesDuration
+            deadline = now + zoomiesTimeout()
             effects.append(contentsOf: [.play(.run), .startZoomies])
         case .relax:
             effects.append(contentsOf: enterIdle(at: now))
@@ -983,7 +997,7 @@ final class DogBrain {
             // The machine's working hard; so should he.
             guard isCalm else { return deferSignal(signal) }
             state = .zoomies
-            deadline = now + tuning.zoomiesDuration
+            deadline = now + zoomiesTimeout()
             return [.stopMoving, .play(.run), .startZoomies]
         case .batteryLow:
             // Conserve energy: lie down (in the bed when he has one).
@@ -1051,7 +1065,7 @@ final class DogBrain {
 
     private func enterIdle(at now: TimeInterval) -> [DogEffect] {
         state = .idle
-        deadline = now + random(in: tuning.idleDuration)
+        deadline = now + idlePause()
         restReason = nil // every road back to idle ends a signal-caused rest
         return [.play(.idle)]
     }
@@ -1061,6 +1075,7 @@ final class DogBrain {
         let roll = Double.random(in: 0..<1, using: &rng)
         let odds = AutonomyOdds(
             tuning: tuning,
+            mood: mood,
             poopEnabled: poopEnabled,
             windowClimbingEnabled: windowClimbingEnabled
         )
@@ -1082,7 +1097,7 @@ final class DogBrain {
         }
         if roll < odds.zoomiesBand {
             state = .zoomies
-            deadline = now + tuning.zoomiesDuration
+            deadline = now + zoomiesTimeout()
             return [.play(.run), .startZoomies]
         }
         if roll < odds.sniffBand {
@@ -1675,5 +1690,18 @@ final class DogBrain {
 
     private func random(in range: ClosedRange<TimeInterval>) -> TimeInterval {
         Double.random(in: range, using: &rng)
+    }
+
+    /// How long he stays idle before picking something to do. A hyper dog gets
+    /// bored in half the time, a sleepy one takes twice as long.
+    private func idlePause() -> TimeInterval {
+        random(in: tuning.idleDuration) * mood.activity.idleScale
+    }
+
+    /// How long a zoomies burst lasts. Scaled wherever zoomies BEGIN — the
+    /// autonomous roll, the hot-fans reaction, and the explicit command — so a
+    /// Very Active dog has longer zoomies for every reason he gets them.
+    private func zoomiesTimeout() -> TimeInterval {
+        tuning.zoomiesDuration * mood.activity.zoomiesDurationScale
     }
 }
