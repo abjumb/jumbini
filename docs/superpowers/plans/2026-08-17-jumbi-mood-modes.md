@@ -2246,11 +2246,25 @@ Expected: PASS. The menu wiring itself has no unit test — `NSMenu` constructio
 needs a running app — but `MoodTests` already proves the titles and the
 checkmark logic, and `DogBrainTests` proves what `setMood` does.
 
-- [ ] **Step 5: Verify by hand, in the running app**
+- [ ] **Step 5: Prove the app still starts, then hand the GUI checks to a human**
 
-Run: `swift run Jumbini`
+The menu wiring has no unit test — `NSMenu` construction needs a running app, and
+`PetScene` is not exercised by the suite. What *is* automatable is that the app
+still survives startup with the new `MoodSettings.load()` on the scene-init path,
+which is where a crash would land:
 
-Check each of these, and do not commit until all six pass:
+```bash
+swift build && Scripts/bundle.sh && Scripts/smoke.sh
+```
+
+Expected: `Built build/Jumbini.app` then the smoke test reporting the process
+still alive. This is a real gate — every release from v3.0 to v4.4 was built,
+tested, signed and published while crashing a second into launch, which is why
+this script exists.
+
+**The six checks below need a human driving the GUI, and no agent can perform
+them.** Do not claim them as passed. Report them to the user as required manual
+acceptance:
 
 1. Right-click Jumba. A **Mood** submenu sits between the separator and Tricks,
    with Very Active / Active / Sleepy (Active checked), a separator, then
@@ -2264,6 +2278,12 @@ Check each of these, and do not commit until all six pass:
    next walk. He heads toward the pointer and stops short of it. He still naps
    and still climbs windows.
 6. Quit and relaunch. Every choice survived.
+
+The four `@objc` action selectors (`activityChosen(_:)`, `stayDownToggled`,
+`followToggled`) are the highest-risk part of this task precisely because they
+are what the smoke test cannot reach: a misspelled selector compiles, launches,
+and only fails when a human clicks the item. Check each `#selector(...)` against
+its function signature by eye before committing.
 
 - [ ] **Step 6: Commit**
 
