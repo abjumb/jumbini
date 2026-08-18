@@ -98,10 +98,10 @@ final class TidySettingsPanel: JumbiniPanel {
     private let idleLabel = NSTextField(labelWithString: "")
     private let idleHintLabel = NSTextField(labelWithString: "")
 
-    private var sidebarButtons: [PanelSidebarButton] = []
-    private var pages: [String: NSView] = [:]
-    private let pageContainer = NSView()
 
+    private let shell = PanelShell(
+        catalog: catalog, size: CGSize(width: panelWidth, height: panelHeight)
+    )
     private static let panelWidth: CGFloat = 720
     private static let panelHeight: CGFloat = 480
     private static var contentWidth: CGFloat {
@@ -272,114 +272,13 @@ final class TidySettingsPanel: JumbiniPanel {
     // MARK: - Layout
 
     private func setUpContent() {
-        let divider = NSBox()
-        divider.boxType = .separator
-        divider.translatesAutoresizingMaskIntoConstraints = false
-        divider.widthAnchor.constraint(equalToConstant: 1).isActive = true
-
-        let row = NSStackView(views: [makeSidebar(), divider, makeDetail()])
-        row.orientation = .horizontal
-        row.alignment = .top
-        row.distribution = .fill
-        row.spacing = 0
-
-        installChrome(around: row)
-        showSection(Section.overview)
-    }
-
-    private func makeSidebar() -> NSView {
-        var views: [NSView] = []
-        for group in Self.catalog.groups {
-            if let title = group.title {
-                let header = PanelTheme.title(title, size: 11, weight: .semibold)
-                header.textColor = .secondaryLabelColor
-                views.append(spacer(height: 6))
-                views.append(header)
-            }
-            for section in group.sections {
-                let button = PanelSidebarButton(
-                    section: section, target: self, action: #selector(sidebarClicked(_:))
-                )
-                sidebarButtons.append(button)
-                views.append(button)
-            }
-        }
-        views.append(NSView())
-
-        let stack = NSStackView(views: views)
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 2
-        stack.edgeInsets = NSEdgeInsets(
-            top: PanelTheme.titleBarInset, left: 12, bottom: 12, right: 12
-        )
-        stack.translatesAutoresizingMaskIntoConstraints = false
-
-        for button in sidebarButtons {
-            button.widthAnchor.constraint(
-                equalToConstant: PanelTheme.sidebarWidth - 24
-            ).isActive = true
-        }
-
-        let container = NSView()
-        container.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(stack)
-        NSLayoutConstraint.activate([
-            container.widthAnchor.constraint(equalToConstant: PanelTheme.sidebarWidth),
-            container.heightAnchor.constraint(equalToConstant: Self.panelHeight),
-            stack.topAnchor.constraint(equalTo: container.topAnchor),
-            stack.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-            stack.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-        ])
-        return container
-    }
-
-    private func makeDetail() -> NSView {
-        pages = [
+        shell.setPages([
             Section.overview: overviewPage(),
             Section.rules: rulesPage(),
             Section.automation: automationPage(),
-        ]
-        pageContainer.translatesAutoresizingMaskIntoConstraints = false
-
-        let container = PanelSurfaceView()
-        container.fill = PanelTheme.contentBackground
-        container.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(pageContainer)
-
-        NSLayoutConstraint.activate([
-            container.widthAnchor.constraint(
-                equalToConstant: Self.panelWidth - PanelTheme.sidebarWidth - 1
-            ),
-            container.heightAnchor.constraint(equalToConstant: Self.panelHeight),
-            pageContainer.topAnchor.constraint(equalTo: container.topAnchor),
-            pageContainer.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-            pageContainer.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            pageContainer.trailingAnchor.constraint(equalTo: container.trailingAnchor),
         ])
-        return container
-    }
-
-    private func page(_ views: [NSView]) -> NSView {
-        let stack = NSStackView(views: views)
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.spacing = 10
-        stack.edgeInsets = NSEdgeInsets(
-            top: PanelTheme.contentInset,
-            left: PanelTheme.contentInset,
-            bottom: PanelTheme.contentInset,
-            right: PanelTheme.contentInset
-        )
-        return PanelBuilder.scrollPane(around: stack)
-    }
-
-    private func spacer(height: CGFloat) -> NSView {
-        let view = NSView()
-        view.translatesAutoresizingMaskIntoConstraints = false
-        view.heightAnchor.constraint(equalToConstant: height).isActive = true
-        return view
+        installChrome(around: shell.contentView)
+        shell.show(Section.overview)
     }
 
     // MARK: - Pages
@@ -406,7 +305,7 @@ final class TidySettingsPanel: JumbiniPanel {
         buttons.orientation = .horizontal
         buttons.spacing = 8
 
-        return page([
+        return PanelShell.page([
             PanelTheme.sectionHeader("Folder"),
             PanelTheme.subtitle(
                 "Tidy only ever touches the one folder you choose, only its immediate "
@@ -424,7 +323,7 @@ final class TidySettingsPanel: JumbiniPanel {
 
         let addButton = NSButton(title: "Add Rule…", target: self, action: #selector(addRuleClicked))
 
-        return page([
+        return PanelShell.page([
             PanelTheme.sectionHeader("Rules"),
             PanelTheme.subtitle(
                 "Rules are checked from the top down and the first match wins. "
@@ -474,7 +373,7 @@ final class TidySettingsPanel: JumbiniPanel {
         idleRow.orientation = .horizontal
         idleRow.spacing = 8
 
-        return page([
+        return PanelShell.page([
             PanelTheme.sectionHeader("Safety"),
             PanelBuilder.card([recencyRow], width: Self.contentWidth),
             PanelTheme.sectionHeader("While you are away"),
@@ -495,23 +394,8 @@ final class TidySettingsPanel: JumbiniPanel {
 
     // MARK: - Selection
 
-    func showSection(_ identifier: String) {
-        for button in sidebarButtons {
-            button.isSelectedRow = button.identifier?.rawValue == identifier
-        }
-        pageContainer.subviews.forEach { $0.removeFromSuperview() }
-        guard let page = pages[identifier] else { return }
-        page.translatesAutoresizingMaskIntoConstraints = false
-        pageContainer.addSubview(page)
-        NSLayoutConstraint.activate([
-            page.topAnchor.constraint(
-                equalTo: pageContainer.topAnchor, constant: PanelTheme.titleBarInset
-            ),
-            page.bottomAnchor.constraint(equalTo: pageContainer.bottomAnchor),
-            page.leadingAnchor.constraint(equalTo: pageContainer.leadingAnchor),
-            page.trailingAnchor.constraint(equalTo: pageContainer.trailingAnchor),
-        ])
-    }
+    func showSection(_ identifier: String) { shell.show(identifier) }
+    var visibleSection: String { shell.visibleSection }
 
     // MARK: - Refresh
 
@@ -629,10 +513,6 @@ final class TidySettingsPanel: JumbiniPanel {
 
     // MARK: - Actions
 
-    @objc private func sidebarClicked(_ sender: NSButton) {
-        guard let identifier = sender.identifier?.rawValue else { return }
-        showSection(identifier)
-    }
 
     @objc private func chooseFolderClicked() {
         chooseFolder()
