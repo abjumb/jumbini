@@ -1195,9 +1195,15 @@ Append to `Tests/JumbiniTests/DogBrainTests.swift`:
     _ = brain.handle(.arrived, at: 115)
     #expect(brain.state == .eating)
 
-    // ...and the next idle puts him back on the floor.
+    // ...he runs the whole digestion pipeline, which the hold does not touch
+    // (`poopEnabled` defaults to true on the brain, and `makeBrain` zeroes the
+    // hunch BAND without disabling the eating → hunching road that feeds it)...
     _ = brain.handle(.tick, at: 130)
+    #expect(brain.state == .hunching)
+    _ = brain.handle(.tick, at: 140)
     #expect(brain.state == .idle)
+
+    // ...and the next idle puts him back on the floor.
     _ = brain.handle(.tick, at: 200)
     #expect(brain.state == .lyingDown, "the hold reasserts itself at the next idle")
 }
