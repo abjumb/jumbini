@@ -34,6 +34,10 @@ final class CoatWorkshopPanel: JumbiniPanel {
     /// Findings about the archive itself, which `CoatValidator.validate` never
     /// sees because it is handed a folder. Shown alongside the report.
     private var archiveFindings: [ValidationFinding] = []
+    /// Temp directories `CoatImport` made for us, deleted when the panel closes.
+    /// Each import stages a whole copy of the coat's art, so leaving them behind
+    /// grows temp by one coat per import for the rest of the session.
+    private var stagingRoots: [URL] = []
     private let fileManager: FileManager
 
     // MARK: - UI elements
@@ -247,82 +251,33 @@ final class CoatWorkshopPanel: JumbiniPanel {
         clearPreview()
 
         do {
-            let staging = try createStagingDirectory()
-            let coatFolder: URL
+            let outcome = try CoatImport.stage(url, fileManager: fileManager)
+            // Tracked separately from `stagingURL`, which also holds an
+            // INSTALLED coat's root when the workshop is opened on one. Cleaning
+            // up off that field would delete an installed coat.
+            stagingRoots.append(outcome.stagingRoot)
 
-            if url.pathExtension.lowercased() == "zip" {
-                coatFolder = try importZip(from: url, to: staging)
-            } else {
-                coatFolder = try importFolder(from: url, to: staging)
+            switch outcome.result {
+            case .refused(_, let messages):
+                statusLabel.stringValue = messages.joined(separator: "\n")
+            case .imported(let coatFolder, let findings):
+                archiveFindings = findings
+                stagingURL = coatFolder
+                let result = CoatValidator.validate(folder: coatFolder, fileManager: fileManager)
+                report = result
+                scaleEdits = result.scales
+
+                displayReport(result)
+                exportButton.isEnabled = true
+                exportSource = coatFolder
+                isInstalledCoat = false
+                installButton.isEnabled = result.canInstall
+                previewButton.isEnabled = true
+                installButton.title = "Install"
             }
-
-            stagingURL = coatFolder
-            let result = CoatValidator.validate(folder: coatFolder, fileManager: fileManager)
-            report = result
-            scaleEdits = result.scales
-
-            displayReport(result)
-            exportButton.isEnabled = true
-            exportSource = coatFolder
-            isInstalledCoat = false
-            installButton.isEnabled = result.canInstall
-            previewButton.isEnabled = true
-            installButton.title = "Install"
         } catch {
             statusLabel.stringValue = "Import failed: \(error.localizedDescription)"
         }
-    }
-
-    private func importZip(from url: URL, to staging: URL) throws -> URL {
-        statusLabel.stringValue = "Checking archive…"
-
-        let entries = try CoatValidator.listZipContents(at: url)
-        let safetyFindings = CoatValidator.checkZipSafety(entries)
-
-        if safetyFindings.contains(where: { $0.severity == .error }) {
-            let msgs = safetyFindings.filter { $0.severity == .error }.map(\.message).joined(separator: "\n")
-            statusLabel.stringValue = msgs
-            throw ValidationError.zipListingFailed
-        }
-
-        statusLabel.stringValue = "Extracting…"
-        let extractDir = staging.appendingPathComponent("extracted", isDirectory: true)
-        try CoatValidator.extractZip(at: url, to: extractDir)
-
-        // Symlinks are invisible in a listing, so this is the first point the
-        // archive can be checked for one. Discard the extraction on an escape
-        // rather than leaving a link into the user's home in the staging dir.
-        let treeFindings = CoatValidator.checkExtractedTree(at: extractDir, fileManager: fileManager)
-        if treeFindings.contains(where: { $0.severity == .error }) {
-            try? fileManager.removeItem(at: extractDir)
-            statusLabel.stringValue = treeFindings
-                .filter { $0.severity == .error }
-                .map(\.message)
-                .joined(separator: "\n")
-            throw ValidationError.unsafeArchive
-        }
-        archiveFindings = treeFindings
-
-        guard let coatFolder = CoatValidator.findCoatFolder(in: extractDir) else {
-            statusLabel.stringValue = "No coat folder found in archive (needs \(CoatValidator.requiredSprite))."
-            throw ValidationError.noCoatFolderFound
-        }
-
-        return coatFolder
-    }
-
-    private func importFolder(from url: URL, to staging: URL) throws -> URL {
-        let dest = staging.appendingPathComponent(url.lastPathComponent, isDirectory: true)
-        try fileManager.copyItem(at: url, to: dest)
-        return dest
-    }
-
-    private func createStagingDirectory() throws -> URL {
-        let staging = fileManager.temporaryDirectory
-            .appendingPathComponent("jumbini-workshop-\(UUID().uuidString)", isDirectory: true)
-        try? fileManager.removeItem(at: staging)
-        try fileManager.createDirectory(at: staging, withIntermediateDirectories: true)
-        return staging
     }
 
     // MARK: - Report display
@@ -672,6 +627,8 @@ final class CoatWorkshopPanel: JumbiniPanel {
     /// outlive the window that started it — however the window went away.
     override func panelWillClose() {
         if isPreviewing { stopPreview() }
+        for root in stagingRoots { try? fileManager.removeItem(at: root) }
+        stagingRoots.removeAll()
     }
 
     /// Centred the first time, then wherever the user last dragged it.
