@@ -50,7 +50,7 @@ enum ToyKind: Equatable {
 }
 
 /// Ambient machine happenings the scene layer can feed the brain.
-enum SystemSignal: Equatable {
+enum SystemSignal: Equatable, CaseIterable {
     case buildFinished, idleBegan, idleEnded, fansUp, batteryLow, batteryNormal, dndOn, dndOff
 }
 
@@ -194,6 +194,15 @@ struct BrainTuning {
     var runSpeed: CGFloat = 520
     var carrySpeed: CGFloat = 150
     var wanderMargin: CGFloat = 60
+    /// The slice of every idle roll that plain wandering keeps no matter what.
+    /// The autonomy bands are scaled down proportionally if they would eat
+    /// into it — see `AutonomyOdds`.
+    var wanderShare: Double = 0.1
+    /// How far short of your cursor a follow walk stops. Close enough to be
+    /// company, far enough not to sit on the thing you are clicking.
+    var followStandoff: CGFloat = 120
+    /// How far he mills about when the cursor is already inside the standoff.
+    var followMill: CGFloat = 90
     var zoomiesDuration: TimeInterval = 10
     var zoomiesSpeed: CGFloat = 900
     var zoomiesChance: Double = 0.08
@@ -273,6 +282,69 @@ struct BrainTuning {
     var perchNapMinWidth: CGFloat = 320
 }
 
+/// The cumulative thresholds one idle roll is compared against.
+///
+/// This used to be seven inline sums inside `leaveIdleForAutonomy`, each a term
+/// longer than the last. That was survivable while the numbers were constants
+/// and fatal the moment they could be scaled: several bands multiplied at once
+/// can total past 1.0, and then the LAST band — window climbing, the rarest and
+/// most delightful thing he does — silently never fires again. Nothing in the
+/// code or the tests would say a word about it.
+///
+/// So the arithmetic lives here, where the invariant can be stated and tested:
+/// whatever the tuning and whatever the switches, plain wandering keeps at
+/// least `tuning.wanderShare` of the roll, and every band stays in proportion.
+struct AutonomyOdds {
+    /// Cumulative thresholds, low to high. A roll below `sleepBand` naps; a
+    /// roll below `flourishBand` but not `sleepBand` spins; and so on.
+    let sleepBand: Double
+    let flourishBand: Double
+    let zoomiesBand: Double
+    let sniffBand: Double
+    let hunchBand: Double
+    let barkBand: Double
+    let perchBand: Double
+
+    init(
+        tuning: BrainTuning,
+        mood: Mood,
+        poopEnabled: Bool,
+        windowClimbingEnabled: Bool
+    ) {
+        // A feature switched off closes its band; the bands around it do not
+        // move, exactly as before. `.active` scales every column by 1.0, which
+        // is exact in binary floating point — the identity really is identical.
+        let activity = mood.activity
+        let widths = [
+            tuning.sleepChance * activity.sleepScale,
+            tuning.flourishChance * activity.flourishScale,
+            tuning.zoomiesChance * activity.zoomiesScale,
+            // Follow mode doubles the cursor hunt. The per-frame chase already
+            // exists as sniff → stalk → pounce, and follow mode is what makes
+            // it his common idle activity rather than an occasional one.
+            tuning.sniffChance * activity.sniffScale * (mood.roam == .follow ? 2 : 1),
+            poopEnabled ? tuning.hunchChance : 0,
+            tuning.barkAtNothingChance,
+            windowClimbingEnabled ? tuning.perchChance : 0,
+        ]
+        let total = widths.reduce(0, +)
+        let ceiling = max(0, 1 - tuning.wanderShare)
+        // `total > ceiling` is also the divide-by-zero guard: a zero total can
+        // never exceed a non-negative ceiling.
+        let scale = total > ceiling ? ceiling / total : 1
+
+        // Summed left to right, in the same order as the code this replaces,
+        // so the un-clamped case (scale == 1) is bit-for-bit what it was.
+        sleepBand = widths[0] * scale
+        flourishBand = sleepBand + widths[1] * scale
+        zoomiesBand = flourishBand + widths[2] * scale
+        sniffBand = zoomiesBand + widths[3] * scale
+        hunchBand = sniffBand + widths[4] * scale
+        barkBand = hunchBand + widths[5] * scale
+        perchBand = barkBand + widths[6] * scale
+    }
+}
+
 /// Deterministic RNG for tests (SplitMix64).
 struct SplitMix64: RandomNumberGenerator {
     private var state: UInt64
@@ -325,6 +397,19 @@ final class DogBrain {
     /// into tuning so a panel change takes effect without rebuilding the scene.
     var poopEnabled = true
     var windowClimbingEnabled = true
+    /// The three persistent switches from his right-click menu, kept current
+    /// by the scene exactly like `bounds` and `position`. The brain reads them;
+    /// the scene owns the menu, the storage, and the pixels.
+    ///
+    /// Set this directly only before he is running. Once he is, go through
+    /// `setMood(_:at:)` so a change can take effect on the dog you can see.
+    var mood = Mood()
+    /// Where the cursor is in scene coordinates, kept current by the scene each
+    /// frame — it already computes this for hover detection, so it is free.
+    ///
+    /// `nil` means unknown (no window to convert through), and follow mode
+    /// falls back to ordinary wandering rather than walking to the origin.
+    var cursorPosition: CGPoint?
     /// How far the dog's CENTRE sits above his feet — half his sprite height,
     /// which changes with the pose, so the scene keeps it current. Standing on
     /// a window means `position.y == surface.topY + footOffset`.
@@ -470,12 +555,65 @@ final class DogBrain {
         return [.stopMoving] + enterIdle(at: now)
     }
 
+    /// Change the mood of a running dog and reconcile it with what he is doing.
+    ///
+    /// Activity and roam alter the next roll only — there is nothing to
+    /// reconcile, and cutting a zoomies burst short because a menu item was
+    /// ticked would be worse than waiting. The hold is the one that can be
+    /// out of step with the dog on screen right now.
+    func setMood(_ newMood: Mood, at now: TimeInterval) -> [DogEffect] {
+        let previous = mood
+        mood = newMood
+        guard previous.stayDown != newMood.stayDown else { return [] }
+
+        if newMood.stayDown {
+            switch state {
+            case .lyingDown:
+                // Already where the hold wants him. Just stop the clock —
+                // re-entering the state would restart the animation for
+                // nothing.
+                deadline = nil
+                return []
+            case .idle, .wandering, .sitting:
+                return [.stopMoving] + settle(at: now)
+            default:
+                // Mid-chase, in your arms, or up on a title bar. Ticking a
+                // menu item must never yank him off a ledge, so the hold
+                // waits for the next idle.
+                return []
+            }
+        }
+
+        // Hold released. Get him up only if the hold is what was keeping him
+        // down: a rest the MACHINE caused belongs to its own wake-up signal,
+        // the way `riseFromRest` already distinguishes causes, so it is left
+        // in place here. But the hold suppressed ITS clock too — `lieDeadline`
+        // gave it none while the hold was on — and simply returning would
+        // strand him there with nothing left to end it. Give the clock back
+        // before leaving: the machine's rest stays legitimately in force, it
+        // just isn't held hostage by a menu item anymore.
+        guard restReason == nil else {
+            if state == .lyingDown, deadline == nil {
+                deadline = now + tuning.lieTimeout
+            }
+            return []
+        }
+        switch state {
+        case .lyingDown:
+            return enterIdle(at: now)
+        case .goingToBed(.lie):
+            return [.stopMoving] + enterIdle(at: now)
+        default:
+            return []
+        }
+    }
+
     // MARK: - Event handling
 
     private func handleTick(at now: TimeInterval) -> [DogEffect] {
         // First tick after entering idle externally (initial state): start the timer.
         if state == .idle && deadline == nil {
-            deadline = now + random(in: tuning.idleDuration)
+            deadline = now + idlePause()
             return []
         }
         // Window walking is watched on EVERY tick, deadline or no deadline:
@@ -569,7 +707,7 @@ final class DogBrain {
             switch goal {
             case .lie:
                 state = .lyingDown
-                deadline = now + tuning.lieTimeout
+                deadline = lieDeadline(at: now)
                 return [.play(.lie)]
             case .sleep:
                 state = .sleeping
@@ -658,16 +796,8 @@ final class DogBrain {
             deadline = now + tuning.sitTimeout
             effects.append(.play(.sit))
         case .lieDown:
-            if let bed = bedPosition {
-                // He has a bed — walk over and settle in.
-                state = .goingToBed(.lie)
-                deadline = nil
-                effects.append(contentsOf: [.play(.walk), .moveTo(bed, speed: tuning.walkSpeed)])
-            } else {
-                state = .lyingDown
-                deadline = now + tuning.lieTimeout
-                effects.append(.play(.lie))
-            }
+            // Same bed-aware settle as the hold and the battery conserve.
+            effects.append(contentsOf: lieOnFloorOrBed(at: now))
         case .spin:
             state = .spinning
             deadline = now + tuning.spinDuration
@@ -691,7 +821,7 @@ final class DogBrain {
             effects.append(.play(.spin))
         case .zoomies:
             state = .zoomies
-            deadline = now + tuning.zoomiesDuration
+            deadline = now + zoomiesTimeout()
             effects.append(contentsOf: [.play(.run), .startZoomies])
         case .relax:
             effects.append(contentsOf: enterIdle(at: now))
@@ -926,7 +1056,7 @@ final class DogBrain {
             // The machine's working hard; so should he.
             guard isCalm else { return deferSignal(signal) }
             state = .zoomies
-            deadline = now + tuning.zoomiesDuration
+            deadline = now + zoomiesTimeout()
             return [.stopMoving, .play(.run), .startZoomies]
         case .batteryLow:
             // Conserve energy: lie down (in the bed when he has one).
@@ -964,14 +1094,7 @@ final class DogBrain {
 
     /// The existing lie-down path (bed-aware), used by the battery conserve.
     private func restfulLie(at now: TimeInterval) -> [DogEffect] {
-        if let bed = bedPosition {
-            state = .goingToBed(.lie)
-            deadline = nil
-            return [.play(.walk), .moveTo(bed, speed: tuning.walkSpeed)]
-        }
-        state = .lyingDown
-        deadline = now + tuning.lieTimeout
-        return [.play(.lie)]
+        lieOnFloorOrBed(at: now)
     }
 
     /// A wake-up signal arrived: get up only if its counterpart put him
@@ -994,17 +1117,52 @@ final class DogBrain {
 
     private func enterIdle(at now: TimeInterval) -> [DogEffect] {
         state = .idle
-        deadline = now + random(in: tuning.idleDuration)
+        deadline = now + idlePause()
         restReason = nil // every road back to idle ends a signal-caused rest
         return [.play(.idle)]
     }
 
+    /// Put him on the floor — the bed if he has one, where he stands if not.
+    /// The destination of the Stay Lying Down hold, and deliberately the same
+    /// path the `.lieDown` command and the battery conserve (`restfulLie`)
+    /// take.
+    private func settle(at now: TimeInterval) -> [DogEffect] {
+        lieOnFloorOrBed(at: now)
+    }
+
+    /// Put him on the floor — the bed if he has one, where he stands if not.
+    /// Shared by `restfulLie` (the battery conserve), `settle` (the Stay
+    /// Lying Down hold), and the `.lieDown` command: same bed check, same
+    /// clock, same effects — it used to be three copies of this, which meant
+    /// a bug fixed in one could silently still be live in the other two.
+    ///
+    /// Consumes no random numbers: the hold must be perfectly predictable, and
+    /// a roll spent here would shift every later roll in the session.
+    private func lieOnFloorOrBed(at now: TimeInterval) -> [DogEffect] {
+        if let bed = bedPosition {
+            state = .goingToBed(.lie)
+            deadline = nil
+            return [.play(.walk), .moveTo(bed, speed: tuning.walkSpeed)]
+        }
+        state = .lyingDown
+        deadline = lieDeadline(at: now)
+        return [.play(.lie)]
+    }
+
     /// Idle timer fired: mostly wander, sometimes nap, rarely a spin flourish.
     private func leaveIdleForAutonomy(at now: TimeInterval) -> [DogEffect] {
+        // The hold changes where idle LEADS. Everything else about the brain is
+        // untouched, which is why a treat, a toy, or a command still interrupts
+        // it normally — they just find him back on the floor at the next idle.
+        if mood.stayDown { return settle(at: now) }
         let roll = Double.random(in: 0..<1, using: &rng)
-        let activeHunchChance = poopEnabled ? tuning.hunchChance : 0
-        let activePerchChance = windowClimbingEnabled ? tuning.perchChance : 0
-        if roll < tuning.sleepChance {
+        let odds = AutonomyOdds(
+            tuning: tuning,
+            mood: mood,
+            poopEnabled: poopEnabled,
+            windowClimbingEnabled: windowClimbingEnabled
+        )
+        if roll < odds.sleepBand {
             if let bed = bedPosition {
                 // Naps happen in the bed when he has one.
                 state = .goingToBed(.sleep)
@@ -1015,29 +1173,27 @@ final class DogBrain {
             deadline = now + random(in: tuning.sleepDuration)
             return [.play(.sleep)]
         }
-        if roll < tuning.sleepChance + tuning.flourishChance {
+        if roll < odds.flourishBand {
             state = .spinning
             deadline = now + tuning.spinDuration
             return [.play(.spin)]
         }
-        if roll < tuning.sleepChance + tuning.flourishChance + tuning.zoomiesChance {
+        if roll < odds.zoomiesBand {
             state = .zoomies
-            deadline = now + tuning.zoomiesDuration
+            deadline = now + zoomiesTimeout()
             return [.play(.run), .startZoomies]
         }
-        if roll < tuning.sleepChance + tuning.flourishChance + tuning.zoomiesChance + tuning.sniffChance {
+        if roll < odds.sniffBand {
             state = .sniffingMouse
             deadline = now + random(in: tuning.sniffDuration)
             return [.play(.walk), .startSniffing]
         }
-        if roll < tuning.sleepChance + tuning.flourishChance + tuning.zoomiesChance
-            + tuning.sniffChance + activeHunchChance {
+        if roll < odds.hunchBand {
             state = .hunching
             deadline = now + tuning.hunchDuration
             return [.play(.hunch)]
         }
-        if roll < tuning.sleepChance + tuning.flourishChance + tuning.zoomiesChance
-            + tuning.sniffChance + activeHunchChance + tuning.barkAtNothingChance {
+        if roll < odds.barkBand {
             // Something at the screen edge (the Dock? his reflection?) needs
             // telling off. A small step toward the edge turns him to face it;
             // .arrived from that hop is ignored while barking.
@@ -1053,9 +1209,7 @@ final class DogBrain {
             }
             // Still cooling down: fall through to a wander instead.
         }
-        if roll < tuning.sleepChance + tuning.flourishChance + tuning.zoomiesChance
-            + tuning.sniffChance + activeHunchChance + tuning.barkAtNothingChance
-            + activePerchChance {
+        if roll < odds.perchBand {
             // The rarest idle break: climb onto one of your windows and trot
             // along the title bar. Needs a window to climb — with none in
             // reach the roll quietly becomes an ordinary wander rather than
@@ -1066,7 +1220,7 @@ final class DogBrain {
         }
         state = .wandering
         deadline = nil
-        return [.play(.walk), .moveTo(wanderTarget(), speed: tuning.walkSpeed)]
+        return [.play(.walk), .moveTo(roamTarget(), speed: tuning.walkSpeed)]
     }
 
     /// Bark finished: resume sitting/lying if that's what was interrupted.
@@ -1079,7 +1233,7 @@ final class DogBrain {
             return [.play(.sit)]
         case .lyingDown:
             state = .lyingDown
-            deadline = now + tuning.lieTimeout
+            deadline = lieDeadline(at: now)
             return [.play(.lie)]
         default:
             return enterIdle(at: now)
@@ -1096,7 +1250,7 @@ final class DogBrain {
             return [.play(.sit)]
         case .lyingDown:
             state = .lyingDown
-            deadline = now + tuning.lieTimeout
+            deadline = lieDeadline(at: now)
             return [.play(.lie)]
         default:
             return enterIdle(at: now)
@@ -1541,6 +1695,48 @@ final class DogBrain {
         return onSolidGround(target)
     }
 
+    /// Where an ordinary walk goes: a random spot, or a spot near your cursor.
+    ///
+    /// Follow REPLACES the target, not the walk. It is an ordinary `.moveTo`
+    /// toward a fixed point, so a cursor that moves mid-walk is not chased —
+    /// he arrives, idles, and re-aims on the next roll. That laziness is the
+    /// character: a pet that never stops walking at you is a nuisance in about
+    /// ninety seconds.
+    private func roamTarget() -> CGPoint {
+        guard mood.roam == .follow, let cursor = cursorPosition else {
+            return wanderTarget()
+        }
+        let dx = cursor.x - position.x
+        let dy = cursor.y - position.y
+        let distance = hypot(dx, dy)
+        guard distance > tuning.followStandoff else {
+            // Already beside the pointer. Mill about rather than cross the
+            // screen to reach something that is right here — and `distance`
+            // can be 0, so this is the divide-by-zero guard too.
+            let mill = tuning.followMill
+            return onSolidGround(clampToBounds(CGPoint(
+                x: position.x + CGFloat.random(in: -mill...mill, using: &rng),
+                y: position.y + CGFloat.random(in: -mill...mill, using: &rng)
+            )))
+        }
+        let travel = distance - tuning.followStandoff
+        return onSolidGround(clampToBounds(CGPoint(
+            x: position.x + dx / distance * travel,
+            y: position.y + dy / distance * travel
+        )))
+    }
+
+    /// Pull a computed point inside the roaming margin. `wanderTarget()` gets
+    /// this for free by sampling inside the margin; a point aimed at something
+    /// outside the world — your cursor on another display, say — does not.
+    private func clampToBounds(_ point: CGPoint) -> CGPoint {
+        let margin = tuning.wanderMargin
+        return CGPoint(
+            x: min(max(point.x, margin), max(margin, bounds.width - margin)),
+            y: min(max(point.y, margin), max(margin, bounds.height - margin))
+        )
+    }
+
     /// Is this somewhere he could actually be seen standing?
     /// Always true when `roamableRects` is empty — see the property's comment.
     /// Edges count as inside, so the seam between two abutting displays is
@@ -1619,5 +1815,28 @@ final class DogBrain {
 
     private func random(in range: ClosedRange<TimeInterval>) -> TimeInterval {
         Double.random(in: range, using: &rng)
+    }
+
+    /// When he should get back up from a lie — `nil` while the hold is on.
+    ///
+    /// One helper instead of five edits: the 90-second timeout is set from the
+    /// bed arrival, the lie-down command, the battery conserve, the end of a
+    /// bark, and the end of a petting session. Miss one and the held dog stands
+    /// up and flops down again every 90 seconds, which looks like a twitch.
+    private func lieDeadline(at now: TimeInterval) -> TimeInterval? {
+        mood.stayDown ? nil : now + tuning.lieTimeout
+    }
+
+    /// How long he stays idle before picking something to do. A hyper dog gets
+    /// bored in half the time, a sleepy one takes twice as long.
+    private func idlePause() -> TimeInterval {
+        random(in: tuning.idleDuration) * mood.activity.idleScale
+    }
+
+    /// How long a zoomies burst lasts. Scaled wherever zoomies BEGIN — the
+    /// autonomous roll, the hot-fans reaction, and the explicit command — so a
+    /// Very Active dog has longer zoomies for every reason he gets them.
+    private func zoomiesTimeout() -> TimeInterval {
+        tuning.zoomiesDuration * mood.activity.zoomiesDurationScale
     }
 }

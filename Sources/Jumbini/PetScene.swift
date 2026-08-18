@@ -169,6 +169,9 @@ final class PetScene: SKScene {
         brain.poopEnabled = initialSettings.poopEnabled
         brain.windowClimbingEnabled = initialSettings.windowClimbingEnabled
         windowClimbingEnabled = initialSettings.windowClimbingEnabled
+        // Direct assignment, not setMood: there is nothing to reconcile with a
+        // dog who has not started yet.
+        brain.mood = mood
         apply(effects: [.play(.idle)])
         startWatchingWindows()
     }
@@ -583,6 +586,12 @@ final class PetScene: SKScene {
         stepFalling(dt: dt)
         stepSniffing(dt: dt)
         brain.position = dog.position
+        // Not shared with the hover test below: `cursorScenePoint()` makes its
+        // own `NSEvent.mouseLocation` call and its own two coordinate
+        // conversions, on top of the ones `trackHover` makes via
+        // `mouseLocationInScene()`. Both run every frame regardless — the
+        // cost is cheap enough that it isn't worth coupling the two.
+        brain.cursorPosition = cursorScenePoint()
         // Half his sprite height, live: the pose changes it, and the brain
         // needs it to stand his centre on a window's top edge.
         brain.footOffset = dog.size.height / 2
@@ -644,36 +653,42 @@ final class PetScene: SKScene {
 
     // MARK: - Emotes
 
-    /// The icon for news he acts on. nil for the all-clear signals, which
-    /// only get an emote when they actually rouse him (see `emote(for:)`).
-    private static func emoteIcon(for signal: SystemSignal) -> String? {
-        switch signal {
-        case .buildFinished: "icon_party"
-        case .batteryLow: "icon_battery"
-        case .fansUp: "icon_flame"
-        case .dndOn: "icon_moon"
-        case .idleBegan: "icon_sleep"
-        case .idleEnded, .batteryNormal, .dndOff: nil
-        }
+    /// Caption a system signal out loud, going by what he did with it:
+    ///
+    /// - news he acted on says what happened — the build, the fans, Focus, the
+    ///   battery, the fact that you wandered off;
+    /// - news that arrived while he was mid-fetch says he is busy: the brain
+    ///   parks it (`deferSignal`) and comes back to it, and saying so beats
+    ///   leaving the user wondering why nothing happened;
+    /// - the all-clear signals (the human's back, the charger's in, Focus off)
+    ///   stay silent unless they genuinely got him up.
+    ///
+    /// This used to be an icon. An icon cannot say WHY, which is the whole
+    /// point of the feature — see `ReactionCaption`.
+    private func emote(for signal: SystemSignal, acted: Bool) {
+        guard let caption = ReactionCaption.text(for: signal, acted: acted) else { return }
+        showSpeech(caption)
     }
 
-    /// Caption a system signal, going by what he did with it:
-    ///
-    /// - news he acted on gets its own icon — the party for a finished build,
-    ///   the flame for the fans, the moon for Focus, the battery, the zeds
-    ///   for the idle nap;
-    /// - news that arrived while he was mid-fetch gets the gear: the brain
-    ///   parks it (`deferSignal`) and comes back to it, and the gear says so
-    ///   rather than leaving the user wondering why nothing happened;
-    /// - the all-clear signals (the human's back, the charger's in, Focus
-    ///   off) stay silent unless they genuinely got him up, and then it's
-    ///   the alert perk-up.
-    private func emote(for signal: SystemSignal, acted: Bool) {
-        guard let icon = Self.emoteIcon(for: signal) else {
-            if acted { showEmote("icon_alert") }
-            return
-        }
-        showEmote(acted ? icon : "icon_gear")
+    /// Float a line of text off the top of his head. Offset to one side so it
+    /// doesn't fight the hearts, which rise straight up from the same line,
+    /// then pulled back on screen if that offset would hang it off an edge.
+    private func showSpeech(_ text: String) {
+        let bubble = SpeechBubble(text: text)
+        // `plateWidth`, not `calculateAccumulatedFrame()`: the bubble is
+        // still at its 0.6 pop-in scale here, and the accumulated frame
+        // would measure it at 60% of the width it clamps against once it
+        // pops up to full size — see `SpeechBubble.plateWidth`.
+        let halfWidth = bubble.plateWidth / 2
+        let margin: CGFloat = 8
+        bubble.position = CGPoint(
+            x: min(max(dog.position.x + 30, halfWidth + margin),
+                   max(halfWidth + margin, size.width - halfWidth - margin)),
+            y: dog.position.y + dog.size.height / 2 + 14
+        )
+        bubble.zPosition = 21 // just above the hearts (20)
+        addChild(bubble)
+        bubble.play()
     }
 
     /// Float an emote off the top of his head. Offset to one side so it
@@ -1313,6 +1328,10 @@ final class PetScene: SKScene {
     /// Pause and the user's feature setting independently gate polling.
     private var windowWatchingActive = true
     private var windowClimbingEnabled = true
+    /// The three persistent switches from his right-click menu. The scene owns
+    /// these outright — they are never routed through JumbiniSettings, whose
+    /// panel rebuilds that struct from its checkboxes and would reset them.
+    private var mood = MoodSettings.load()
     /// The soft blob under his feet while he's on a ledge — or on the ground
     /// he's falling towards. nil until the first time one is needed.
     private var contactShadow: SKSpriteNode?
@@ -2120,6 +2139,15 @@ final class PetScene: SKScene {
         return view.convert(inWindow, to: self)
     }
 
+    /// The cursor in scene coordinates, or nil when there is no window to
+    /// convert through. `mouseLocationInScene()` returns a (-1, -1) sentinel in
+    /// that case, which is a fine place for a hover test and a terrible place
+    /// to send a dog.
+    private func cursorScenePoint() -> CGPoint? {
+        guard let window = overlayWindow, let view else { return nil }
+        return view.convert(window.convertPoint(fromScreen: NSEvent.mouseLocation), to: self)
+    }
+
     // MARK: - Displays coming and going
 
     /// A display was plugged in, unplugged, moved or resized.
@@ -2342,6 +2370,7 @@ final class PetScene: SKScene {
             menu.addItem(item)
         }
         menu.addItem(.separator())
+        menu.addItem(moodMenuItem())
         menu.addItem(tricksMenuItem())
         menu.addItem(toysMenuItem())
         let wardrobe = NSMenuItem(title: "Wardrobe", action: nil, keyEquivalent: "")
@@ -2351,6 +2380,70 @@ final class PetScene: SKScene {
         coat.submenu = coatSelectionMenu()
         menu.addItem(coat)
         NSMenu.popUpContextMenu(menu, with: event, for: view)
+    }
+
+    /// The Mood submenu: how much energy he has, whether he stays down, and
+    /// whether his walks aim at your cursor. Which item carries a checkmark is
+    /// decided by `MoodMenuState`, which is tested without AppKit.
+    private func moodMenuItem() -> NSMenuItem {
+        let state = MoodMenuState(mood: mood)
+        let moodItem = NSMenuItem(title: MoodMenuState.submenuTitle, action: nil, keyEquivalent: "")
+        let submenu = NSMenu()
+        for (mode, entry) in zip(ActivityMode.allCases, state.activityItems) {
+            let item = NSMenuItem(
+                title: entry.title, action: #selector(activityChosen(_:)), keyEquivalent: ""
+            )
+            item.target = self
+            item.representedObject = ActivityChoice(mode: mode)
+            item.state = entry.isChecked ? .on : .off
+            submenu.addItem(item)
+        }
+        submenu.addItem(.separator())
+        let stay = NSMenuItem(
+            title: state.stayDownItem.title, action: #selector(stayDownToggled), keyEquivalent: ""
+        )
+        stay.target = self
+        stay.state = state.stayDownItem.isChecked ? .on : .off
+        submenu.addItem(stay)
+        let follow = NSMenuItem(
+            title: state.followItem.title, action: #selector(followToggled), keyEquivalent: ""
+        )
+        follow.target = self
+        follow.state = state.followItem.isChecked ? .on : .off
+        submenu.addItem(follow)
+        moodItem.submenu = submenu
+        return moodItem
+    }
+
+    /// `representedObject` needs a class, and ActivityMode is an enum —
+    /// the same dance `ToyChoice` does two screens down.
+    private final class ActivityChoice: NSObject {
+        let mode: ActivityMode
+        init(mode: ActivityMode) { self.mode = mode }
+    }
+
+    /// Save the new mood and reconcile it with the dog on screen right now.
+    /// One funnel for all three items so persistence can never be forgotten.
+    private func changeMood(_ transform: (inout Mood) -> Void) {
+        var updated = mood
+        transform(&updated)
+        guard updated != mood else { return }
+        mood = updated
+        MoodSettings.save(mood)
+        apply(effects: brain.setMood(mood, at: lastTime))
+    }
+
+    @objc private func activityChosen(_ sender: NSMenuItem) {
+        guard let choice = sender.representedObject as? ActivityChoice else { return }
+        changeMood { $0.activity = choice.mode }
+    }
+
+    @objc private func stayDownToggled() {
+        changeMood { $0.stayDown.toggle() }
+    }
+
+    @objc private func followToggled() {
+        changeMood { $0.roam = $0.roam == .follow ? .wander : .follow }
     }
 
     /// The Tricks submenu: unlocked tricks by name, locked ones as

@@ -76,6 +76,8 @@ something to do:
 | Climb onto one of your windows | 5% | 18-36s |
 | Bark at nothing in particular | 4% | 1.2s |
 
+Those are his odds on the **Active** setting, which is the default. **Very Active** multiplies the zoomies roll by 4.5 (8% becomes 36%), makes each burst half again as long, cuts his sleep roll to a fifth, and halves the pause between activities. **Sleepy** does the reverse: naps triple, zoomies all but stop, and he takes twice as long to get bored. Hunching, barking at nothing, and window climbing are the same in every mode — each is a habit with its own switch, not a level of energy.
+
 The sniffing one is the sleeper hit: he trots toward wherever your pointer is, and once he
 is within about 60 points he switches to the nose-down sniff pose and keeps tracking it.
 Six times out of ten a finished sniff escalates — he drops into a stalk, freezes, and
@@ -121,8 +123,7 @@ your machine. Thermal state arrives as a notification instead.
 | No input for two minutes | He goes to sleep |
 | Input comes back | He wakes up |
 
-Each of these puts a small thought bubble over his head — a flame, a battery, a party hat —
-so that a dog who suddenly loses his mind reads as a joke rather than a bug.
+Each of these now comes with a speech bubble saying what happened — "Your Mac's hot!", "Build's done!", "Battery's low…" — so a dog who suddenly loses his mind is a joke rather than a bug. News that arrives while he is mid-fetch gets "Busy — one sec!": the brain parks it and comes back to it.
 
 Two deliberate restraints. A build has to run continuously for a while before its exit
 counts, and two celebrations can never land close together, so a rebuild storm gets one
@@ -208,6 +209,8 @@ Everything is mouse-driven, directly on the dog and his stuff.
 
 The command list is Sit, Lie Down, Spin, Spin Forever, Zoomies!, and Fetch. Catch him
 mid-spin and the first item becomes **Stop Spinning**.
+
+Below those is a **Mood** submenu, and unlike the commands its settings stick. Pick how much energy he has — Very Active, Active, or Sleepy. Tick **Stay Lying Down** and he lies down and stays there until you untick it; he will still get up for a treat or a game of fetch, then flop back down. Tick **Follow My Cursor** and his walks aim at your pointer instead of a random spot, stopping a comfortable distance short, and he hunts the cursor far more often.
 
 ### Fetch
 
