@@ -195,9 +195,33 @@ import Testing
         #expect(fixture.backend.operationScopeDepths == [1, 1])
     }
 
+    @Test @MainActor func aFailedPassPublishesASentenceNotAnEnumCase() async throws {
+        // The regression this guards: the coordinator used to publish
+        // `String(describing:)` straight to the popover, so a real failure read
+        // as "deviceMismatch(source: ..., destinationParent: ...)". Both notice
+        // sites now go through TidyFailureText.
+        let fixture = CoordinatorFixture(needsPreview: false, completedManualPass: true)
+        let source = URL(fileURLWithPath: "/tmp/Tidy/holiday snap.png")
+        let parent = URL(fileURLWithPath: "/tmp/Tidy/Images", isDirectory: true)
+        fixture.backend.executionOutcomes = [
+            .failure(TidyExecutionError.deviceMismatch(source: source, destinationParent: parent))
+        ]
+        var notices: [TidyNotice] = []
+        fixture.coordinator.onNotice = { notices.append($0) }
+
+        _ = try? await fixture.coordinator.runManual()
+
+        let failures = notices.filter(\.isFailure)
+        #expect(failures.count == 1, "one failure, one notice")
+        #expect(
+            failures.first?.message
+                == "holiday snap.png would have to move to a different disk, so Jumba stopped."
+        )
+    }
+
     @Test @MainActor func previewExecutionFailureBeforePassStartPreservesTheGate() async throws {
         let fixture = CoordinatorFixture(needsPreview: true, completedManualPass: false)
-        fixture.backend.executionOutcomes = [.failure(.executionFailed)]
+        fixture.backend.executionOutcomes = [.failure(CoordinatorBackend.Failure.executionFailed)]
         let preview = try await fixture.coordinator.makePreview()
         var cues: [[TidyCompletedMove]] = []
         fixture.coordinator.onSuccessfulMoves = { cues.append($0) }
@@ -435,7 +459,7 @@ private final class CoordinatorBackend: @unchecked Sendable {
 
     enum ExecutionOutcome {
         case result(TidyPassResult)
-        case failure(Failure)
+        case failure(Error)
     }
 
     var rules = TidyRuleSet.defaults

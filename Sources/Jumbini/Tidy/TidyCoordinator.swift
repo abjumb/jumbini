@@ -1,27 +1,14 @@
 import Dispatch
 import Foundation
 
+/// The wording for these lives in `TidyFailureText`, not here, so that one
+/// failure cannot be described two ways on two surfaces — which is what happened
+/// while this enum carried its own `message`.
 enum TidyCoordinatorError: Error, Equatable {
     case folderRequired
     case previewRequired
     case staleBookmark
     case recoveryBlocked(String)
-
-    /// What to put in front of the user. Every one of these is something they
-    /// can act on, so none of them is worth an alert — they go in the same
-    /// popover the results do.
-    var message: String {
-        switch self {
-        case .folderRequired:
-            return "Choose a folder for Jumba to tidy first."
-        case .previewRequired:
-            return "Take a look at the preview before Jumba moves anything."
-        case .staleBookmark:
-            return "macOS withdrew access to that folder. Choose it again."
-        case .recoveryBlocked(let detail):
-            return detail
-        }
-    }
 }
 
 enum TidyNotice: Equatable {
@@ -42,10 +29,25 @@ enum TidyNotice: Equatable {
         case .halted(let moved):
             return "You came back — Jumba stopped after \(moved) file\(moved == 1 ? "" : "s")."
         case .failed(let message):
-            return "Jumba stopped: \(message)"
+            // No "Jumba stopped:" wrapper. These sentences come from
+            // `TidyFailureText`, which writes them to stand alone — several are
+            // instructions rather than reports ("Take a look at the preview
+            // before Jumba moves anything"), and prefixing those with a halt
+            // reads as a non-sequitur. The same string also has to work in the
+            // Settings panel's status label, where there is no prefix at all.
+            // `isFailure` is how the popover still knows this is bad news.
+            return message
         case .undone(let count):
             return "Jumba put \(count) file\(count == 1 ? "" : "s") back."
         }
+    }
+
+    /// Whether this notice is bad news, so a renderer can say so without
+    /// re-switching on the case. The popover reds the text, matching what
+    /// `TidySettingsPanel` already does with a blocking error.
+    var isFailure: Bool {
+        if case .failed = self { return true }
+        return false
     }
 }
 
@@ -265,8 +267,14 @@ final class TidyCoordinator {
         var message: String {
             switch self {
             case .staleBookmark:
-                return "The selected folder permission must be renewed."
+                // Deliberately the same sentence the popover shows. This used to
+                // say "The selected folder permission must be renewed." while the
+                // popover said "macOS withdrew access to that folder. Choose it
+                // again." — both fired for one event, so the app told the user two
+                // things about one condition, and neither looked wrong.
+                return TidyFailureText.message(for: TidyCoordinatorError.staleBookmark)
             case .configuration(let message):
+                // Already run through TidyFailureText at the setBlock call sites.
                 return message
             }
         }
@@ -343,12 +351,12 @@ final class TidyCoordinator {
         do {
             rules = try dependencies.loadRules()
         } catch {
-            initialBlock = .configuration(String(describing: error))
+            initialBlock = .configuration(TidyFailureText.message(for: error))
         }
         do {
             preferences = try dependencies.loadPreferences()
         } catch {
-            initialBlock = .configuration(String(describing: error))
+            initialBlock = .configuration(TidyFailureText.message(for: error))
         }
         do {
             if let grant = try dependencies.resolveFolder() {
@@ -554,7 +562,7 @@ final class TidyCoordinator {
         do {
             try dependencies.saveRules(rules)
         } catch {
-            setBlock(.configuration(String(describing: error)))
+            setBlock(.configuration(TidyFailureText.message(for: error)))
             throw error
         }
         if case .configuration? = block {
@@ -672,7 +680,7 @@ final class TidyCoordinator {
             return result
         } catch {
             let surfaced = handleOperationError(error)
-            onNotice?(.failed(String(describing: surfaced)))
+            onNotice?(.failed(TidyFailureText.message(for: surfaced)))
             throw surfaced
         }
     }
@@ -712,11 +720,17 @@ final class TidyCoordinator {
         } catch {
             let surfaced: Error
             if passReturned {
-                setBlock(.configuration(String(describing: error)))
+                setBlock(.configuration(TidyFailureText.message(for: error)))
                 surfaced = error
             } else {
                 surfaced = handleOperationError(error)
-                onNotice?(.failed(String(describing: surfaced)))
+                // NOTE: this fires a notice AND rethrows, and every caller in
+                // AppDelegate catches the rethrow and shows a second notice — so
+                // one failure produces two popovers. They now say the same thing,
+                // which fixes the symptom and hides the cause. The real fix is to
+                // make the coordinator the sole notifier, which changes control
+                // flow at seven sites and the idle path; tracked separately.
+                onNotice?(.failed(TidyFailureText.message(for: surfaced)))
             }
             throw surfaced
         }
@@ -812,6 +826,12 @@ final class TidyCoordinator {
             case .unsafeRoot:
                 setBlock(.staleBookmark)
             case .unsafeDestination, .duplicateRuleID:
+                // Deliberately NOT through TidyFailureText. TidyPlanError is a
+                // bare Swift enum with no wording of its own, so the module's
+                // fallback would give "The operation couldn't be completed.
+                // (Jumbini.TidyPlanError error 1.)" — strictly worse than the
+                // case name. Wording it is the same follow-up as
+                // TidyRecoveryError below.
                 setBlock(.configuration(String(describing: planError)))
             case .enumerationFailed:
                 break
@@ -830,6 +850,9 @@ final class TidyCoordinator {
             return coordinatorError
         }
         if error is TidyRecoveryError {
+            // Same reason as TidyPlanError above: a bare enum with no wording,
+            // where localizedDescription would read worse than the case name.
+            // This is the string that ends up inside .recoveryBlocked.
             let message = String(describing: error)
             setBlock(.configuration(message))
             return TidyCoordinatorError.recoveryBlocked(message)
