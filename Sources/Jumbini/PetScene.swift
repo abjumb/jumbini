@@ -643,36 +643,38 @@ final class PetScene: SKScene {
 
     // MARK: - Emotes
 
-    /// The icon for news he acts on. nil for the all-clear signals, which
-    /// only get an emote when they actually rouse him (see `emote(for:)`).
-    private static func emoteIcon(for signal: SystemSignal) -> String? {
-        switch signal {
-        case .buildFinished: "icon_party"
-        case .batteryLow: "icon_battery"
-        case .fansUp: "icon_flame"
-        case .dndOn: "icon_moon"
-        case .idleBegan: "icon_sleep"
-        case .idleEnded, .batteryNormal, .dndOff: nil
-        }
+    /// Caption a system signal out loud, going by what he did with it:
+    ///
+    /// - news he acted on says what happened — the build, the fans, Focus, the
+    ///   battery, the fact that you wandered off;
+    /// - news that arrived while he was mid-fetch says he is busy: the brain
+    ///   parks it (`deferSignal`) and comes back to it, and saying so beats
+    ///   leaving the user wondering why nothing happened;
+    /// - the all-clear signals (the human's back, the charger's in, Focus off)
+    ///   stay silent unless they genuinely got him up.
+    ///
+    /// This used to be an icon. An icon cannot say WHY, which is the whole
+    /// point of the feature — see `ReactionCaption`.
+    private func emote(for signal: SystemSignal, acted: Bool) {
+        guard let caption = ReactionCaption.text(for: signal, acted: acted) else { return }
+        showSpeech(caption)
     }
 
-    /// Caption a system signal, going by what he did with it:
-    ///
-    /// - news he acted on gets its own icon — the party for a finished build,
-    ///   the flame for the fans, the moon for Focus, the battery, the zeds
-    ///   for the idle nap;
-    /// - news that arrived while he was mid-fetch gets the gear: the brain
-    ///   parks it (`deferSignal`) and comes back to it, and the gear says so
-    ///   rather than leaving the user wondering why nothing happened;
-    /// - the all-clear signals (the human's back, the charger's in, Focus
-    ///   off) stay silent unless they genuinely got him up, and then it's
-    ///   the alert perk-up.
-    private func emote(for signal: SystemSignal, acted: Bool) {
-        guard let icon = Self.emoteIcon(for: signal) else {
-            if acted { showEmote("icon_alert") }
-            return
-        }
-        showEmote(acted ? icon : "icon_gear")
+    /// Float a line of text off the top of his head. Offset to one side so it
+    /// doesn't fight the hearts, which rise straight up from the same line,
+    /// then pulled back on screen if that offset would hang it off an edge.
+    private func showSpeech(_ text: String) {
+        let bubble = SpeechBubble(text: text)
+        let halfWidth = bubble.calculateAccumulatedFrame().width / 2
+        let margin: CGFloat = 8
+        bubble.position = CGPoint(
+            x: min(max(dog.position.x + 30, halfWidth + margin),
+                   max(halfWidth + margin, size.width - halfWidth - margin)),
+            y: dog.position.y + dog.size.height / 2 + 14
+        )
+        bubble.zPosition = 21 // just above the hearts (20)
+        addChild(bubble)
+        bubble.play()
     }
 
     /// Float an emote off the top of his head. Offset to one side so it

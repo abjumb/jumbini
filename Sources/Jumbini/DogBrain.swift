@@ -50,7 +50,7 @@ enum ToyKind: Equatable {
 }
 
 /// Ambient machine happenings the scene layer can feed the brain.
-enum SystemSignal: Equatable {
+enum SystemSignal: Equatable, CaseIterable {
     case buildFinished, idleBegan, idleEnded, fansUp, batteryLow, batteryNormal, dndOn, dndOff
 }
 
