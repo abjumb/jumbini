@@ -5,7 +5,14 @@
 
 [scripts]
 setup = "if [ \"$CONDUCTOR_IS_LOCAL\" = \"1\" ]; then swift package resolve; fi"
-run_mode = "concurrent"
+# Nonconcurrent because two of the three run scripts launch the real app, and
+# two Jumbini instances share per-user state they will fight over: one
+# UserDefaults.standard domain (the coat, the bed variant, the mute flag, the
+# mood keys) and one ~/Library/Application Support/Jumbini/coats directory.
+# They also draw over the same desktop at .statusBar level. Tests alone would
+# be safe in parallel — they use isolated UserDefaults suites — but run_mode
+# is a single setting for every run script, so it follows the app.
+run_mode = "nonconcurrent"
 
 [scripts.run.test]
 available_in = [ "local" ]
